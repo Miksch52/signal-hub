@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📈 Daily Signal Hub</title>
+<style>
+  :root{
+    --primary:#208091; --primary2:#2FD0C6; --ok:#2FB08D; --warn:#F39C12; --bad:#E74C3C;
+    --bg:#0B1524; --bg2:#142236; --card:rgba(23,36,53,.55); --line:rgba(255,255,255,.08);
+    --txt:#ECF0F1; --muted:#8194A6; --glass-blur:16px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg);color:var(--txt);line-height:1.45}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#13243a,#0f1c2e);
+         border-bottom:1px solid var(--line);padding:14px 20px}
+  .htop{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  h1{font-size:20px;margin:0;font-weight:700}
+  .meta{color:var(--muted);font-size:13px}
+  .spacer{flex:1}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center}
+  /* Einklappbare Filterleiste (mobil entlastet sie den Bildschirm) */
+  .filterbox{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg2)}
+  .filtersum{cursor:pointer;list-style:none;padding:9px 12px;font-size:13px;font-weight:600;
+       color:var(--txt);display:flex;align-items:center;gap:8px;user-select:none}
+  .filtersum::-webkit-details-marker{display:none}
+  .filtersum::before{content:"▸";color:var(--muted);transition:transform .15s}
+  .filterbox[open] .filtersum::before{transform:rotate(90deg)}
+  .filterbox[open] .filtersum{border-bottom:1px solid var(--line)}
+  .filterbox .controls{margin:0;padding:12px}
+  .filtercount{color:var(--primary);font-weight:700;font-size:12px}
+  .legendbox{margin-top:8px}
+  .legendbox .legend,.legendbox .chleg{margin:0;padding:10px 12px}
+  /* Kachel: Chart + Faktoren auf dem iPhone erst auf Tap (am Desktop immer offen) */
+  .cardchart{margin:4px 0}
+  .cardchart>.cardchart-sum{cursor:pointer;list-style:none;font-size:12px;color:var(--primary);
+       padding:6px 0;user-select:none}
+  .cardchart>.cardchart-sum::-webkit-details-marker{display:none}
+  .cardchart>.cardchart-sum::before{content:"▸ "}
+  .cardchart[open]>.cardchart-sum::before{content:"▾ "}
+  @media(min-width:701px){ .cardchart>.cardchart-sum{display:none} }
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{background:transparent;color:var(--muted);border:0;padding:6px 12px;cursor:pointer;font-size:13px}
+  .seg button.active{background:var(--primary);color:#fff}
+  input[type=search],select{background:var(--bg2);color:var(--txt);border:1px solid var(--line);
+       border-radius:8px;padding:7px 10px;font-size:13px}
+  .slabel{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .smhelp{flex-basis:100%;font-size:11px;color:var(--muted);line-height:1.4;max-width:760px}
+  .smhelp b{color:var(--txt)}
+  input[type=range]{accent-color:var(--primary)}
+  /* Filter-Gruppen (Konsolidierung 2026-07-18: sichtbare Abschnitte statt einem
+     einzigen undifferenzierten Kontroll-Block) */
+  .fgroup{margin-bottom:4px}
+  .fgroup-label{font-size:11px;color:var(--muted);text-transform:uppercase;
+       letter-spacing:.4px;margin:12px 0 7px;font-weight:700}
+  .fgroup:first-child .fgroup-label{margin-top:0}
+  .fgroup-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .subgroup{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+  .subgroup>summary{cursor:pointer;font-size:12px;color:var(--primary);list-style:none;
+       display:flex;align-items:center;gap:6px;user-select:none}
+  .subgroup>summary::-webkit-details-marker{display:none}
+  .subgroup>summary::before{content:"▸ "}
+  .subgroup[open]>summary::before{content:"▾ "}
+  .subgroup .chips{margin-top:8px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:12px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);
+        color:var(--muted);cursor:pointer;user-select:none}
+  .chip.on{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .btn{background:var(--primary);color:#fff;border:0;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+
+  main{padding:18px 20px;max-width:1400px;margin:0 auto}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-bottom:14px}
+  .legend b{color:var(--txt);font-weight:600}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .d-gruen{background:var(--ok)} .d-gelb{background:var(--warn)} .d-rot{background:var(--bad)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
+        display:flex;flex-direction:column;gap:10px;transition:transform .08s}
+  .card:hover{transform:translateY(-2px);border-color:var(--primary)}
+  .crow{display:flex;align-items:flex-start;gap:10px}
+  .rank{font-size:12px;color:var(--muted);min-width:24px}
+  .tick{font-size:19px;font-weight:800;letter-spacing:.5px}
+  .name{font-size:12px;color:var(--muted);margin-top:1px}
+  .px{font-size:13px;color:var(--txt)}
+  .scorebox{margin-left:auto;text-align:center;min-width:62px}
+  .score{font-size:26px;font-weight:800;line-height:1}
+  .einstuf{font-size:10px;padding:2px 7px;border-radius:20px;display:inline-block;margin-top:4px}
+  .e-kauf{background:rgba(47,176,141,.2);color:var(--ok)}
+  .e-beob{background:rgba(243,156,18,.2);color:var(--warn)}
+  .e-na{background:rgba(138,160,184,.15);color:var(--muted)}
+  .e-locked{background:rgba(231,76,60,.22);color:#ff6b5a;font-weight:700}
+  .badge-lock{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(231,76,60,.16);color:#ff6b5a;border:1px solid rgba(231,76,60,.5);font-weight:700}
+  .card.locked{border-color:rgba(231,76,60,.42)}
+  .earn{font-size:10px;padding:2px 7px;border-radius:6px;background:var(--bg2);color:var(--muted);border:1px solid var(--line)}
+  .earn-warn{background:rgba(231,76,60,.18);color:#ffb4ab;border-color:rgba(231,76,60,.4)}
+  .sect{font-size:10.5px;color:#9db4cc;margin-top:1px}
+  .badge-neu{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(47,176,141,.2);color:var(--ok);font-weight:700}
+  .badge-depot{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(32,128,145,.25);color:#7fd3e0;border:1px solid var(--primary)}
+  .badge-sm{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(47,176,141,.18);color:#7fe0c4;border:1px solid rgba(47,176,141,.4)}
+  .badge-multisrc{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(212,163,47,.18);color:#e0c37f;border:1px solid rgba(212,163,47,.4);font-weight:700}
+  .badge-armed{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(243,156,18,.18);color:#f4b350;border:1px solid rgba(243,156,18,.5);font-weight:700}
+  .badge-brk{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(231,76,60,.2);color:#ff8c7a;border:1px solid rgba(231,76,60,.55);font-weight:700}
+  .badge-cheat{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(155,89,182,.2);color:#c9a0dc;border:1px solid rgba(155,89,182,.55);font-weight:700}
+  .badge-pa{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(214,137,16,.16);color:#e0a94e;border:1px solid rgba(214,137,16,.45);font-weight:700;text-decoration:none}
+  /* Markt-Schnellcheck (S&P vs. MA50/MA200 + VIX) - dieselbe Formel wie in
+     Maick's Trading System.html, bewusst KEINE Kopie der echten Marktampel. */
+  .markt-chip{font-size:12px;padding:4px 10px;border-radius:8px;text-decoration:none;font-weight:600;border:1px solid var(--line)}
+  .markt-chip.green{background:rgba(47,176,141,.15);color:var(--ok);border-color:rgba(47,176,141,.4)}
+  .markt-chip.yellow{background:rgba(243,156,18,.15);color:var(--warn);border-color:rgba(243,156,18,.4)}
+  .markt-chip.red{background:rgba(231,76,60,.18);color:var(--bad);border-color:rgba(231,76,60,.4)}
+  .fundb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(47,176,141,.15);color:#7fe0c4;border:1px solid rgba(47,176,141,.4)}
+  .focusb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(243,156,18,.2);color:#f4b350;border:1px solid rgba(243,156,18,.5);font-weight:700}
+  /* Score-Verlaufs-Sparkline (letzte Tage BREAKOUT/ARMED/CHEAT/sonst) */
+  .spark{display:inline-flex;gap:1px;vertical-align:middle;margin-left:4px}
+  .spark i{display:inline-block;width:5px;height:11px;border-radius:1px}
+  .badge-stop{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(138,160,184,.15);color:#c9d6e3;border:1px solid var(--line)}
+  .badge-daempfung-gelb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(243,156,18,.16);color:#f4b350;border:1px solid rgba(243,156,18,.45)}
+  .badge-daempfung-rot{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(231,76,60,.18);color:#ff8c7a;border:1px solid rgba(231,76,60,.5);font-weight:700}
+  .basisb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(243,156,18,.15);color:#e0b96e;border:1px solid rgba(243,156,18,.4)}
+  .basisb-spaet{background:rgba(231,76,60,.18);color:#ff9a8c;border-color:rgba(231,76,60,.45);font-weight:700}
+  .extb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(243,156,18,.15);color:#e0b96e;border:1px solid rgba(243,156,18,.4)}
+  .extb-hoch{background:rgba(231,76,60,.18);color:#ff9a8c;border-color:rgba(231,76,60,.45);font-weight:700}
+  .gap80{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(243,156,18,.15);color:#e0b96e;border:1px solid rgba(243,156,18,.4)}
+  .gap80-akut{background:rgba(231,76,60,.18);color:#ff9a8c;border-color:rgba(231,76,60,.45);font-weight:700}
+  .klimaxb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(231,76,60,.28);color:#ffb4ab;border:1px solid rgba(231,76,60,.6);font-weight:700}
+  .shortb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(155,89,182,.18);color:#c9a4e0;border:1px solid rgba(155,89,182,.4)}
+  .card.neu{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
+
+  .factors{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px}
+  .fac{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);cursor:help}
+  .bar{flex:1;height:5px;border-radius:3px;background:var(--bg2);overflow:hidden}
+  .bar > i{display:block;height:100%}
+  .b-gruen{background:var(--ok)} .b-gelb{background:var(--warn)} .b-rot{background:var(--bad)}
+  .chart{background:#0d1828;border:1px solid var(--line);border-radius:6px;padding:2px}
+  .chart svg{width:100%;height:96px;display:block}
+  .chleg{font-size:10px;color:var(--muted);display:flex;gap:9px;margin-top:3px}
+  .chleg i{display:inline-block;width:8px;height:2px;vertical-align:middle;margin-right:3px}
+
+  .srcrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--muted)}
+  .srcbadge{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+  .ctx{font-size:11.5px;color:var(--muted);font-style:italic;border-left:2px solid var(--line);
+       padding-left:9px;max-height:54px;overflow:hidden}
+  .more{margin-top:2px;border-top:1px solid var(--line);padding-top:6px}
+  .more>summary{cursor:pointer;font-size:12px;color:var(--primary);list-style:none}
+  .more>summary::-webkit-details-marker{display:none}
+  .more>summary::before{content:"▸ ";}
+  .more[open]>summary::before{content:"▾ ";}
+  .moregrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin:8px 0;font-size:11px}
+  .moregrid b{color:var(--txt);font-weight:600}
+  .muted2{color:var(--muted)}
+  .ctxfull{font-size:11.5px;color:var(--muted);font-style:italic;border-left:2px solid var(--line);padding-left:9px;margin-top:6px}
+  .links{display:flex;gap:8px;margin-top:2px}
+  .links a{font-size:12px;color:var(--primary);text-decoration:none}
+  .links a:hover{text-decoration:underline}
+  .empty{color:var(--muted);text-align:center;padding:60px}
+
+  /* Einstellungen-Schublade */
+  .drawer{position:fixed;top:0;right:0;height:100%;width:380px;max-width:90vw;background:var(--bg2);
+          border-left:1px solid var(--line);transform:translateX(100%);transition:transform .2s;
+          z-index:50;overflow-y:auto;padding:20px}
+  .drawer.open{transform:translateX(0)}
+  .drawer h2{font-size:16px;margin:0 0 14px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .field input{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--line);
+               border-radius:6px;padding:7px}
+  .gewrow{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px}
+  .gewrow input{width:60px}
+  .note{font-size:11px;color:var(--muted);margin-top:10px}
+  @media(max-width:600px){.grid{grid-template-columns:1fr}.drawer{width:100%}}
+
+  /* ===== MTS Premium Theme-Layer (Reskin – Aurora/Glass, wie Startseite) ===== */
+  .aurora{position:fixed;inset:0;z-index:-2;overflow:hidden;background:var(--bg)}
+  .aurora::before,.aurora::after{content:'';position:absolute;border-radius:50%;filter:blur(70px);opacity:.5;will-change:transform}
+  .aurora::before{width:55vw;height:55vw;top:-14vw;left:-10vw;
+    background:radial-gradient(circle at 30% 30%,#208091 0%,transparent 65%);animation:drift1 22s ease-in-out infinite alternate}
+  .aurora::after{width:48vw;height:48vw;bottom:-16vw;right:-12vw;
+    background:radial-gradient(circle at 70% 70%,#2FD0C6 0%,transparent 62%);animation:drift2 26s ease-in-out infinite alternate}
+  .aurora .blob3{position:absolute;width:42vw;height:42vw;top:32%;left:44%;
+    background:radial-gradient(circle,#16324a 0%,transparent 60%);filter:blur(80px);opacity:.45;animation:drift3 30s ease-in-out infinite alternate}
+  @keyframes drift1{to{transform:translate(8vw,10vh) scale(1.15)}}
+  @keyframes drift2{to{transform:translate(-9vw,-8vh) scale(1.1)}}
+  @keyframes drift3{to{transform:translate(-12vw,6vh) scale(1.2)}}
+  .grain{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.03;
+    background-image:radial-gradient(rgba(255,255,255,.6) .5px,transparent .5px);background-size:3px 3px}
+  @media(prefers-reduced-motion:reduce){.aurora::before,.aurora::after,.aurora .blob3{animation:none}}
+
+  /* Glass-Header + Titel-Glow */
+  header{background:linear-gradient(180deg,rgba(19,36,58,.72),rgba(15,28,46,.5));
+    backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur))}
+  h1{text-shadow:0 0 22px rgba(47,208,198,.28)}
+  /* Glass-Karten (ohne Per-Card-Blur → performant bei vielen Treffern) + Hover-Glow */
+  .card:hover{border-color:var(--primary2);
+    box-shadow:0 12px 32px rgba(0,0,0,.4),0 0 0 1px rgba(47,208,198,.5);transform:translateY(-3px)}
+  .card.neu{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset,0 0 22px rgba(47,176,141,.22)}
+  /* Filter/Legende + Drawer als echtes Glass */
+  .filterbox{background:rgba(20,34,54,.5);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  .drawer{background:rgba(16,28,46,.86);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
+  /* Akzente heller für Kontrast + Premium-Feel */
+  .links a{color:var(--primary2)}
+  .seg button.active{box-shadow:0 0 14px rgba(47,208,198,.35)}
+  .chart{background:rgba(8,16,28,.55)}
+  input[type=search],select,.field input{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .hittab{border-collapse:collapse;width:auto}
+  .hittab th,.hittab td{padding:4px 12px;text-align:right;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap}
+  .hittab th{color:var(--muted);font-weight:600}
+  .hittab td:first-child,.hittab th:first-child{text-align:left}
+  .hittab .pos{color:#2ecc71}.hittab .neg{color:#e74c3c}
+</style>
+</head>
+<body>
+<a href="/index.html" id="mts-home-btn" title="Zur Startseite" aria-label="Zur Startseite" style="position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:calc(env(safe-area-inset-left,0px) + 8px);z-index:2147483000;display:inline-flex;align-items:center;gap:5px;padding:7px 11px;border-radius:10px;background:rgba(18,26,38,.85);color:#e2e8f0;text-decoration:none;font:600 13px/1 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;border:1px solid rgba(255,255,255,.16);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);box-shadow:0 3px 12px rgba(0,0,0,.35)">🏠 Start</a>
+<script>/* /index.html gibt es nur auf dem 8090-Server bzw. auf Pages. Wird die App
+   über ihren eigenen Server-Port ausgeliefert (Signal-Hub = 8091), dort zum
+   8090-Server der Startseite wechseln — sonst 404. */
+(function(){var b=document.getElementById('mts-home-btn');if(b&&location.port&&location.port!=='8090'){b.href=location.protocol+'//'+location.hostname+':8090/index.html';}})();</script>
+<div class="aurora"><div class="blob3"></div></div>
+<div class="grain"></div>
+<header>
+  <div class="htop">
+    <h1>📈 Daily Signal Hub</h1>
+    <a id="marktchip" class="markt-chip" style="display:none" target="_blank"></a>
+    <span class="meta" id="meta">lädt …</span>
+    <span class="meta" id="breadth" title="Anzahl Ticker mit aktivem Pivot-Setup (BREAKOUT/ARMED/CHEAT) laut Signal-Hub/data/pivot_history.json – Fruehindikator fuer Marktbreite, unabhaengig von einem offiziellen Follow-Through-Day"></span>
+    <span class="spacer"></span>
+    <button class="btn ghost" onclick="aktualisieren(this)">🔄 Aktualisieren</button>
+    <a class="btn ghost" href="../Price-Action-Hub/price-action-hub.html" title="Price-Action-Musteranalyse auf denselben Tickern (Candlestick, Bar-Counting, Breakout/Gap)" style="text-decoration:none;display:inline-flex;align-items:center">📐 Price-Action-Hub</a>
+    <a class="btn ghost" href="https://claude.ai/code/artifact/7bfb76af-1899-4ee6-9a78-a57275d616c3" target="_blank" title="Betriebsanleitung: Tagesrhythmus, Sortierungen, Badge-Lexikon, Workflow" style="text-decoration:none;display:inline-flex;align-items:center">📖 Anleitung</a>
+    <button class="btn ghost" onclick="toggleDrawer()">⚙︎ Einstellungen</button>
+  </div>
+  <details id="filterbox" class="filterbox">
+   <summary class="filtersum">🔧 Filter &amp; Sortierung <span id="filtercount" class="filtercount"></span></summary>
+   <div class="controls">
+    <div class="fgroup">
+     <div class="fgroup-label">Grundfilter</div>
+     <div class="fgroup-row">
+      <div class="seg" id="marktseg">
+        <button data-m="alle" class="active">Alle</button>
+        <button data-m="USA">🇺🇸 USA</button>
+        <button data-m="Europa">🇪🇺 Europa</button>
+      </div>
+      <label class="slabel">Min-Score <b id="minlbl">0</b>
+        <input type="range" id="minscore" min="0" max="100" value="0" step="5"></label>
+      <select id="sortby">
+        <option value="score">Sortierung: Score</option>
+        <option value="konsens">Sortierung: Quellen-Konsens</option>
+        <option value="naehe">Sortierung: Nähe 52W-Hoch</option>
+        <option value="pivot" selected>Sortierung: Pivot-Qualität</option>
+        <option value="top">Sortierung: 🏆 Top-Kombi (Pivot+Branche+Quellen)</option>
+        <option value="branche">Sortierung: Branchenstärke</option>
+        <option value="persistenz">Sortierung: Leadership-Persistenz</option>
+        <option value="alpha">Sortierung: A–Z (Ticker)</option>
+      </select>
+      <input type="search" id="suche" placeholder="🔎 Ticker / Name">
+     </div>
+    </div>
+    <div class="fgroup">
+     <div class="fgroup-label">Qualitäts-Filter (Minervini/Livermore)</div>
+     <div class="fgroup-row">
+      <label class="slabel" title="Nur Werte, die der Pivot-Detektor als scharf (ARMED) oder frisch ausgebrochen (BREAKOUT) einstuft – die Entstehung des Ausbruchs statt des nachlaufenden Scores"><input type="checkbox" id="pivotonly" checked> 🎯 nur Pivot-Setups <span id="pivotcount" class="filtercount"></span></label>
+      <label class="slabel" title="Die dreifach bestätigte Schnittmenge (wie „Top-Setups heute“ auf der Startseite): Score ≥ 70 UND ARMED/BREAKOUT UND Price-Action bullisch (PA-Score > 0). Bringt die Price-Action-Dimension des Price-Action-Hubs in den Signal-Hub. Umgeht die Faktor-Pflicht (das Set ist schon kuratiert, und „Volumen grün“ widerspräche ARMED); Risiko-Filter (Earnings/Extended/50-80) bleiben aktiv."><input type="checkbox" id="topsetups"> 🏆 nur Top-Setups <span id="topsetcount" class="filtercount"></span></label>
+      <label class="slabel"><input type="checkbox" id="hideearn" checked> ⚠︎ Earnings ausblenden</label>
+      <label class="slabel" title="Minervini: Kurs >25% über der SMA50 = zu weit gelaufen, kein Nachkauf mehr"><input type="checkbox" id="hideextended" checked> 📈 Extended ausblenden</label>
+      <label class="slabel" title="Minervini 50/80-Regel: Gap-down auf hohem Volumen -> hohe Wahrscheinlichkeit eines neuen Tiefs in den folgenden ~8 Monaten, nicht nachkaufen"><input type="checkbox" id="hidegap80" checked> ⛔ 50/80 ausblenden</label>
+      <label class="slabel" title="Optionaler Zusatz-Layer: zeigt bei 50/80-Gap-down-Werten unter SMA50/150/200 ein Short-Setup-Badge (rein informativ, falls Shortselling Teil deiner Strategie ist)"><input type="checkbox" id="shorton"> 🩳 Short-Kandidaten anzeigen</label>
+      <label class="slabel" title="Blendet ARMED-Treffer aus, deren rechte Seite ueber mehrere Wellen eher expandiert als sich beruhigt (V-foermig statt sauber zulaufend) – unvalidierte Heuristik, daher Standard aus"><input type="checkbox" id="hidemegaphone"> 🌀 Megaphone ausblenden</label>
+      <label class="slabel" title="Nimmt CHEAT-Status (frueher Ausbruch vor dem vollen Stage-2-Template, Minervini: klein positionieren) zusaetzlich in die Pivot-Setup-Filterung auf – unvalidierte Heuristik, daher Standard aus"><input type="checkbox" id="cheatinclude"> ⚡ Cheat-Pivots einschließen</label>
+      <label class="slabel" title="Smart Money (U/D) + CMF temporär ins Ranking einrechnen – direkter Vergleich"><input type="checkbox" id="smweight" checked> 💰 Smart Money einrechnen</label>
+     </div>
+     <span id="smsliders" style="display:inline-flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
+      <label class="slabel" title="Smart Money / Up-Down-Volumen: Volumen an grünen vs. roten Tagen (50 Tage). Über 1 = große Adressen kaufen in die Stärke (Akkumulation).">SM <b id="smwlbl">15</b><input type="range" id="smw" min="0" max="40" step="1" value="15"></label>
+      <label class="slabel" title="Chaikin Money Flow (21 Tage): Schließt der Kurs hoch in der Tagesspanne bei hohem Volumen, fließt Geld zu (CMF über 0 = Akkumulation, intraday).">CMF <b id="cmfwlbl">10</b><input type="range" id="cmfw" min="0" max="40" step="1" value="10"></label>
+      <span class="smhelp">ⓘ <b>SM</b> = Up/Down-Volumen über 50 Tage (grüne vs. rote Tage, &gt;1 = Akkumulation). <b>CMF</b> = Chaikin Money Flow 21 T (Schlusskurs hoch in der Tagesspanne + Volumen = Geldzufluss). Gewicht 0 = Faktor zählt nicht.</span>
+     </span>
+    </div>
+    <div class="fgroup">
+     <div class="fgroup-label">Faktoren – müssen grün sein</div>
+     <div class="chips" id="facchips" title="Faktor muss stark (grün) sein"></div>
+    </div>
+    <div class="fgroup">
+     <div class="fgroup-label">Sonstiges</div>
+     <div class="fgroup-row">
+      <label class="slabel"><input type="checkbox" id="onlynew"> ⭐ nur neue</label>
+      <label class="slabel"><input type="checkbox" id="hidedepot"> 📌 ohne Depot</label>
+      <label class="slabel" title="Nur Ticker, die von mindestens zwei unabhängigen Engines bestätigt werden (TraderFox/Mail, Finviz, Markets 360, Trend-Screener)"><input type="checkbox" id="multisrc"> 🔗 Multi-Quellen bestätigt</label>
+      <label class="slabel" title="Begrenzt auf die 5 besten Treffer nach Top-Kombi (Pivot-Qualität + Branchenstärke + Multi-Quellen) — Minervini: konzentriert in wenige echte Marktführer statt breit gestreut"><input type="checkbox" id="toponly"> 🏆 Nur Top 5 (Fokus-Modus)</label>
+      <label class="slabel" title="Nur Ticker, die bereits auf deiner Coach-Fokusliste stehen"><input type="checkbox" id="onlyfocus"> ⭐ nur Fokusliste</label>
+     </div>
+    </div>
+    <details class="subgroup">
+     <summary>🌐 Quellen <span id="typcount" class="filtercount"></span></summary>
+     <div class="chips" id="typchips" title="Quellen filtern"></div>
+    </details>
+   </div>
+  </details>
+</header>
+
+<main>
+  <details id="legendbox" class="filterbox legendbox">
+   <summary class="filtersum">ⓘ Legende</summary>
+   <div class="legend">
+    <span><b>Faktoren:</b></span>
+    <span>① Stage-2-Trend</span><span>② Relative Stärke</span><span>③ Nähe 52W-Hoch</span>
+    <span>④ Basis/VCP</span><span>⑤ Volumen</span><span>⑦ Smart Money (U/D-Vol)</span><span>⑥ Quellen-Konsens</span>
+    <span>⑨ Branchenstärke</span><span>⑩ 50/80-Regel</span><span>⑪ Fundamental (EPS/Umsatz)</span>
+    <span class="spacer"></span>
+    <span><span class="dot d-gruen"></span>stark <span class="dot d-gelb"></span>mittel <span class="dot d-rot"></span>schwach</span>
+   </div>
+   <div class="chleg">
+    <span>Chart:</span>
+    <span><i style="background:#2FB08D"></i>Kerze auf</span>
+    <span><i style="background:#E74C3C"></i>Kerze ab</span>
+    <span><i style="background:#3b9ae1"></i>SMA50</span>
+    <span><i style="background:#F39C12"></i>SMA150</span>
+    <span><i style="background:#E74C3C"></i>SMA200</span>
+    <span><i style="background:#33485f;height:6px"></i>Volumen</span>
+   </div>
+  </details>
+  <details id="dropbox" class="filterbox">
+   <summary class="filtersum">📉 Kürzlich rausgefallen <span id="dropcount" class="filtercount"></span></summary>
+   <div id="droplist" style="padding:12px;font-size:13px;color:var(--muted)"></div>
+  </details>
+  <details id="hitbox" class="filterbox" style="display:none">
+   <summary class="filtersum">🎯 Trefferquoten Score (Forward-Test) <span id="hitstand" class="filtercount"></span></summary>
+   <div id="hitlist" style="padding:12px;font-size:13px;color:var(--muted)"></div>
+  </details>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">Keine Treffer für die aktuellen Filter.</div>
+</main>
+
+<div class="drawer" id="drawer">
+  <h2>⚙︎ Einstellungen</h2>
+  <div id="settings"></div>
+  <button class="btn" onclick="saveConfig()">Speichern</button>
+  <button class="btn ghost" onclick="toggleDrawer()">Schließen</button>
+  <p class="note" id="cfgnote"></p>
+</div>
+
+<script src="data/signals.js"></script>
+<script src="data/pivot.js"></script>
+<script src="data/pivot_history.js"></script>
+<script src="data/top_setups.js"></script>
+<script src="data/config.js"></script>
+<script src="/assets/marktampel.js"></script>
+<script>
+// Geteilter Cloudflare-Worker-Proxy (identisch mit index.html/Dashboard) - fuer
+// die volle Minervini-Marktampel (assets/marktampel.js), damit der US-Chip
+// exakt dasselbe zeigt wie Startseite und Markets 360.
+const MTS_PROXY = 'https://mts-cors.miksch267.workers.dev/';
+const FAKT = [
+  ["stage2_trend","① Stage-2-Trend"],
+  ["relative_staerke","② Rel. Stärke"],
+  ["naehe_52w_hoch","③ Nähe Hoch"],
+  ["basis_konsolidierung","④ Basis/VCP"],
+  ["volumen_bestaetigung","⑤ Volumen"],
+  ["smart_money","⑦ Smart Money"],
+  ["cmf","⑧ CMF"],
+  ["quellen_konsens","⑥ Konsens"],
+  ["sektor_staerke","⑨ Branchenstärke"],
+  ["minervini_5080","⑩ 50/80-Regel"],
+  ["fundamental","⑪ Fundamental"],
+];
+let DATA=null, CONFIG=null, PIVOT=null, PIVOTMAP={}, PIVHIST=null;
+// Standard = die urspruengliche Aufgabe (aussichtsreichste Chart-/Volumen-Setups im
+// Minervini/Livermore-Stil): Pivot-Sortierung, nur scharfe Pivot-Setups, Earnings
+// raus, Smart-Money/CMF mitgerechnet, Stage-2/Volumen muessen gruen sein.
+// "Basis/VCP" bewusst NICHT mit im Standard (Test 2026-07-18: schraenkt am
+// staerksten ein, 14->8 Treffer bei sonst gleicher Kombi) - per Chip zuschaltbar.
+// "Branchenstaerke" bewusst NICHT als Pflicht-Filter (Test: 14->2, viel zu hart);
+// seit 2026-07-24 misst sie den Rang des SPDR-Sektor-ETFs am Gesamtmarkt
+// (scorer.py::f_sektor_staerke) und zaehlt mit Gewicht 8 in den Score.
+// Bewusst NICHT mit drin: onlyNew/hideDepot/multiSrc (das ist Depot-/Frische-Filterung,
+// nicht Teil der Chart-/Volumen-Fragestellung) - siehe Wiki-Absatz "Standard-Ansicht".
+let state={markt:"alle",minscore:0,sort:"pivot",suche:"",typen:new Set(),hideEarnings:true,onlyNew:false,hideDepot:false,pivotOnly:true,faktoren:new Set(["stage2_trend","volumen_bestaetigung"]),smOn:true,smW:15,cmfW:10,multiSrc:false,hideExtended:true,hideGap80:true,shortOn:false,hideMegaphone:false,cheatInclude:false,topOnly:false,onlyFocus:false,topSetups:false};
+// Anzeige-Label + Icon fuer die Quellen-Typen (rohe quelle_typ-Strings -> lesbar).
+const QUELLE_LABEL={markets360:"📊 Markets 360",trendscreener:"🧭 Trend-Screener"};
+function quelleLabel(typ){
+  if(QUELLE_LABEL[typ]) return QUELLE_LABEL[typ];
+  if(typ.startsWith("finviz:")) return "🌐 "+typ.slice(7);
+  if(typ.startsWith("mail:")) return "✉️ "+typ.slice(5);
+  return typ;
+}
+function effScore(t){
+  if(!state.smOn) return t.score;
+  const w=Object.assign({},DATA.gewichte||{},{smart_money:state.smW,cmf:state.cmfW});
+  let num=0,den=0;
+  for(const k in w){const f=t.faktoren[k]; if(f){num+=w[k]*f.wert; den+=w[k];}}
+  let sc=den? Math.round(num/den*1000)/10 : t.score;
+  // Marktampel-Daempfung ist kein gewichteter Faktor in t.faktoren, sondern ein
+  // multiplikativer Post-Pass (siehe scorer.py f_marktampel_dynamik) - muss hier
+  // separat nachgezogen werden, sonst verschwindet sie beim Smart-Money-Recompute.
+  const ma=t.marktampel;
+  if(ma&&ma.faktor<1) sc=Math.round(sc*ma.faktor*10)/10;
+  return sc;
+}
+function einstufFor(sc){
+  const s=DATA.schwellen||{kauf_kandidat:70,beobachten:50};
+  return sc>=s.kauf_kandidat?'Kauf-Kandidat':(sc>=s.beobachten?'Beobachten':'—');
+}
+
+/* ---- Cloud-Workflow-Trigger (GitHub Actions, von jedem Geraet nutzbar) ----
+   Eigener Token (nicht der Gist-Token): localStorage-Key gh_actions_token,
+   einmalig pro Geraet ein fine-grained GitHub-PAT mit "Actions: Read and
+   write" auf die drei Cloud-Repos. */
+const GH_ACTIONS_TOKEN_KEY='gh_actions_token';
+function ghActionsToken(){ return localStorage.getItem(GH_ACTIONS_TOKEN_KEY)||''; }
+function promptGhActionsToken(){
+  const t=prompt('GitHub-Token fuer Cloud-Scans (einmalig pro Geraet)\n\n'
+    +'Fine-grained Personal Access Token mit Berechtigung "Actions: Read and '
+    +'write" auf die drei Repos (signal-hub, minervini-markets-360, '
+    +'lokaler-trend-screener). Erstellen: github.com/settings/personal-access-tokens/new');
+  if(t){ localStorage.setItem(GH_ACTIONS_TOKEN_KEY,t.trim()); return t.trim(); }
+  return null;
+}
+async function triggerCloudWorkflow(owner,repo,workflowFile,btn,label){
+  let token=ghActionsToken();
+  if(!token){ token=promptGhActionsToken(); if(!token) return; }
+  const orig=btn?btn.textContent:null;
+  if(btn){ btn.disabled=true; btn.textContent='⏳ startet…'; }
+  try{
+    const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowFile}/dispatches`,{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+      body:JSON.stringify({ref:'main'})
+    });
+    if(r.status===204){
+      alert(`${label} gestartet — laeuft in der Cloud (kein Mac mini noetig), dauert je nach Umfang einige Minuten. Ergebnis erscheint automatisch beim naechsten Laden.`);
+    } else if(r.status===401||r.status===403){
+      localStorage.removeItem(GH_ACTIONS_TOKEN_KEY);
+      alert(`Token ungueltig oder ohne Rechte fuer ${owner}/${repo} (Status ${r.status}). Bitte neu einrichten — beim naechsten Klick erneut nach dem Token gefragt.`);
+    } else {
+      const txt=await r.text().catch(()=>'');
+      alert(`Fehler beim Starten (${r.status}): ${txt.slice(0,200)}`);
+    }
+  } catch(e){
+    alert('Netzwerkfehler beim Starten: '+e.message);
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent=orig; }
+  }
+}
+
+function getToken(){ return localStorage.getItem('sh_token')||''; }
+function promptToken(){
+  const t=prompt('Einmalig: Server-Token eingeben (steht in config.json → server.token):');
+  if(t){ localStorage.setItem('sh_token', t.trim()); return true; }
+  return false;
+}
+function apiHeaders(extra){
+  const tk=getToken();
+  return Object.assign({}, extra||{}, tk?{'X-Token':tk}:{});
+}
+async function ladeDaten(){
+  // 1) versuch ueber Server (frische Daten), 2) fallback signals.js (file://)
+  try{
+    const r=await fetch('data/signals.json',{cache:'no-store'});
+    if(r.ok){DATA=await r.json();return;}
+  }catch(e){}
+  DATA = window.SIGNAL_DATA || {treffer:[],erstellt:null,anzahl:0};
+}
+async function ladeConfig(){
+  try{
+    const r=await fetch('config.json',{cache:'no-store'});
+    if(r.ok){CONFIG=await r.json();return;}
+  }catch(e){}
+  CONFIG = window.APP_CONFIG || null;   // file://-Fallback
+}
+async function ladePivot(){
+  // 1) Server (frisch), 2) Fallback pivot.js (file://). Pivot-Linse ist optional:
+  // fehlt sie, bleiben Badges/Filter einfach leer.
+  try{
+    const r=await fetch('data/pivot.json',{cache:'no-store'});
+    if(r.ok){PIVOT=await r.json();}
+  }catch(e){}
+  if(!PIVOT) PIVOT = window.PIVOT_DATA || null;
+  PIVOTMAP={};
+  if(PIVOT&&PIVOT.treffer) PIVOT.treffer.forEach(p=>{ if(p.ticker) PIVOTMAP[p.ticker]=p; });
+}
+// Top-Setups: dieselbe winzige Zusammenfassung wie die Startseite
+// (Signal-Hub/data/top_setups.js, ~5 KB, vom Aggregator gebaut). Bringt dem
+// Signal-Hub die fehlende Price-Action-Dimension (pa_score je Ticker der
+// Schnittmenge Score≥70 ∧ ARMED/BREAKOUT ∧ pa_score>0), ohne die 5.7 MB
+// priceaction.js zu laden. Fehlt die Datei, bleiben Filter/Badge einfach leer.
+let TOPSET=null, TOPSETMAP={};
+async function ladeTopSetups(){
+  try{
+    const r=await fetch('data/top_setups.json',{cache:'no-store'});
+    if(r.ok){TOPSET=await r.json();}
+  }catch(e){}
+  if(!TOPSET) TOPSET = window.TOP_SETUPS || null;
+  TOPSETMAP={};
+  if(TOPSET&&TOPSET.setups) TOPSET.setups.forEach(s=>{ if(s.ticker) TOPSETMAP[s.ticker]=s; });
+}
+function istTopSetup(t){ return !!TOPSETMAP[t.ticker]; }
+let SCOREBT=null;
+async function ladeScoreBacktest(){
+  // Trefferquoten des Momentum-Scores (score_backtest.py schreibt sie taeglich
+  // nach dem Scorer-Lauf). Optional wie ladePivot(): fehlt die Datei (z.B. auf
+  // der Cloud-Version - das Score-Logbuch reift nur lokal), bleibt das Panel
+  // einfach ausgeblendet.
+  try{
+    const r=await fetch('data/score_backtest.json',{cache:'no-store'});
+    if(r.ok) SCOREBT=await r.json();
+  }catch(e){}
+  renderTrefferquoten();
+}
+function renderTrefferquoten(){
+  const box=document.getElementById('hitbox'), el=document.getElementById('hitlist'), cnt=document.getElementById('hitstand');
+  if(!box||!el) return;
+  if(!SCOREBT||!SCOREBT.ergebnis){ box.style.display='none'; return; }
+  const pm=v=>v==null?'–':`<span class="${v>0?'pos':v<0?'neg':''}">${v>0?'+':''}${v}</span>`;
+  let html='<table class="hittab"><tr><th>Tier</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th><th>Ø vs. Index</th><th>&gt; Index %</th></tr>';
+  let zeilen=0;
+  for(const tier of ['A','B']){
+    for(const hor of ['4W','8W','12W']){
+      const s=(SCOREBT.ergebnis[tier]||{})[hor];
+      if(!s||!s.n) continue;
+      zeilen++;
+      html+=`<tr><td>${tier==='A'?'A (Kauf-Kandidat)':'B (Beobachten)'}</td><td>${hor}</td><td>${s.n}</td>`
+        +`<td>${s.win==null?'–':s.win}</td><td>${pm(s.avg)}</td><td>${pm(s.median)}</td>`
+        +`<td>${pm(s.edge_idx_avg)}</td><td>${s.edge_idx_win==null?'–':s.edge_idx_win}</td></tr>`;
+    }
+  }
+  html+='</table>';
+  html+=`<p style="margin:8px 0 0;max-width:900px">${SCOREBT.hinweis||''}</p>`;
+  if(!zeilen){ box.style.display='none'; return; }
+  el.innerHTML=html;
+  if(cnt) cnt.textContent=`${SCOREBT.gewertet||0} Episoden · Stand ${(SCOREBT.erstellt||'').slice(0,10)}`;
+  box.style.display='';
+}
+async function ladePivotHistory(){
+  // Kompakte Tages-Historie (nur BREAKOUT/ARMED/CHEAT) fuer Leadership-Breadth,
+  // Score-Sparkline und Drop-Liste. Optional wie ladePivot() - fehlt sie, bleiben
+  // die drei Frueh-Indikatoren einfach leer.
+  try{
+    const r=await fetch('data/pivot_history.json',{cache:'no-store'});
+    if(r.ok){PIVHIST=await r.json();}
+  }catch(e){}
+  if(!PIVHIST) PIVHIST = window.PIVOT_HISTORY_DATA || null;
+}
+
+// Markt-Regime-Ampel: primaer aus signals.json (marktregime, vom Scorer je
+// Markt aus Index vs. MA50/MA200 + MA200-Richtung berechnet) - funktioniert
+// damit ueberall, auch auf der Pages-Version ohne erreichbaren Mac mini.
+// Bei 🔴 unterdrueckt notify.py die Push-Signale aus dem Markt. Der Live-VIX
+// vom 8080-Server bleibt ein reines Extra und wird nachgeladen, wenn
+// erreichbar; ohne marktregime-Daten (alte signals.json) greift weiter der
+// alte reine Server-Check.
+const REGIME_EMOJI={gruen:'🟢',gelb:'🟡',rot:'🔴',unbekannt:'⚪️'};
+const LIGHT2AMPEL={green:'gruen',yellow:'gelb',red:'rot',unknown:'unbekannt'};
+let VOLLEAMPEL=null;   // volle US-Minervini-Ampel (geteiltes assets/marktampel.js)
+function zeigeMarktRegime(vix){
+  // US zeigt die VOLLE Minervini-Ampel (identisch mit Startseite + Markets 360,
+  // sobald geladen); EU bleibt der einfache Index-vs-MA50/MA200-Check aus
+  // signals.json (es gibt keine volle EU-Ampel). Vor dem Laden der vollen
+  // Ampel greift als Erst-Paint das Server-Regime aus signals.json.
+  const el=document.getElementById('marktchip'); if(!el) return false;
+  const reg=(DATA&&DATA.marktregime)||{};
+  const teile=[],titel=[]; let klasse='green';
+  const setKlasse=a=>{ if(a==='rot')klasse='red'; else if(a!=='gruen'&&klasse!=='red')klasse='yellow'; };
+  if(VOLLEAMPEL && VOLLEAMPEL.light!=='unknown'){
+    const a=LIGHT2AMPEL[VOLLEAMPEL.light];
+    teile.push(`${REGIME_EMOJI[a]}US`);
+    titel.push(`USA (volle Minervini-Ampel): ${VOLLEAMPEL.emoji} ${VOLLEAMPEL.label} · ${VOLLEAMPEL.pct} % – ${VOLLEAMPEL.advice}`);
+    setKlasse(a);
+    if(vix==null && VOLLEAMPEL.sentiment && VOLLEAMPEL.sentiment.vix!=null) vix=VOLLEAMPEL.sentiment.vix;
+  } else if(reg.USA){
+    teile.push(`${REGIME_EMOJI[reg.USA.ampel]||'⚪️'}US`);
+    titel.push(`USA: ${reg.USA.detail||'?'} – ${reg.USA.hinweis||''}`);
+    setKlasse(reg.USA.ampel);
+  }
+  if(reg.Europa){
+    teile.push(`${REGIME_EMOJI[reg.Europa.ampel]||'⚪️'}EU`);
+    titel.push(`Europa: ${reg.Europa.detail||'?'} – ${reg.Europa.hinweis||''}`);
+    setKlasse(reg.Europa.ampel);
+  }
+  if(!teile.length) return false;
+  if(vix!=null) teile.push(`VIX ${Math.round(vix)}`);
+  el.className='markt-chip '+klasse;
+  el.textContent=teile.join(' · ');
+  el.title='US = volle Minervini-Marktampel (identisch mit Startseite & Markets 360), '
+    +'EU = Index vs. MA50/MA200 (aus signals.json):\n'+titel.join('\n')
+    +'\nBei 🔴 werden Push-Signale aus diesem Markt unterdrückt (config: marktregime).';
+  el.style.display='';
+  return true;
+}
+async function ladeVolleMarktampel(){
+  // Fire-and-forget: holt die volle US-Ampel client-seitig ueber den Worker
+  // (wie Startseite/Dashboard) und rendert den Chip neu. Faellt sie aus,
+  // bleibt der Erst-Paint aus signals.json stehen.
+  try{ if(window.MTSAmpel){ const ml=await MTSAmpel.berechne(MTS_PROXY); if(ml){ VOLLEAMPEL=ml; zeigeMarktRegime(); } } }catch(e){}
+}
+async function ladeMarktCheck(){
+  const el=document.getElementById('marktchip'); if(!el) return;
+  const hatRegime=zeigeMarktRegime();
+  const kandidaten=[];
+  if(location.hostname && location.hostname!=='localhost' && location.hostname!=='127.0.0.1') kandidaten.push(location.hostname);
+  kandidaten.push('Mac-mini-von-Maick.local','localhost');
+  const zeit=ms=>AbortSignal.timeout?AbortSignal.timeout(ms):(()=>{const c=new AbortController();setTimeout(()=>c.abort(),ms);return c.signal;})();
+  for(const host of kandidaten){
+    try{
+      const basis=`http://${host}:8080`;
+      if(hatRegime){
+        // Regime steht schon - nur noch VIX als Zusatzinfo nachladen.
+        const v=await fetch(`${basis}/markt/${encodeURIComponent('^VIX')}`,{signal:zeit(6000)}).then(r=>r.json());
+        if(typeof v.last!=='number') continue;
+        zeigeMarktRegime(v.last);
+        el.href=`${basis}/Minervini%20Dashboard.html`;
+        return;
+      }
+      const [g,v]=await Promise.all([
+        fetch(`${basis}/markt/${encodeURIComponent('^GSPC')}`,{signal:zeit(6000)}).then(r=>r.json()),
+        fetch(`${basis}/markt/${encodeURIComponent('^VIX')}`,{signal:zeit(6000)}).then(r=>r.json())
+      ]);
+      if(!Array.isArray(g.closes)||g.closes.length<50||typeof v.last!=='number') continue;
+      const ma=n=>g.closes.slice(-n).reduce((a,b)=>a+b,0)/Math.min(n,g.closes.length);
+      const ueber50=g.last>ma(50), ueber200=g.last>ma(200), vix=v.last;
+      const status=(ueber50&&ueber200&&vix<20)?'green':(!ueber200||vix>25)?'red':'yellow';
+      const hinweis=status==='red'?'Minervini: in einem schwachen Markt keine neuen Positionen eröffnen.'
+        :status==='yellow'?'Markt uneinheitlich – neue Ideen mit Vorsicht behandeln.'
+        :'Markt im Aufwärtstrend – gutes Umfeld für neue Käufe.';
+      el.className='markt-chip '+status;
+      el.textContent=`${status==='green'?'🟢':status==='red'?'🔴':'🟡'} S&P ${ueber50?'>':'<'}MA50 ${ueber200?'>':'<'}MA200 · VIX ${Math.round(vix)}`;
+      el.title=hinweis;
+      el.href=`${basis}/Minervini%20Dashboard.html`;
+      el.style.display='';
+      return;
+    }catch(e){}
+  }
+}
+function pivotInfo(t){ return PIVOTMAP[t.ticker]||null; }
+function tradeParams(t){
+  // Entry = Pivot, Stop = Basis-Tief aus dem Pivot-Detektor (nur wenn vorhanden
+  // und plausibel: Stop unter dem Pivot). Ohne Pivot-Daten bleibt der Trade-Link
+  // beim reinen Ticker+Quelle-Vorbefüllen wie bisher.
+  const p=pivotInfo(t); if(!p) return '';
+  let s='';
+  if(p.pivot>0) s+='&entry='+encodeURIComponent(p.pivot);
+  if(p.stop>0 && (!(p.pivot>0)||p.stop<p.pivot)) s+='&stop='+encodeURIComponent(p.stop);
+  return s;
+}
+function tradeTitle(t){
+  const lock=earnGesperrt(t)?`⚠️ Earnings-Sperre: Zahlen in ${t.earnings.tage} Tagen – Minervini rät vom Kauf kurz vor dem Termin ab. `:'';
+  const p=pivotInfo(t);
+  if(p&&p.pivot>0){
+    const stopTxt=(p.stop>0)?`, Stop = Basis-Tief ${p.stop}`:'';
+    return `${lock}Trade in der Hauptapp anlegen (Quelle = Signal-Hub) – Entry = Pivot ${p.pivot}${stopTxt} vorbefüllt`;
+  }
+  return `${lock}Trade in der Hauptapp anlegen (Quelle = Signal-Hub)`;
+}
+function istPivotSetup(t){
+  const p=pivotInfo(t); if(!p) return false;
+  if(p.pivot_status==='ARMED'||p.pivot_status==='BREAKOUT') return true;
+  return state.cheatInclude && p.pivot_status==='CHEAT';
+}
+function stopBadge(p){
+  // Stop knapp unterm letzten Basis-Tief (Minervini) - bewusst OHNE Kursziel/R:R,
+  // die Methode traded ohne festes Ziel (Trailen/Verkauf in Staerke statt Fixziel).
+  if(p.stop==null||p.stop_pct==null) return '';
+  return `<span class="badge-stop" title="Stop knapp unter dem letzten Basis-Tief bei ${p.stop} – kein Kursziel, da Minervini/Livermore ohne festes Ziel traden (Trailen/Verkauf in Stärke)">🛑 Stop ${p.stop} (-${p.stop_pct}%)</span>`;
+}
+function supplyTitle(p){
+  return p.supply_score!=null?` · Supply-Score ${p.supply_score} (1.0 = kaum Angebot oberhalb)`:'';
+}
+function pivotBadge(t){
+  const p=pivotInfo(t); if(!p) return '';
+  const mega=p.megaphone?' 🌀':'';
+  if(p.pivot_status==='BREAKOUT')
+    return `<span class="badge-brk" title="${(p.detail||'').replace(/"/g,'')}${supplyTitle(p)}">🚀 BREAKOUT ${p.vol_surge?p.vol_surge+'×':''}${mega}</span>${stopBadge(p)}`;
+  if(p.pivot_status==='ARMED')
+    return `<span class="badge-armed" title="${(p.detail||'').replace(/"/g,'')}${supplyTitle(p)}">🎯 ARMED q${Math.round(p.qualitaet||0)}${mega}</span>${stopBadge(p)}`;
+  if(p.pivot_status==='CHEAT')
+    return `<span class="badge-cheat" title="${(p.detail||'').replace(/"/g,'')} – unvalidierte Heuristik, klein positionieren">⚡ CHEAT q${Math.round(p.qualitaet||0)}</span>`;
+  return '';
+}
+function sparkline(ticker){
+  // Score-Verlauf der letzten Tage (nur BREAKOUT/ARMED/CHEAT werden ueberhaupt
+  // getrackt, siehe pivot_screener.py::aktualisiere_history). Reines CSS, keine
+  // externe Lib (Single-File-App-Prinzip).
+  const h=PIVHIST&&PIVHIST.ticker&&PIVHIST.ticker[ticker]; if(!h) return '';
+  const farbe={BREAKOUT:'#ff8c7a',ARMED:'#f4b350',CHEAT:'#c9a0dc'};
+  const tage=Object.keys(h.tage).sort().slice(-10);
+  if(tage.length<2) return '';
+  const balken=tage.map(d=>`<i style="background:${farbe[h.tage[d]]||'#33485f'}" title="${d}: ${h.tage[d]}"></i>`).join('');
+  return `<span class="spark" title="Pivot-Status-Verlauf der letzten ${tage.length} Tage">${balken}</span>`;
+}
+function persistenzTage(ticker){
+  // Anzahl im 15-Tage-Fenster erfasster Tage, an denen der Ticker BREAKOUT/
+  // ARMED/CHEAT war (siehe pivot_screener.py::aktualisiere_history) - bewusst
+  // die Gesamtzahl, keine lueckenlose Serie: einfache, robuste Naeherung fuer
+  // "wie lange zeigt dieser Ticker schon Fuehrungsstaerke".
+  const h=PIVHIST&&PIVHIST.ticker&&PIVHIST.ticker[ticker];
+  return h?Object.keys(h.tage).length:0;
+}
+function topScore(t){
+  // Kombi-Score fuer den "Top of the Day"-Modus: Pivot-Qualitaet (0.5) +
+  // Branchenstaerke (0.3) + Multi-Quellen-Bestaetigung (0.2). Nur ARMED/
+  // BREAKOUT/CHEAT-Treffer haben ueberhaupt eine Pivot-Qualitaet - der Modus
+  // ist bewusst auf scharfe Chart-Setups ausgelegt, nicht auf reine Score-Werte.
+  const p=pivotInfo(t);
+  const pivotQ=p?(p.qualitaet||0)/100:0;
+  const branche=t.faktoren.sektor_staerke?.wert||0;
+  const quellenBoost=Math.min((t.quellen.unabhaengig||[]).length,3)/3;
+  return 0.5*pivotQ + 0.3*branche + 0.2*quellenBoost;
+}
+function berechneBreadth(){
+  if(!PIVHIST||!PIVHIST.ticker) return null;
+  const alleDaten=new Set();
+  Object.values(PIVHIST.ticker).forEach(e=>Object.keys(e.tage).forEach(d=>alleDaten.add(d)));
+  const sorted=[...alleDaten].sort();
+  if(!sorted.length) return null;
+  const juengstes=sorted[sorted.length-1];
+  const grenzVorWoche=new Date(juengstes); grenzVorWoche.setDate(grenzVorWoche.getDate()-7);
+  const vorWocheDatum=grenzVorWoche.toISOString().slice(0,10);
+  const vorWoche=[...sorted].filter(d=>d<=vorWocheDatum).pop() || sorted[0];
+  const zaehl=(d)=>Object.values(PIVHIST.ticker).filter(e=>e.tage[d]).length;
+  return {heute:zaehl(juengstes),vorWoche:zaehl(vorWoche),datumHeute:juengstes,datumVorWoche:vorWoche};
+}
+function renderBreadth(){
+  const el=document.getElementById('breadth'); if(!el) return;
+  const b=berechneBreadth();
+  if(!b){el.textContent='';return;}
+  const delta=b.heute-b.vorWoche;
+  const pfeil=delta>0?'↑':delta<0?'↓':'→';
+  el.textContent=`🎯 ${b.heute} aktive Setups (vor 7T: ${b.vorWoche} · ${pfeil})`;
+}
+function berechneDropListe(){
+  if(!PIVHIST||!PIVHIST.ticker) return [];
+  const alleDaten=new Set();
+  Object.values(PIVHIST.ticker).forEach(e=>Object.keys(e.tage).forEach(d=>alleDaten.add(d)));
+  const sorted=[...alleDaten].sort();
+  if(sorted.length<2) return [];
+  const heute=sorted[sorted.length-1], gestern=sorted[sorted.length-2];
+  const out=[];
+  Object.entries(PIVHIST.ticker).forEach(([ticker,e])=>{
+    const g=e.tage[gestern];
+    if(g&&(g==='ARMED'||g==='BREAKOUT')&&!e.tage[heute]){
+      out.push({ticker,name:e.name,markt:e.markt,letzterStatus:g,seit:gestern});
+    }
+  });
+  return out;
+}
+function renderDropListe(){
+  const box=document.getElementById('dropbox'), listEl=document.getElementById('droplist'), cnt=document.getElementById('dropcount');
+  if(!box||!listEl) return;
+  const drops=berechneDropListe();
+  if(cnt) cnt.textContent=drops.length?`(${drops.length})`:'';
+  if(!drops.length){ box.style.display='none'; listEl.innerHTML=''; return; }
+  box.style.display='';
+  listEl.innerHTML=drops.map(d=>{
+    const label=d.letzterStatus==='BREAKOUT'?'🚀 war BREAKOUT':'🎯 war ARMED';
+    return `<div style="padding:4px 0;border-bottom:1px solid var(--line)"><strong>${d.ticker}</strong> ${d.name?`<span style="color:var(--muted)">– ${d.name}</span>`:''} · ${label} (bis ${d.seit})</div>`;
+  }).join('');
+}
+
+function alleTypen(){
+  const s=new Set();
+  (DATA.treffer||[]).forEach(t=>(t.quellen.typen||[]).forEach(x=>s.add(x)));
+  return [...s].sort();
+}
+function flagge(m){return m==="USA"?"🇺🇸":m==="Europa"?"🇪🇺":"🏳️";}
+function einstufKlasse(e){return e==="Kauf-Kandidat"?"e-kauf":e==="Beobachten"?"e-beob":"e-na";}
+function scoreColor(s){return s>=70?"var(--ok)":s>=50?"var(--warn)":"var(--muted)";}
+
+function updateFilterCount(treffer){
+  const el=document.getElementById('filtercount'); if(!el) return;
+  let n=0;
+  if(state.markt!=="alle")n++; if(state.minscore>0)n++; if(state.suche)n++;
+  if(state.typen.size)n++; if(state.faktoren.size)n++;
+  if(state.hideEarnings)n++; if(state.onlyNew)n++; if(state.hideDepot)n++; if(state.smOn)n++; if(state.hideExtended)n++; if(state.hideGap80)n++;
+  if(state.pivotOnly)n++; if(state.multiSrc)n++; if(state.hideMegaphone)n++; if(state.cheatInclude)n++; if(state.topOnly)n++; if(state.onlyFocus)n++; if(state.topSetups)n++;
+  // Treffer-Zahl IMMER sichtbar (auch bei 0 aktiven Filtern), damit man sie beim
+  // Zu-/Abwaehlen einzelner Filter direkt neben der Ueberschrift mitverfolgen kann,
+  // ohne den Filterbereich aufklappen oder zur Kopfzeile hochscrollen zu muessen.
+  el.textContent=`· ${treffer} Treffer${n?` · ${n} Filter aktiv`:''}`;
+  const pc=document.getElementById('pivotcount');
+  if(pc){const z=(PIVOT&&PIVOT.zaehler)||{};const a=z.ARMED||0,b=z.BREAKOUT||0;
+    pc.textContent=(a+b)?`· ${b}🚀 ${a}🎯`:'';}
+  const tc=document.getElementById('topsetcount');
+  if(tc){const nS=TOPSET&&TOPSET.setups?TOPSET.setups.length:0;tc.textContent=nS?`· ${nS}`:'';}
+}
+function render(){
+  let list=(DATA.treffer||[]).slice();
+  if(state.markt!=="alle") list=list.filter(t=>t.markt===state.markt);
+  list=list.filter(t=>effScore(t)>=state.minscore);
+  if(state.suche){const q=state.suche.toLowerCase();
+    list=list.filter(t=>t.ticker.toLowerCase().includes(q)||(t.name||'').toLowerCase().includes(q));}
+  if(state.typen.size) list=list.filter(t=>(t.quellen.typen||[]).some(x=>state.typen.has(x)));
+  if(state.hideEarnings) list=list.filter(t=>!(t.earnings&&t.earnings.tage!=null&&t.earnings.tage>=0&&t.earnings.tage<=warnTage()));
+  if(state.hideExtended) list=list.filter(t=>!(t.extended_pct!=null&&t.extended_pct>=25));
+  if(state.hideGap80) list=list.filter(t=>!t.minervini_5080);
+  if(state.onlyNew) list=list.filter(t=>t.neu);
+  if(state.hideDepot) list=list.filter(t=>!t.im_depot);
+  if(state.multiSrc) list=list.filter(t=>(t.quellen.unabhaengig||[]).length>=2);
+  if(state.onlyFocus) list=list.filter(t=>aufFokusliste(t.ticker));
+  if(state.topSetups) list=list.filter(istTopSetup);
+  if(state.pivotOnly) list=list.filter(istPivotSetup);
+  if(state.hideMegaphone) list=list.filter(t=>{const p=pivotInfo(t);return !(p&&p.pivot_status==='ARMED'&&p.megaphone);});
+  // "nur Top-Setups" umgeht die Faktor-Pflicht bewusst: das Set ist bereits
+  // dreifach kuratiert (Score≥70 ∧ ARMED/BREAKOUT ∧ PA>0), und der Default
+  // "Volumen muss gruen" widerspraeche ARMED sogar direkt (die brauchen
+  // Volumen-AUSTROCKNUNG, keinen -Schub) - sonst waere die Ansicht fast leer.
+  if(state.faktoren.size && !state.topSetups) list=list.filter(t=>{
+    // Cheat-Pivots sind per Definition VOR dem vollen Stage-2-Template (siehe
+    // pivot.py::_cheat_pivot) - der Pflicht-"gruen"-Check wuerde sie sonst
+    // grundsaetzlich ausschliessen, auch wenn "Cheat-Pivots einschliessen" an ist.
+    const p=pivotInfo(t);
+    if(state.cheatInclude && p && p.pivot_status==='CHEAT') return true;
+    return [...state.faktoren].every(k=>t.faktoren[k]&&t.faktoren[k].ampel==='gruen');
+  });
+
+  const meta=document.getElementById('meta');
+  const d=DATA.erstellt?new Date(DATA.erstellt):null;
+  const s=DATA.status||{};
+  const ok=(v)=>v?'':'⚠️';
+  const statusTxt=DATA.status?` · Quellen: PDF ${ok(s.pdf)}${s.pdf||0} · Mail ${ok(s.mail)}${s.mail||0} · Finviz ${ok(s.finviz)}${s.finviz||0} · Markets360 ${ok(s.markets360)}${s.markets360||0} · Trend-Screener ${ok(s.trendscreener)}${s.trendscreener||0} · EU-Earnings ${s.yahoo_eu==='ok'?'✅':'⚠️ '+s.yahoo_eu}`:'';
+  // Mobil: kurze Meta-Zeile (nur Anzahl + Uhrzeit); Quellen-Details nur am Desktop.
+  const mob=window.innerWidth<=600;
+  const stand=d?(mob?d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):d.toLocaleString('de-DE')):'—';
+  // Gefilterte Treffer IMMER prominent zeigen (nicht nur die Gesamtzahl), damit
+  // sofort sichtbar ist, wie viel die aktuelle Filterkombination uebrig laesst.
+  const treffertxt=state.topOnly?`🏆 Top ${Math.min(5,list.length)} von ${list.length} Treffern`
+    :list.length===(DATA.anzahl||0)?`${DATA.anzahl||0} Treffer`:`${list.length} von ${DATA.anzahl||0} Treffern`;
+  meta.textContent=mob?`${treffertxt} · ${stand}`:`${treffertxt} · Stand ${stand}${statusTxt}`;
+  updateFilterCount(list.length);
+
+  if(state.sort==="konsens") list.sort((a,b)=>b.quellen.ausgaben-a.quellen.ausgaben||b.score-a.score);
+  else if(state.sort==="naehe") list.sort((a,b)=>b.faktoren.naehe_52w_hoch.wert-a.faktoren.naehe_52w_hoch.wert);
+  else if(state.sort==="pivot"){const pr={BREAKOUT:2,ARMED:1};const pq=t=>{const p=pivotInfo(t);return p?((pr[p.pivot_status]||0)*1000+(p.qualitaet||0)):-1;};list.sort((a,b)=>pq(b)-pq(a)||(b.quellen.unabhaengig||[]).length-(a.quellen.unabhaengig||[]).length||effScore(b)-effScore(a));}
+  else if(state.sort==="top") list.sort((a,b)=>topScore(b)-topScore(a)||effScore(b)-effScore(a));
+  else if(state.sort==="branche") list.sort((a,b)=>(b.faktoren.sektor_staerke?.wert||0)-(a.faktoren.sektor_staerke?.wert||0)||effScore(b)-effScore(a));
+  else if(state.sort==="persistenz") list.sort((a,b)=>persistenzTage(b.ticker)-persistenzTage(a.ticker)||effScore(b)-effScore(a));
+  else if(state.sort==="alpha") list.sort((a,b)=>a.ticker.localeCompare(b.ticker));
+  else list.sort((a,b)=>effScore(b)-effScore(a)||(b.quellen.unabhaengig||[]).length-(a.quellen.unabhaengig||[]).length);
+  if(state.topOnly) list=list.slice(0,5);
+
+  const grid=document.getElementById('grid');
+  document.getElementById('empty').style.display=list.length?'none':'block';
+  grid.innerHTML=list.map((t,i)=>karte(t,i+1)).join('');
+  // Desktop: Chart+Faktoren je Kachel offen zeigen; mobil eingeklappt (kompakte Liste).
+  if(window.innerWidth>700) grid.querySelectorAll('details.cardchart').forEach(d=>d.open=true);
+  renderBreadth();
+  renderDropListe();
+}
+
+function minichart(ch){
+  // Seit 2026-07-24 Kerzenchart (gleiche Darstellung/Farben wie im
+  // Price-Action-Hub, candlechart()) + weiterhin SMA50/150/200 und Volumen.
+  // Faellt auf die alte Linien-Variante zurueck, wenn o/h/l im Chart-Block
+  // fehlen (aeltere signals.js, z.B. auf Pages bis zum naechsten Cloud-Lauf).
+  if(!ch||!ch.c||ch.c.length<3) return '';
+  const W=300,H=96,volH=22,pad=3,pH=H-volH-2;
+  const c=ch.c, v=ch.v||[], n=c.length;
+  const kerzen=!!(ch.o&&ch.h&&ch.l&&ch.o.length===n);
+  let lo=Infinity,hi=-Infinity;
+  [kerzen?ch.h:c,kerzen?ch.l:null,c,ch.s50,ch.s150,ch.s200].forEach(a=>{ if(a) a.forEach(x=>{ if(x!=null){ if(x<lo)lo=x; if(x>hi)hi=x; }});});
+  const rng=(hi-lo)||1;
+  const X=i=>pad+i*(W-2*pad)/(n-1);
+  const Y=val=>pad+(pH-2*pad)*(1-(val-lo)/rng);
+  const linie=(a,col,wd)=>{ if(!a) return '';
+    let d='',an=false;
+    a.forEach((val,i)=>{ if(val==null){an=false;return;} d+=(an?'L':'M')+X(i).toFixed(1)+' '+Y(val).toFixed(1)+' '; an=true; });
+    return d?`<path d="${d}" fill="none" stroke="${col}" stroke-width="${wd}" stroke-linejoin="round"/>`:'';
+  };
+  const vmax=Math.max(...v,1), bw=Math.max(1,W/n*(kerzen?0.62:0.72));
+  let vol='';
+  v.forEach((val,i)=>{ const bh=Math.max(0.4,(val/vmax)*volH); vol+=`<rect x="${(X(i)-bw/2).toFixed(1)}" y="${(H-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="#33485f"/>`; });
+  let preis='';
+  if(kerzen){
+    for(let i=0;i<n;i++){
+      if(ch.o[i]==null||ch.h[i]==null||ch.l[i]==null||c[i]==null) continue;
+      const up=c[i]>=ch.o[i], col=up?'#2FB08D':'#E74C3C', x=X(i);
+      const yO=Y(ch.o[i]), yC=Y(c[i]);
+      const bodyTop=Math.min(yO,yC), bodyH=Math.max(1,Math.abs(yC-yO));
+      preis+=`<line x1="${x.toFixed(1)}" y1="${Y(ch.h[i]).toFixed(1)}" x2="${x.toFixed(1)}" y2="${Y(ch.l[i]).toFixed(1)}" stroke="${col}" stroke-width="1"/>`
+        +`<rect x="${(x-bw/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${bodyH.toFixed(1)}" fill="${col}"/>`;
+    }
+  } else {
+    preis=linie(c,'#eaf2fb',1.7);
+  }
+  return `<div class="chart" title="6 Monate · ${kerzen?'Kerzen':'Kurs'} + SMA50/150/200 + Volumen"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+    +vol
+    +linie(ch.s200,'#E74C3C',1)
+    +linie(ch.s150,'#F39C12',1)
+    +linie(ch.s50,'#3b9ae1',1)
+    +preis
+    +`</svg></div>`;
+}
+
+function earnText(t){
+  const e=t.earnings; if(!e) return '—';
+  if(e.status==='termin') return `${e.tage}T (${e.datum})`;
+  if(e.status==='kein_termin') return 'kein Termin im Fenster';
+  return 'unbekannt';
+}
+function warnTage(){ return (CONFIG&&CONFIG.earnings&&CONFIG.earnings.warn_tage)||10; }
+function earnBald(t){
+  const e=t.earnings;
+  return !!(e && e.status==='termin' && e.tage!=null && e.tage>=0 && e.tage<=warnTage());
+}
+function earnGesperrt(t){
+  // Minervini: nicht kurz vor Quartalszahlen kaufen. Ein Kauf-Kandidat (Tier A)
+  // mit Earnings im Warnfenster wird sichtbar GESPERRT – nicht nur (wie bisher)
+  // aus dem Push genommen. Greift auf den effektiven Score (inkl. Smart Money,
+  // falls eingerechnet), damit die Sperre zur angezeigten Einstufung passt.
+  const kauf=(DATA.schwellen||{kauf_kandidat:70}).kauf_kandidat;
+  return effScore(t)>=kauf && earnBald(t);
+}
+function earnBadge(t){
+  const e=t.earnings; if(!e) return '';
+  if(e.status==='termin' && e.tage!=null && e.tage>=0)
+    return `<span class="earn ${e.tage<=warnTage()?'earn-warn':''}">📅 Earnings ${e.tage}T · ${e.datum||''}</span>`;
+  if(e.status==='unbekannt')
+    return `<span class="earn" title="Keine Earnings-Quelle erreichbar – NICHT als 'keine Zahlen' werten">📅 Earnings: unbekannt</span>`;
+  return ''; // kein_termin: geprüft, nichts im Fenster
+}
+function basisBadge(t){
+  // Minervini: 1./2. Basis am risikoaermsten, ab der 3. Basis Vorsicht, ab der
+  // 5. Basis erhoehte Klimax-Gefahr. Grobe Naeherung (basis_anzahl() in scorer.py) -
+  // deshalb nur als Hinweis-Badge ab Basis 3, nicht als Ausschlusskriterium.
+  const n=t.basis_nr; if(n==null||n<3) return '';
+  const spaet=n>=5;
+  return `<span class="basisb${spaet?' basisb-spaet':''}" title="Naeherungsweise ${n}. Basis seit dem letzten 52-Wochen-Tief (grobe Heuristik) – Minervini: ab der 3. Basis erhoehte Vorsicht, ab der 5. Basis Klimax-Risiko">🧱 ${n}. Basis${spaet?' ⚠️':''}</span>`;
+}
+function extendedBadge(t){
+  // Minervini-Standardtest "zu weit gelaufen": Abstand zur SMA50. Ab 25% Vorsicht
+  // (kein Nachkauf mehr), ab 50% hohe Klimax-/Ruecksetzergefahr. Rein informativ.
+  const p=t.extended_pct; if(p==null||p<25) return '';
+  const hoch=p>=50;
+  return `<span class="extb${hoch?' extb-hoch':''}" title="Kurs ${p.toFixed(0)}% über der SMA50 – Minervini: zu weit gelaufen, kein Nachkauf mehr (ggf. Gewinne sichern statt jagen)">📈 Extended +${p.toFixed(0)}%${hoch?' ⚠️':''}</span>`;
+}
+function gap80Badge(t){
+  // Minervini 50/80-Regel: Gap-down auf hohem Volumen -> hohe Wahrscheinlichkeit
+  // eines neuen Tiefs in den folgenden ~8 Monaten. Badge blendet ueber das
+  // Fenster (fenster_handelstage) linear aus, akut (<=8 Wochen) rot & fett.
+  const g=t.minervini_5080; if(!g) return '';
+  const akut=g.handelstage_seit<=40;
+  const restwochen=Math.max(0,Math.round((g.fenster_handelstage-g.handelstage_seit)/5));
+  const opacity=Math.max(.45,1-.6*g.handelstage_seit/g.fenster_handelstage).toFixed(2);
+  return `<span class="gap80${akut?' gap80-akut':''}" style="opacity:${opacity}" title="Gap ${g.gap_pct}% auf ${g.vol_ratio}x Volumen vor ${g.wochen_seit} Wochen – Minervini 50/80: erhöhtes Risiko eines neuen Tiefs, noch ~${restwochen} Wochen Vorsicht">⛔ 50/80: ${g.gap_pct}% vor ${g.wochen_seit}W${akut?' ⚠️':''}</span>`;
+}
+function klimaxBadge(t){
+  // Kombiniert zwei bestehende Signale (Minervini-Topmuster): spaete Basis
+  // (>=3, basis_anzahl()) UND frischer 50/80-Gap-down gleichzeitig.
+  if(!t.klimax_warnung) return '';
+  return `<span class="klimaxb" title="Späte Basis (${t.basis_nr}.) + frischer 50/80-Gap-down zusammen – Minervini-Topmuster, höchste Vorsichtsstufe">🔥 Klimax-Risiko</span>`;
+}
+function shortBadge(t){
+  // Optionaler Zusatz-Layer (nur informativ): Gap-down UND Kurs unter allen
+  // drei SMAs (50/150/200) - Minervinis zweite Verwendung der 50/80-Regel.
+  if(!t.short_kandidat||!t.minervini_5080) return '';
+  return `<span class="shortb" title="Kurs unter SMA50/150/200 nach 50/80-Gap-down – Minervini nutzt dieses Muster auch als Short-Signal">🩳 Short-Setup</span>`;
+}
+function fundamentalBadge(t){
+  // Kein neuer Datenabruf: der Finviz-Screener "Minervini SEPA" filtert schon
+  // hart auf fa_epsqoq_o20,fa_salesqoq_o20 (EPS-/Umsatzwachstum je >20% QoQ) -
+  // ein Treffer aus dieser Quelle hat das Kriterium nachweislich erfuellt.
+  // Reines Pass/Fail-Gate, keine exakte Zahl (die liegt uns nicht vor).
+  if(!(t.quellen.typen||[]).includes('finviz:Minervini SEPA')) return '';
+  return `<span class="fundb" title="Über den Finviz-SEPA-Screener gefunden: EPS- und Umsatzwachstum je über 20% (QoQ) – Minervinis fundamentale Bestätigung, kein Score-Faktor">📊 EPS/Sales +20%</span>`;
+}
+function paBadge(t){
+  // Price-Action-Bestaetigung aus dem Price-Action-Hub (pa_score, nur fuer
+  // Ticker der Top-Setup-Schnittmenge in top_setups.js vorhanden). Macht die
+  // dritte Dimension - das Chartbild - direkt im Signal-Hub sichtbar. Klick
+  // oeffnet den Price-Action-Hub. Fehlt top_setups.js, kein Badge.
+  const s=TOPSETMAP[t.ticker]; if(!s||s.pa_score==null||s.pa_score<=0) return '';
+  return `<a class="badge-pa" href="../Price-Action-Hub/price-action-hub.html" target="_blank" title="Price-Action-Hub: bullisches Chartbild (PA-Score ${s.pa_score>0?'+':''}${s.pa_score}) – Trendbar/Bar-Counting/Breakout/Gap bestätigen das Setup. Teil der Top-Setup-Schnittmenge.">📐 PA ${s.pa_score>0?'+':''}${s.pa_score}</a>`;
+}
+// ── Fokusliste-Verknuepfung mit der SEPA-Analyse (Hauptapp) ──────────────
+// Bewusst KEIN eigenes Watchlist-Feature (Entflechtung): die SEPA-Analyse
+// lebte bis zur Zusammenführung im Coach (minervini-coach-2.html), jetzt in
+// "Maick's Trading System.html" (Risk-Management-Tab) - deren Watchlist liegt
+// in localStorage['mts_v2'].watchlist. Beide Apps laufen unter derselben
+// Origin (8090-Proxy/Tailscale/Cloudflare Pages) - Signal-Hub liest sie nur
+// lesend mit, ohne eigene Datenhaltung.
+function coachWatchlist(){
+  try{ const d=JSON.parse(localStorage.getItem('mts_v2')||'{}'); return d.watchlist||[]; }catch(e){ return []; }
+}
+function aufFokusliste(ticker){
+  return coachWatchlist().some(w=>w.ticker===ticker);
+}
+function fokuslisteBadge(t){
+  if(!aufFokusliste(t.ticker)) return '';
+  return `<span class="focusb" title="Bereits auf deiner Fokusliste (SEPA-Analyse in der Hauptapp)">⭐ Fokusliste</span>`;
+}
+
+function karte(t,rang){
+  const sc=effScore(t);
+  const eins=state.smOn?einstufFor(sc):t.einstufung;
+  const fac=FAKT.map(([k,lbl])=>{
+    const f=t.faktoren[k]; if(!f) return ''; // altes Datenfile ohne diesen Faktor -> Balken auslassen
+    const pct=Math.round(f.wert*100);
+    return `<div class="fac" title="${lbl}: ${f.detail} (Gewicht ${f.gewicht})">
+      ${lbl.slice(0,1)}<div class="bar"><i class="b-${f.ampel}" style="width:${pct}%"></i></div></div>`;
+  }).join('');
+  const typen=(t.quellen.typen||[]).map(x=>`<span class="srcbadge">${quelleLabel(x)}</span>`).join('');
+  const nUnabh=(t.quellen.unabhaengig||[]).length;
+  const konsensBadge=nUnabh>=2?`<span class="badge-multisrc" title="${nUnabh} unabhängige Quellen bestätigen diesen Ticker">🔗 ${nUnabh}× bestätigt</span>`:'';
+  const ma=t.marktampel;
+  const maBadge=(ma&&ma.faktor<1)?`<span class="badge-daempfung-${ma.ampel}" title="${ma.hinweis||''} Score gedämpft ×${ma.faktor} wegen Marktampel ${ma.ampel==='rot'?'🔴':'🟡'} (${t.markt}).">${ma.ampel==='rot'?'🔴':'🟡'} Markt ×${ma.faktor}</span>`:'';
+  const tvSym=encodeURIComponent(t.ticker);
+  const sekt=[t.sektor,t.branche].filter(Boolean).join(' · ');
+  const gesperrt=earnGesperrt(t);
+  const einsDisp=gesperrt?'🔒 Earnings-Sperre':eins;
+  const einsCls=gesperrt?'e-locked':einstufKlasse(eins);
+  const einsTitle=gesperrt?`Minervini: nicht kurz vor Quartalszahlen kaufen – Kauf-Kandidat gesperrt bis nach dem Earnings-Termin (in ${t.earnings.tage} Tagen, ${t.earnings.datum||''}). Der Filter „Earnings ausblenden“ nimmt solche Werte ganz aus der Liste.`:'';
+  return `<div class="card${t.neu?' neu':''}${gesperrt?' locked':''}">
+    <div class="crow">
+      <span class="rank">#${rang}</span>
+      <div>
+        <div class="tick">${t.neu?'⭐ ':''}${t.ticker} <span style="font-size:13px">${flagge(t.markt)}</span></div>
+        <div class="name">${t.name||''}</div>
+        ${sekt?`<div class="sect">${sekt}</div>`:''}
+        <div class="px">${t.preis} ${t.currency||''} · ${t.exchange||''}</div>
+      </div>
+      <div class="scorebox">
+        <div class="score" style="color:${scoreColor(sc)}">${sc}${state.smOn?' <span style="font-size:11px" title="inkl. Smart Money/CMF">💰</span>':''}</div>
+        <span class="einstuf ${einsCls}" title="${einsTitle}">${einsDisp}</span>
+        ${state.smOn?`<div class="muted2" style="font-size:9px">Basis ${t.score}</div>`:''}
+      </div>
+    </div>
+    <details class="cardchart">
+      <summary class="cardchart-sum">📈 Chart &amp; Faktoren</summary>
+      ${minichart(t.chart)}
+      <div class="factors">${fac}</div>
+    </details>
+    <div class="srcrow"><span>📚 ${t.quellen.ausgaben} Ausgaben</span>${typen}
+      ${konsensBadge}${maBadge}
+      ${pivotBadge(t)}${paBadge(t)}${sparkline(t.ticker)}
+      ${t.neu?'<span class="badge-neu">⭐ NEU</span>':''}
+      ${(t.faktoren.smart_money&&t.faktoren.smart_money.ampel==='gruen')?`<span class="badge-sm" title="${t.faktoren.smart_money.detail}">💰 Akkumulation</span>`:''}
+      ${t.im_depot?'<span class="badge-depot">📌 im Depot</span>':''}
+      ${fokuslisteBadge(t)}
+      ${fundamentalBadge(t)}
+      ${basisBadge(t)}
+      ${extendedBadge(t)}
+      ${gap80Badge(t)}
+      ${klimaxBadge(t)}
+      ${state.shortOn?shortBadge(t):''}
+      ${t.quellen.zuletzt?`<span>· zuletzt ${t.quellen.zuletzt}</span>`:''}
+      ${earnBadge(t)}</div>
+    ${t.quellen.kontext?`<div class="ctx">„${t.quellen.kontext}“</div>`:''}
+    <div class="links">
+      <a href="https://www.tradingview.com/chart/?symbol=${tvSym}" target="_blank">📊 TradingView</a>
+      <a href="https://finviz.com/quote.ashx?t=${encodeURIComponent(t.ticker.split('.')[0])}" target="_blank">Finviz</a>
+      <a href="https://finance.yahoo.com/quote/${encodeURIComponent(t.yahoo_symbol)}" target="_blank">Yahoo</a>
+      ${location.protocol.startsWith('http')?`<a href="${location.protocol}//${location.hostname}:8090/${encodeURI("Maick's Trading System.html")}?ticker=${encodeURIComponent((t.yahoo_symbol||t.ticker||'').trim())}" target="_blank" title="Startet direkt die SEPA-Analyse für diesen Ticker in der Hauptapp (Risk-Management-Tab) – bei Bestätigung dort mit einem Klick zur Fokusliste hinzufügen">🔍 SEPA-Analyse</a>`:''}
+      ${location.protocol.startsWith('http')?`<a href="${location.protocol}//${location.hostname}:8090/${encodeURI("Maick's Trading System.html")}?neuerTrade=${encodeURIComponent(t.ticker)}&quelle=Signal-Hub${tradeParams(t)}" target="_blank" title="${tradeTitle(t)}">📈 Trade</a>`:''}
+    </div>
+    <details class="more">
+      <summary>Details</summary>
+      <div class="moregrid">
+        ${FAKT.map(([k,lbl])=>{const f=t.faktoren[k]; if(!f) return '';
+          return `<div><b>${lbl}</b> · ${Math.round(f.wert*100)}% <span class="dot d-${f.ampel}"></span>`
+            +`<br><span class="muted2">${f.detail} (Gew. ${f.gewicht})</span></div>`;}).join('')}
+      </div>
+      <div class="muted2">Markt: ${t.markt} · ${t.exchange||''} · ${t.preis} ${t.currency||''}
+        ${sekt?' · '+sekt:''} · Tier ${t.tier||''}${t.earnings?' · Earnings: '+earnText(t):''}</div>
+      ${t.quellen.kontext?`<div class="ctxfull">„${t.quellen.kontext}“</div>`:''}
+    </details>
+  </div>`;
+}
+
+/* ---- Einstellungen ---- */
+function renderSettings(){
+  const box=document.getElementById('settings');
+  const note=document.getElementById('cfgnote');
+  if(!CONFIG){
+    box.innerHTML='';
+    note.textContent='Einstellungen sind nur über den lokalen Server editierbar (Phase 6). '
+      +'Solange direkt in config.json ändern.';
+    return;
+  }
+  const g=CONFIG.score_gewichte, b=CONFIG.benachrichtigung, m=CONFIG.mail_signal_gewichte||{};
+  const fv=(CONFIG.quellen&&CONFIG.quellen.finviz)||{};
+  const mailKeys=Object.keys(m).filter(k=>!k.startsWith('_')&&k!=='aktiv');
+  box.innerHTML=`
+    <div class="field"><label>Benachrichtigungszeiten (HH:MM, Komma-getrennt)</label>
+      <input id="cfg_zeiten" value="${(b.zeiten||[]).join(', ')}"></div>
+    <div class="field"><label>ntfy-Thema (Push aufs Handy)</label>
+      <input id="cfg_ntfy" value="${b.ntfy_thema||''}"></div>
+    <div class="field"><label>Min-Score für Push</label>
+      <input id="cfg_pushmin" type="number" value="${b.min_score_fuer_push}"></div>
+    <h2 style="font-size:13px;margin:16px 0 8px">Faktor-Gewichte</h2>
+    ${Object.entries(g).map(([k,v])=>`<div class="gewrow">
+      <span style="flex:1">${k}</span>
+      <input id="gw_${k}" type="number" value="${v}"></div>`).join('')}
+    <h2 style="font-size:13px;margin:16px 0 8px">Mail-Signal-Gewichte</h2>
+    <label class="gewrow"><input type="checkbox" id="mg_aktiv" ${m.aktiv?'checked':''}>
+      <span>Mail-Gewichtung aktiv (0 = ignorieren, 1 = voll)</span></label>
+    ${mailKeys.map(k=>`<div class="gewrow">
+      <span style="flex:1">${k}</span>
+      <input id="mg_${k}" type="number" step="0.1" min="0" max="2" value="${m[k]}"></div>`).join('')}
+    <h2 style="font-size:13px;margin:16px 0 8px">Filter & Quellen</h2>
+    <label class="gewrow"><input type="checkbox" id="ea_aktiv" ${(CONFIG.earnings&&CONFIG.earnings.aktiv)?'checked':''}><span>Earnings-Filter aktiv</span></label>
+    <div class="gewrow"><span style="flex:1">Earnings Warn-Tage</span><input id="ea_warn" type="number" value="${(CONFIG.earnings&&CONFIG.earnings.warn_tage)||10}"></div>
+    <label class="gewrow"><input type="checkbox" id="ea_push" ${(CONFIG.earnings&&CONFIG.earnings.push_ausschliessen)?'checked':''}><span>Earnings-Werte vom Push ausschließen</span></label>
+    <label class="gewrow"><input type="checkbox" id="g80_aktiv" ${(CONFIG.minervini_5080&&CONFIG.minervini_5080.aktiv)?'checked':''}><span>50/80-Regel aktiv (Gap-down-Malus)</span></label>
+    <div class="gewrow"><span style="flex:1">50/80 Schwelle (%, negativ)</span><input id="g80_schwelle" type="number" step="0.5" value="${(CONFIG.minervini_5080&&CONFIG.minervini_5080.schwelle_pct)??-10}"></div>
+    <div class="gewrow"><span style="flex:1">50/80 Volumen-Faktor (x Ø50)</span><input id="g80_volfaktor" type="number" step="0.1" value="${(CONFIG.minervini_5080&&CONFIG.minervini_5080.volumen_faktor)??1.5}"></div>
+    <div class="gewrow"><span style="flex:1">50/80 Fenster (Handelstage)</span><input id="g80_fenster" type="number" value="${(CONFIG.minervini_5080&&CONFIG.minervini_5080.fenster_handelstage)??168}"></div>
+    <label class="gewrow"><input type="checkbox" id="dp_aktiv" ${(CONFIG.depotabgleich&&CONFIG.depotabgleich.aktiv)?'checked':''}><span>Depot-Abgleich aktiv (📌)</span></label>
+    <label class="gewrow"><input type="checkbox" id="fr_aktiv" ${(CONFIG.frische_gewichtung&&CONFIG.frische_gewichtung.aktiv)?'checked':''}><span>Frische-Gewichtung aktiv</span></label>
+    <div class="gewrow"><span style="flex:1">Frische-Halbwertszeit (Tage)</span><input id="fr_hw" type="number" value="${(CONFIG.frische_gewichtung&&CONFIG.frische_gewichtung.halbwertszeit_tage)||10}"></div>
+    <label class="gewrow"><input type="checkbox" id="bn_nurneue" ${b.nur_neue?'checked':''}><span>Push: nur neue Treffer</span></label>
+    <h2 style="font-size:13px;margin:16px 0 8px">Finviz-Screener</h2>
+    ${(fv.screener||[]).map((s,i)=>`<label class="gewrow">
+      <input type="checkbox" id="fv_${i}" ${s.aktiv!==false?'checked':''}>
+      <span style="flex:1">${s.name||('Screener '+(i+1))}</span></label>`).join('')}
+    <div class="field"><label>Neuen Screener – Name</label>
+      <input id="fv_new_name" placeholder="z.B. Enge Basen"></div>
+    <div class="field"><label>Finviz-URL</label>
+      <input id="fv_new_url" placeholder="https://finviz.com/screener?..."></div>
+  `;
+  note.textContent='';
+}
+async function saveConfig(){
+  if(!CONFIG){toggleDrawer();return;}
+  CONFIG.benachrichtigung.zeiten=document.getElementById('cfg_zeiten').value
+    .split(',').map(s=>s.trim()).filter(Boolean);
+  CONFIG.benachrichtigung.ntfy_thema=document.getElementById('cfg_ntfy').value.trim();
+  CONFIG.benachrichtigung.min_score_fuer_push=+document.getElementById('cfg_pushmin').value;
+  Object.keys(CONFIG.score_gewichte).forEach(k=>{
+    CONFIG.score_gewichte[k]=+document.getElementById('gw_'+k).value;});
+  if(CONFIG.mail_signal_gewichte){
+    const m=CONFIG.mail_signal_gewichte;
+    const akt=document.getElementById('mg_aktiv'); if(akt) m.aktiv=akt.checked;
+    Object.keys(m).filter(k=>!k.startsWith('_')&&k!=='aktiv').forEach(k=>{
+      const el=document.getElementById('mg_'+k); if(el) m[k]=parseFloat(el.value);});
+  }
+  const setChk=(id,obj,key)=>{const el=document.getElementById(id);if(el&&obj)obj[key]=el.checked;};
+  const setNum=(id,obj,key)=>{const el=document.getElementById(id);if(el&&obj)obj[key]=+el.value;};
+  CONFIG.earnings=CONFIG.earnings||{}; CONFIG.depotabgleich=CONFIG.depotabgleich||{}; CONFIG.frische_gewichtung=CONFIG.frische_gewichtung||{}; CONFIG.minervini_5080=CONFIG.minervini_5080||{};
+  setChk('ea_aktiv',CONFIG.earnings,'aktiv'); setNum('ea_warn',CONFIG.earnings,'warn_tage'); setChk('ea_push',CONFIG.earnings,'push_ausschliessen');
+  setChk('g80_aktiv',CONFIG.minervini_5080,'aktiv'); setNum('g80_schwelle',CONFIG.minervini_5080,'schwelle_pct');
+  setNum('g80_volfaktor',CONFIG.minervini_5080,'volumen_faktor'); setNum('g80_fenster',CONFIG.minervini_5080,'fenster_handelstage');
+  setChk('dp_aktiv',CONFIG.depotabgleich,'aktiv');
+  setChk('fr_aktiv',CONFIG.frische_gewichtung,'aktiv'); setNum('fr_hw',CONFIG.frische_gewichtung,'halbwertszeit_tage');
+  setChk('bn_nurneue',CONFIG.benachrichtigung,'nur_neue');
+  const fv=(CONFIG.quellen&&CONFIG.quellen.finviz);
+  if(fv){
+    (fv.screener||[]).forEach((s,i)=>{const el=document.getElementById('fv_'+i); if(el) s.aktiv=el.checked;});
+    const nn=document.getElementById('fv_new_name'), nu=document.getElementById('fv_new_url');
+    if(nn&&nu&&nn.value.trim()&&nu.value.trim()){
+      fv.screener=fv.screener||[];
+      fv.screener.push({name:nn.value.trim(),aktiv:true,url:nu.value.trim()});
+    }
+  }
+  try{
+    let r=await fetch('api/config',{method:'POST',
+      headers:apiHeaders({'Content-Type':'application/json'}),
+      body:JSON.stringify(CONFIG)});
+    if(r.status===403 && promptToken()){
+      r=await fetch('api/config',{method:'POST',
+        headers:apiHeaders({'Content-Type':'application/json'}),
+        body:JSON.stringify(CONFIG)});
+    }
+    if(r.ok){alert('Gespeichert.');toggleDrawer();return;}
+    throw 0;
+  }catch(e){
+    // file:// -> Download als Fallback
+    const blob=new Blob([JSON.stringify(CONFIG,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='config.json';a.click();
+    alert('Kein Server aktiv – config.json wurde heruntergeladen. Bitte in den Signal-Hub-Ordner legen.');
+  }
+}
+function toggleDrawer(){document.getElementById('drawer').classList.toggle('open');}
+
+/* ---- Aktualisieren (nur wenn server.py laeuft) ---- */
+async function aktualisieren(btn){
+  if(/(^|\.)pages\.dev$/i.test(location.hostname)){
+    return triggerCloudWorkflow('Miksch52','signal-hub','pipeline.yml',btn,'Signal-Hub-Update');
+  }
+  let r=null;
+  try{ r=await fetch('api/run',{method:'POST',body:'',headers:apiHeaders()}); }catch(e){}
+  if(r && r.status===403 && promptToken()){
+    try{ r=await fetch('api/run',{method:'POST',body:'',headers:apiHeaders()}); }catch(e){}
+  }
+  if(!r){
+    if(confirm('Mac mini nicht erreichbar.\n\nStattdessen den Cloud-Workflow starten '
+      +'(läuft ohne Mac mini, dauert einige Minuten)?')){
+      return triggerCloudWorkflow('Miksch52','signal-hub','pipeline.yml',btn,'Signal-Hub-Update');
+    }
+    return;
+  }
+  if(r.status===403){ alert('Token fehlt oder falsch.'); return; }
+  if(!r.ok){ alert('Aktualisierung konnte nicht gestartet werden.'); return; }
+  const alt=DATA.erstellt;
+  btn.disabled=true; const txt=btn.textContent; btn.textContent='⏳ läuft…';
+  let sahLaufen=false;
+  const fertig=()=>{btn.disabled=false;btn.textContent=txt;};
+  const poll=setInterval(async()=>{
+    try{
+      const s=await (await fetch('api/status',{cache:'no-store'})).json();
+      if(s.laeuft) sahLaufen=true;
+      if(!s.laeuft && s.stand && s.stand!==alt){           // neue Daten -> Erfolg
+        clearInterval(poll); clearTimeout(stopp);
+        await ladeDaten(); await ladePivot(); await ladePivotHistory(); await ladeTopSetups(); render();
+        zeigeMarktRegime(); ladeVolleMarktampel(); ladeScoreBacktest(); fertig();
+      } else if(sahLaufen && !s.laeuft){                   // Lauf beendet, aber KEINE neuen Daten
+        clearInterval(poll); clearTimeout(stopp); fertig();
+        alert('Der Lauf ist beendet, aber es kamen keine neuen Daten an '
+          +'(z. B. Abbruch wegen Zeitüberschreitung oder Quelle nicht erreichbar).\n\n'
+          +'Du siehst weiter die zuletzt berechnete Liste. Bitte später erneut versuchen.');
+      }
+    }catch(e){}
+  },3000);
+  // 10 Min: passt zum harten Server-Timeout (RUN_TIMEOUT). Läuft ein voller Lauf
+  // bei kaltem Cache lange, ist er hier noch abgedeckt.
+  const stopp=setTimeout(()=>{clearInterval(poll);fertig();
+    alert('Der Lauf dauert ungewöhnlich lange. Er läuft im Hintergrund evtl. weiter — '
+      +'lade die Seite gleich neu, um die neuen Daten zu sehen.');},600000);
+}
+
+/* ---- Steuerung ---- */
+function initControls(){
+  document.querySelectorAll('#marktseg button').forEach(btn=>btn.onclick=()=>{
+    document.querySelectorAll('#marktseg button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');state.markt=btn.dataset.m;render();});
+  const ms=document.getElementById('minscore');
+  ms.oninput=()=>{state.minscore=+ms.value;document.getElementById('minlbl').textContent=ms.value;render();};
+  document.getElementById('sortby').onchange=e=>{state.sort=e.target.value;render();};
+  document.getElementById('suche').oninput=e=>{state.suche=e.target.value;render();};
+  document.getElementById('hideearn').onchange=e=>{state.hideEarnings=e.target.checked;render();};
+  document.getElementById('hideextended').onchange=e=>{state.hideExtended=e.target.checked;render();};
+  document.getElementById('hidegap80').onchange=e=>{state.hideGap80=e.target.checked;render();};
+  document.getElementById('shorton').onchange=e=>{state.shortOn=e.target.checked;render();};
+  document.getElementById('hidemegaphone').onchange=e=>{state.hideMegaphone=e.target.checked;render();};
+  document.getElementById('cheatinclude').onchange=e=>{state.cheatInclude=e.target.checked;render();};
+  document.getElementById('onlynew').onchange=e=>{state.onlyNew=e.target.checked;render();};
+  document.getElementById('hidedepot').onchange=e=>{state.hideDepot=e.target.checked;render();};
+  document.getElementById('pivotonly').onchange=e=>{state.pivotOnly=e.target.checked;render();};
+  document.getElementById('topsetups').onchange=e=>{state.topSetups=e.target.checked;render();};
+  document.getElementById('multisrc').onchange=e=>{state.multiSrc=e.target.checked;render();};
+  document.getElementById('toponly').onchange=e=>{
+    state.topOnly=e.target.checked;
+    if(state.topOnly){ state.sort='top'; const sb=document.getElementById('sortby'); if(sb) sb.value='top'; }
+    render();
+  };
+  document.getElementById('onlyfocus').onchange=e=>{state.onlyFocus=e.target.checked;render();};
+  const smS=document.getElementById('smsliders');
+  document.getElementById('smweight').onchange=e=>{state.smOn=e.target.checked;
+    smS.style.display=state.smOn?'inline-flex':'none';render();};
+  const smw=document.getElementById('smw');
+  smw.oninput=()=>{state.smW=+smw.value;document.getElementById('smwlbl').textContent=smw.value;render();};
+  const cmfw=document.getElementById('cmfw');
+  cmfw.oninput=()=>{state.cmfW=+cmfw.value;document.getElementById('cmfwlbl').textContent=cmfw.value;render();};
+  const tc=document.getElementById('typchips');
+  // Standard: alle Quellen-Typen aktiv (state.typen voll besetzt) - das filtert
+  // zunaechst nichts aus, gibt aber den Hebel, einzelne Quellen abzuwaehlen,
+  // wenn deren Signale zu schwach sind (Set-Semantik: "mind. einer der aktiven
+  // Typen" - alle aktiv = keine Einschraenkung, wie zuvor bei leerem Set).
+  const alleT=alleTypen();
+  alleT.forEach(t=>state.typen.add(t));
+  const typcountEl=document.getElementById('typcount');
+  const updateTypCount=()=>{if(typcountEl)typcountEl.textContent=`${state.typen.size}/${alleT.length} aktiv`;};
+  tc.innerHTML=alleT.map(t=>`<span class="chip on" data-t="${t}">${quelleLabel(t)}</span>`).join('');
+  tc.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{
+    c.classList.toggle('on');
+    if(state.typen.has(c.dataset.t))state.typen.delete(c.dataset.t);else state.typen.add(c.dataset.t);
+    updateTypCount();render();});
+  updateTypCount();
+  const fc=document.getElementById('facchips');
+  fc.innerHTML=FAKT.map(([k,lbl])=>`<span class="chip${state.faktoren.has(k)?' on':''}" data-f="${k}">${lbl}</span>`).join('');
+  fc.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{
+    c.classList.toggle('on');
+    if(state.faktoren.has(c.dataset.f))state.faktoren.delete(c.dataset.f);else state.faktoren.add(c.dataset.f);
+    render();});
+}
+
+/* Aus iCloud (file://) oder ueber den Launcher (Port 8090) geoeffnet?
+   Dann zum Live-Server (Port 8091) wechseln, falls erreichbar — dort
+   funktionieren frische Daten, Aktualisieren und Speichern auf allen Geraeten. */
+async function zumLiveServer(){
+  if(location.port==='8091') return false;   // schon auf dem Hub-Server
+  const kandidaten=[];
+  if(location.hostname && location.hostname!=='localhost' && location.hostname!=='127.0.0.1') kandidaten.push(location.hostname);
+  kandidaten.push('Mac-mini-von-Maick.local','localhost');
+  for(const h of kandidaten){
+    try{
+      const sig=AbortSignal.timeout?AbortSignal.timeout(1500):(()=>{const c=new AbortController();setTimeout(()=>c.abort(),1500);return c.signal;})();
+      const r=await fetch(`http://${h}:8091/api/status`,{signal:sig});
+      if(r.ok){ location.replace(`http://${h}:8091/`); return true; }
+    }catch(e){}
+  }
+  return false;
+}
+
+// Live-Nachziehen der Fokusliste: das "storage"-Event feuert nur in ANDEREN
+// Tabs derselben Origin, wenn sich localStorage aendert (nie im Tab, der
+// selbst geschrieben hat) - genau der Fall, wenn man im Hauptapp-Tab "⭐
+// Speichern" klickt, waehrend der Signal-Hub-Tab noch offen ist. Rendert neu,
+// damit Fokusliste-Badge/-Filter sofort den frischen Stand zeigen, ohne dass
+// man den Signal-Hub-Tab manuell neu laden muss.
+window.addEventListener('storage', (e) => {
+  if(e.key==='mts_v2' && DATA) render();
+});
+
+// Auto-Einklappen der Filterleisten beim Scrollen nach unten (mehr Platz fuer
+// die Karten, die sticky Kopfzeile mit allen Filtern nimmt sonst dauerhaft
+// viel Bildschirmflaeche weg): schliesst alle offenen <details class=
+// "filterbox">-Panels (Filter & Sortierung, Legende, Drop-Liste), sobald man
+// ueber einen kleinen Schwellenwert nach unten scrollt. Bewusst KEIN
+// automatisches Wiederaufklappen beim Hochscrollen - der Nutzer klickt
+// gezielt wieder auf, wenn er filtern will; staendiges Auf-/Zuklappen waere
+// nur Flackern.
+(function(){
+  let letzterScrollY=window.scrollY, letzteZeit=0;
+  window.addEventListener('scroll', () => {
+    // Leichtes Zeit-Throttle (100ms) statt requestAnimationFrame - reicht fuer
+    // diese seltene, billige Operation und ist unabhaengig vom Paint-Zyklus.
+    const jetzt=Date.now();
+    if(jetzt-letzteZeit<100) return;
+    letzteZeit=jetzt;
+    const y=window.scrollY;
+    if(y>letzterScrollY && y>80){
+      document.querySelectorAll('details.filterbox[open]').forEach(d=>d.open=false);
+    }
+    letzterScrollY=y;
+  }, {passive:true});
+})();
+
+(async function(){
+  if(await zumLiveServer()) return;
+  await ladeDaten(); await ladeConfig(); await ladePivot(); await ladePivotHistory(); await ladeTopSetups();
+  initControls(); renderSettings(); render();
+  ladeMarktCheck();       // fire-and-forget, blockiert den Haupt-Render nicht
+  ladeVolleMarktampel();  // US-Chip auf die volle Minervini-Ampel upgraden
+  ladeScoreBacktest();    // ebenso optional (Trefferquoten-Panel)
+  // Filterleiste: am Desktop offen, auf dem iPhone eingeklappt (entlastet den Schirm)
+  if(window.innerWidth>700){ for(const id of ['filterbox','legendbox']){ const el=document.getElementById(id); if(el) el.open=true; } }
+  if(!(DATA.treffer||[]).length){
+    document.getElementById('meta').textContent =
+      'Keine Daten — Mac mini (Server) nicht erreichbar und lokale iCloud-Daten (noch) nicht geladen.';
+  }
+})();
+</script>
+</body>
+</html>

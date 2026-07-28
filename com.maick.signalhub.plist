@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.maick.signalhub</string>
+
+    <!-- osascript-Wrapper noetig: launchd-Python darf iCloud-Dateien nicht
+         direkt oeffnen (TCC "Operation not permitted") — gleiches Muster
+         wie de.maickschwillo.mts-server. Lauf synchron (kein &), damit
+         launchd nicht alle 15 Min ueberlappende Laeufe startet. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/osascript</string>
+        <string>-e</string>
+        <string>do shell script "cd '/Users/maickschwillo/Library/Mobile Documents/com~apple~CloudDocs/Trading-System/Maick Trading System/Signal-Hub' &amp;&amp; /usr/bin/python3 src/run.py --scheduled >> /tmp/signalhub-scheduled.log 2>&amp;1"</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/maickschwillo</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/signalhub-launchagent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/signalhub-launchagent.log</string>
+</dict>
+</plist>

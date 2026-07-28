@@ -1,0 +1,15 @@
+# Generierte Daten & Cache - nicht versionieren (kompletter Ordner, seit
+# dem Auszug in ein eigenes Repo - vorher wurde das im Root-.gitignore des
+# Maick-Trading-System-Repos pauschal ausgeschlossen)
+data/
+
+# Lokale Konfig mit Secrets (Token/ntfy-Topic) - lebt in iCloud, nicht im Repo.
+# Vorlage: config.example.json
+config.json
+config.local.json
+
+# Python/macOS/Editor (vorher ueber das Root-.gitignore des alten Repos abgedeckt)
+__pycache__/
+*.pyc
+.DS_Store
+.claude/

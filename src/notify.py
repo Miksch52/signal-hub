@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Push-Benachrichtigung fuer den Daily Signal Hub via ntfy.sh (kostenlos).
+
+Liest data/signals.json, nimmt die Top-Treffer ab Mindest-Score und schickt sie
+als Push an dein ntfy-Thema (App "ntfy" auf iPhone/iPad abonnieren).
+
+Test:  python3 src/notify.py            # sendet aktuelle Top-Treffer
+       python3 src/notify.py --test     # sendet eine Testnachricht
+"""
+
+import json
+import os
+import ssl
+import sys
+import urllib.request
+
+try:
+    import certifi
+    SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    SSL_CTX = ssl.create_default_context()
+
+HIER = os.path.dirname(os.path.abspath(__file__))
+import pfade
+PROJEKT = pfade.PROJEKT
+DATA = pfade.DATA
+CONFIG_PFAD = pfade.CONFIG
+
+FLAGGE = {"USA": "US", "Europa": "EU"}
+
+def lade_config():
+    with open(CONFIG_PFAD, encoding="utf-8") as f:
+        return json.load(f)
+
+def sende_ntfy(server, thema, titel, text, tags="chart_with_upwards_trend", prio="default"):
+    url = f"{server.rstrip('/')}/{thema}"
+    daten = text.encode("utf-8")
+    req = urllib.request.Request(url, data=daten, method="POST")
+    req.add_header("Title", titel.encode("utf-8"))
+    req.add_header("Tags", tags)
+    req.add_header("Priority", prio)
+    with urllib.request.urlopen(req, timeout=15, context=SSL_CTX) as r:
+        return r.status
+
+STATE = pfade.STATE
+
+def _state_load():
+    if os.path.exists(STATE):
+        try:
+            return json.load(open(STATE, encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+def _state_save(s):
+    with open(STATE, "w", encoding="utf-8") as f:
+        json.dump(s, f, ensure_ascii=False, indent=2)
+
+def baue_nachricht(cfg):
+    bcfg = cfg["benachrichtigung"]
+    ecfg = cfg.get("earnings", {})
+    rcfg = cfg.get("marktregime", {})
+    pfad = pfade.SIGNALS_JSON
+    if not os.path.exists(pfad):
+        return None, None
+    d = json.load(open(pfad, encoding="utf-8"))
+    minscore = bcfg.get("min_score_fuer_push", 70)
+    maxn = bcfg.get("max_treffer_im_push", 8)
+    warn = ecfg.get("warn_tage", 10)
+    excl = ecfg.get("aktiv") and ecfg.get("push_ausschliessen")
+
+    def earnings_bald(t):
+        e = t.get("earnings")
+        return bool(e and e.get("tage") is not None and 0 <= e["tage"] <= warn)
+
+    qual = [t for t in d.get("treffer", [])
+            if t["score"] >= minscore and not (excl and earnings_bald(t))]
+
+    # Markt-Regime-Gate (Minervini: keine neuen Positionen im schwachen Markt):
+    # Treffer aus Maerkten mit roter Ampel fliegen aus dem Push - im Dashboard
+    # bleiben sie sichtbar (dort zeigt die Ampel den Kontext).
+    rot = set()
+    unterdrueckt = 0
+    if rcfg.get("aktiv", True) and rcfg.get("push_bei_rot_unterdruecken", True):
+        rot = {m for m, r in (d.get("marktregime") or {}).items()
+               if r.get("ampel") == "rot"}
+        if rot:
+            vorher = len(qual)
+            qual = [t for t in qual if t.get("markt") not in rot]
+            unterdrueckt = vorher - len(qual)
+
+    nur_neue = bcfg.get("nur_neue", False)
+    if nur_neue:
+        st = _state_load()
+        gesehen = set(st.get("push_gesehen", []))
+        liste = [t for t in qual if t["ticker"] not in gesehen]
+        st["push_gesehen"] = [t["ticker"] for t in qual]   # Dropouts raus, Re-Entry = wieder neu
+        _state_save(st)
+    else:
+        liste = qual
+    liste = liste[:maxn]
+    if not liste:
+        if unterdrueckt:
+            # Statt stiller Leere einmal ehrlich melden, WARUM nichts kommt.
+            rot_txt = ", ".join(sorted(rot))
+            return ("🔴 Markt rot – Push-Signale unterdrückt",
+                    f"{unterdrueckt} Kauf-Kandidat(en) zurückgehalten ({rot_txt}: "
+                    f"Index unter MA200). Minervini: in einem schwachen Markt "
+                    f"keine neuen Positionen eröffnen.")
+        return None, None
+
+    titel = (f"📈 {len(liste)} NEUE Kauf-Kandidaten (≥ {minscore})" if nur_neue
+             else f"📈 Signal Hub – {len(liste)} Top-Werte (≥ {minscore})")
+    zeilen = []
+    for t in liste:
+        markt = FLAGGE.get(t["markt"], "")
+        e = t.get("earnings")
+        ew = f" ⚠️{e['tage']}T" if earnings_bald(t) else ""
+        zeilen.append(f"{t['ticker']}  {t['score']:.0f}  {t['name'][:22]} ({markt},{t['quellen']['ausgaben']}Q){ew}")
+    fuss = f"\n{len(qual)} Kauf-Kandidaten gesamt · {d.get('anzahl',0)} bewertet"
+    if unterdrueckt:
+        fuss += f"\n🔴 {unterdrueckt} Wert(e) aus {', '.join(sorted(rot))} unterdrückt (Markt rot)"
+    return titel, "\n".join(zeilen) + fuss
+
+def main():
+    cfg = lade_config()
+    bcfg = cfg["benachrichtigung"]
+    if not bcfg.get("aktiv"):
+        print("Benachrichtigung in config deaktiviert.")
+        return
+    thema = bcfg.get("ntfy_thema", "")
+    server = bcfg.get("ntfy_server", "https://ntfy.sh")
+    if not thema or "NOCH" in thema.upper():
+        sys.exit("Kein ntfy-Thema in config gesetzt.")
+
+    if "--test" in sys.argv:
+        sende_ntfy(server, thema, "✅ Signal Hub Test",
+                   "Push funktioniert! Du bekommst ab jetzt Signale aufs Handy.")
+        print(f"Testnachricht an {server}/{thema} gesendet.")
+        return
+
+    titel, text = baue_nachricht(cfg)
+    if not text:
+        if cfg["benachrichtigung"].get("nur_neue"):
+            print("Keine NEUEN Kauf-Kandidaten seit letztem Push – nichts gesendet.")
+        else:
+            print("Keine Treffer ueber Mindest-Score – nichts gesendet.")
+        return
+    status = sende_ntfy(server, thema, titel, text)
+    print(f"Push gesendet (HTTP {status}) an {server}/{thema}:\n{titel}\n{text}")
+
+if __name__ == "__main__":
+    main()

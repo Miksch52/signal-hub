@@ -1,0 +1,129 @@
+name: Signal-Hub Cloud-Pipeline
+
+# Ersetzt den fruehen Mac-mini-LaunchAgent (com.maick.signalhub) UND das
+# frühere signal-hub.yml im Repo Miksch52/maick-trading-system. Ausgelagert
+# in dieses eigene, oeffentliche Repo (2026-07-28), weil GitHub-Actions-
+# Minuten fuer private Repos kontoweit gedeckelt sind (2.000 Min/Monat) und
+# genau dieser Lauf (4x/Tag + haeufige manuelle Cloud-Trigger) den groessten
+# Teil davon verbraucht hat. Oeffentliche Repos haben unbegrenzte Minuten.
+# maick-trading-system bleibt bewusst PRIVAT (enthaelt echte Depotdaten in
+# der Historie) - siehe dessen deploy.yml, das von hier am Laufende
+# angestossen wird.
+#
+# Vier Slots/Tag (07:30 / 15:00 / 17:00 / 21:30 Europe/Berlin) - je zwei
+# Cron-Zeilen pro Slot fuer CET/CEST. run.py --scheduled entscheidet selbst
+# (ueber TZ=Europe/Berlin + persistiertem state.json aus R2), welcher der
+# acht taeglichen Anstoesse tatsaechlich den Lauf ausloest.
+on:
+  schedule:
+    - cron: '30 5 * * *'   # 07:30 Europe/Berlin (CEST, Sommer)
+    - cron: '30 6 * * *'   # 07:30 Europe/Berlin (CET, Winter)
+    - cron: '0 13 * * *'   # 15:00 Europe/Berlin (CEST, Sommer)
+    - cron: '0 14 * * *'   # 15:00 Europe/Berlin (CET, Winter)
+    - cron: '0 15 * * *'   # 17:00 Europe/Berlin (CEST, Sommer)
+    - cron: '0 16 * * *'   # 17:00 Europe/Berlin (CET, Winter)
+    - cron: '30 19 * * *'  # 21:30 Europe/Berlin (CEST, Sommer)
+    - cron: '30 20 * * *'  # 21:30 Europe/Berlin (CET, Winter)
+  workflow_dispatch: {}    # manueller Testlauf / Cloud-Trigger-Button
+
+env:
+  TZ: Europe/Berlin
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Signal-Hub
+    steps:
+      # Self-Checkout bewusst nach ./Signal-Hub (nicht Workspace-Root):
+      # Price-Action-Hub erwartet die Signal-Hub-Ausgabe unter einem
+      # Geschwister-Ordner exakt "Signal-Hub" (siehe dessen pfade.py) -
+      # genau wie lokal in iCloud, wo beide Ordner nebeneinander liegen.
+      - uses: actions/checkout@v4
+        with:
+          path: Signal-Hub
+
+      - name: Price-Action-Hub auschecken (Geschwister-Ordner, oeffentliches Repo, kein Token noetig)
+        uses: actions/checkout@v4
+        with:
+          repository: Miksch52/price-action-hub
+          path: Price-Action-Hub
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python-Abhaengigkeiten installieren
+        run: python3 -m pip install --quiet pypdf certifi
+
+      - name: rclone installieren (kein Paketmanager auf Runner noetig)
+        run: |
+          curl -sSL -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
+          unzip -q /tmp/rclone.zip -d /tmp
+          sudo cp /tmp/rclone-*-linux-amd64/rclone /usr/local/bin/rclone
+          rclone --version | head -1
+
+      - name: R2-Remote konfigurieren
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<CONF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret_access_key = ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint = ${{ secrets.R2_ENDPOINT }}
+          acl = private
+          no_check_bucket = true
+          CONF
+
+      - name: Zustand (state.json) aus R2 wiederherstellen
+        run: |
+          mkdir -p ~/"Library/Application Support/SignalHub"
+          rclone copy r2:signalhub-magazine/_state/state.json ~/"Library/Application Support/SignalHub/" || true
+
+      - name: Magazine aus R2 laden
+        run: |
+          mkdir -p _magazine
+          rclone copy r2:signalhub-magazine/ _magazine/ --exclude "_state/**" --exclude "_test/**" --exclude "_deploy/**"
+
+      - name: config.json aus Secret schreiben
+        run: printf '%s' '${{ secrets.SIGNALHUB_CONFIG_JSON }}' > config.json
+
+      - name: "Pipeline laufen lassen (Cron: nur faellige Slots pushen, manueller Trigger: sofort ohne Push)"
+        env:
+          SIGNALHUB_IMAP_PASSWORD: ${{ secrets.SIGNALHUB_IMAP_PASSWORD }}
+          SIGNALHUB_DEPOT_NAMEN: ${{ secrets.SIGNALHUB_DEPOT_NAMEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python3 src/run.py
+          else
+            python3 src/run.py --scheduled
+          fi
+
+      - name: Price-Action-Hub Pipeline (nur wenn Signal-Hub in diesem Lauf frisch geschrieben hat)
+        working-directory: Price-Action-Hub
+        run: |
+          if [ -f "../Signal-Hub/data/signals.json" ]; then
+            python3 src/run.py
+          else
+            echo "Signal-Hub hat in diesem Lauf keine neuen Daten geschrieben (kein faelliger Slot) - uebersprungen."
+          fi
+
+      - name: Zustand (state.json) nach R2 sichern
+        if: always()
+        run: rclone copy ~/"Library/Application Support/SignalHub/state.json" r2:signalhub-magazine/_state/
+
+      - name: Ausgabedateien nach R2 hochladen (fuer den Deploy-Workflow im Hauptrepo)
+        run: |
+          [ -d data ] && rclone copy data/ r2:signalhub-magazine/_deploy/signal-hub/ --include "*.js"
+          [ -d ../Price-Action-Hub/data ] && rclone copy ../Price-Action-Hub/data/ r2:signalhub-magazine/_deploy/price-action-hub/ --include "*.js"
+
+      - name: Deploy im Hauptrepo (Miksch52/maick-trading-system) anstossen
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.DEPLOY_TRIGGER_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Miksch52/maick-trading-system/actions/workflows/deploy.yml/dispatches \
+            -d '{"ref":"main"}'

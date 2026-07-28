@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.maick.signalhub.server</string>
+
+    <!-- Watchdog: startet beim Login und haelt den Server am Leben. Der
+         osascript-Wrapper ist noetig wegen TCC (launchd-Python darf iCloud
+         nicht direkt lesen); der lsof-Guard verhindert Doppelstarts. Mit
+         KeepAlive prueft launchd dauerhaft (Throttle ~10s): stirbt der Server,
+         startet der naechste Lauf des Wrappers ihn binnen ~10s neu. Das
+         StartInterval (5 Min) bleibt als zusaetzliches Sicherheitsnetz. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/osascript</string>
+        <string>-e</string>
+        <string>do shell script "/usr/sbin/lsof -tnP -iTCP:8091 -sTCP:LISTEN >/dev/null 2>&amp;1 || (cd '/Users/maickschwillo/Library/Mobile Documents/com~apple~CloudDocs/Trading-System/Maick Trading System/Signal-Hub' &amp;&amp; /usr/bin/python3 src/server.py >> /tmp/signalhub-server.log 2>&amp;1 &amp;)"</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/maickschwillo</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.maick.signalhub.server.launchagent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.maick.signalhub.server.launchagent.log</string>
+</dict>
+</plist>

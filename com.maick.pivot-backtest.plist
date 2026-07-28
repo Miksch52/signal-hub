@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.maick.pivot-backtest</string>
+
+    <!-- Woechentlich: bewertet die GEREIFTEN Forward-Picks aus dem Pivot-Logbuch
+         gegen die aktuellen Yahoo-Kurse (echter, unverzerrter Forward-Test) und
+         rechnet den retrospektiven Walk-Forward neu. osascript-Wrapper wie bei
+         com.maick.signalhub (launchd-Python darf iCloud nicht direkt lesen). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/osascript</string>
+        <string>-e</string>
+        <string>do shell script "cd '/Users/maickschwillo/Library/Mobile Documents/com~apple~CloudDocs/Trading-System/Maick Trading System/Signal-Hub' &amp;&amp; /usr/bin/python3 src/pivot_backtest.py --evaluate &amp;&amp; /usr/bin/python3 src/pivot_backtest.py >> /tmp/pivot-backtest.log 2>&amp;1"</string>
+    </array>
+
+    <!-- Sonntags 08:15 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key><integer>0</integer>
+        <key>Hour</key><integer>8</integer>
+        <key>Minute</key><integer>15</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/maickschwillo</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/pivot-backtest-launchagent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/pivot-backtest-launchagent.log</string>
+</dict>
+</plist>

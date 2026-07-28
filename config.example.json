@@ -1,0 +1,180 @@
+{
+  "_hinweis": "VORLAGE. Kopiere diese Datei nach config.json und trage deine Werte ein (Token, ntfy-Topic). config.json selbst wird NICHT versioniert (liegt in iCloud, synct auf allen Macs).",
+  "quellen": {
+    "pdf": {
+      "aktiv": true,
+      "ordner": "/Pfad/zu/deinen/Magazinen",
+      "magazine_prioritaet": [
+        "trader-zeitung",
+        "megatrend",
+        "tenbagger",
+        "narrative_edge",
+        "aktien-magazin",
+        "growth",
+        "trendfollowing",
+        "nebenwerte"
+      ],
+      "max_alter_tage": 21
+    },
+    "email": {
+      "_hinweis": "Die Traderfox-Unterordner liegen LOKAL im Mailprogramm, nicht auf dem Server. Die TraderFox-Signale stecken alle in der Server-INBOX -> wir filtern nach Absender. Das IMAP-Passwort liegt in der macOS-Keychain (keychain_dienst), nie hier.",
+      "aktiv": true,
+      "imap_host": "mx.deinprovider.de",
+      "imap_port": 993,
+      "benutzer": "deine-mail@example.de",
+      "keychain_dienst": "signal-hub-imap",
+      "ordner": [
+        "INBOX"
+      ],
+      "absender_filter": [
+        "traderfox",
+        "aktienmagazin"
+      ],
+      "max_alter_tage": 14
+    },
+    "finviz": {
+      "_hinweis": "Mehrere benannte Screener moeglich. 'aktiv' je Screener schaltbar. URL aus dem Finviz-Browser kopieren.",
+      "aktiv": true,
+      "max_seiten": 3,
+      "screener": [
+        {
+          "name": "Momentum 52W-Hoch",
+          "aktiv": true,
+          "url": "https://finviz.com/screener?v=211&p=w&f=ind_stocksonly,sh_avgvol_o500,sh_price_o1,ta_highlow52w_a70h,ta_sma50_pa,ta_volatility_wo5&ft=4&ta=0&o=-low52w&preset=s144070543"
+        },
+        {
+          "name": "Enge Basen VCP",
+          "aktiv": true,
+          "url": "https://finviz.com/screener?v=211&f=ind_stocksonly,sh_avgvol_o500,sh_price_o10,ta_highlow52w_b0to10h,ta_sma50_pa,ta_sma200_pa,ta_volatility_wo3&ft=4&o=volatility"
+        },
+        {
+          "name": "Minervini SEPA",
+          "aktiv": true,
+          "url": "https://finviz.com/screener?v=211&f=ind_stocksonly,sh_avgvol_o500,sh_price_o10,ta_sma50_pa,ta_sma200_pa,ta_sma50_sb200,ta_highlow52w_a70h,fa_epsqoq_o20,fa_salesqoq_o20&ft=4&o=-perf26w"
+        },
+        {
+          "name": "Dan Zanger Momentum",
+          "aktiv": true,
+          "url": "https://finviz.com/screener?v=211&f=ind_stocksonly,sh_avgvol_o1000,sh_price_o10,sh_relvol_o1.5,ta_perf_4w20o,ta_highlow52w_b0to10h&ft=4&o=-perf4w"
+        },
+        {
+          "name": "Nicolas Darvas Hoch",
+          "aktiv": true,
+          "url": "https://finviz.com/screener?v=211&f=ind_stocksonly,sh_avgvol_o500,sh_price_o10,ta_highlow52w_nh,ta_sma200_pa&ft=4&o=-perf4w"
+        },
+        {
+          "name": "Jesse Livermore Pivotal",
+          "aktiv": true,
+          "url": "https://finviz.com/screener?v=211&f=ind_stocksonly,sh_avgvol_o2000,sh_price_o20,ta_highlow52w_nh,sh_relvol_o1.5&ft=4&o=-relativevolume"
+        },
+        {
+          "name": "High Tight Flag",
+          "aktiv": true,
+          "url": "https://finviz.com/screener?v=211&f=ind_stocksonly,sh_avgvol_o500,sh_price_o5,ta_perf_13w50o,ta_highlow52w_b0to10h&ft=4&o=-perf13w"
+        },
+        {
+          "name": "Pullback SMA50",
+          "aktiv": true,
+          "url": "https://finviz.com/screener?v=211&f=ind_stocksonly,sh_avgvol_o500,sh_price_o10,ta_sma200_pa,ta_sma50_pa,ta_sma50_sb200,ta_sma20_pb&ft=4&o=-perf26w"
+        }
+      ]
+    }
+  },
+  "maerkte": {
+    "USA": {
+      "index_yahoo": "^GSPC",
+      "waehrung": "USD",
+      "aktiv": true
+    },
+    "Europa": {
+      "index_yahoo": "^STOXX",
+      "waehrung": "EUR",
+      "aktiv": true
+    }
+  },
+  "score_gewichte": {
+    "stage2_trend": 25,
+    "relative_staerke": 20,
+    "naehe_52w_hoch": 15,
+    "basis_konsolidierung": 15,
+    "volumen_bestaetigung": 15,
+    "quellen_konsens": 10,
+    "smart_money": 0,
+    "cmf": 0,
+    "minervini_5080": 10,
+    "sektor_staerke": 8,
+    "fundamental": 8
+  },
+  "score_schwellen": {
+    "kauf_kandidat": 70,
+    "beobachten": 50
+  },
+  "mail_signal_gewichte": {
+    "_hinweis": "aktiv=true -> Mail-Signale zaehlen nach Typ gewichtet in den Quellen-Konsens (0 = ignorieren, 1 = volle Gewichtung). PDF/Finviz zaehlen immer 1.",
+    "aktiv": true,
+    "trendtemplate": 1.0,
+    "jahreshoch": 1.0,
+    "chartanalyse": 1.0,
+    "chartsignal": 0.6,
+    "kursalarm": 0.4,
+    "tagesperf": 0.3,
+    "alert": 0.3,
+    "jahrestief": 0.0,
+    "traderfox": 0.5,
+    "aktienmagazin": 0.8
+  },
+  "earnings": {
+    "_hinweis": "Markiert Aktien mit baldigen Quartalszahlen (Minervini: nicht kurz vor Earnings kaufen). US via Nasdaq-Kalender, EU via Yahoo.",
+    "aktiv": true,
+    "warn_tage": 10,
+    "push_ausschliessen": true
+  },
+  "marktregime": {
+    "_hinweis": "Markt-Regime-Ampel je Markt (Index vs. MA50/MA200 + MA200-Richtung, berechnet im Scorer, steht in signals.json -> marktregime). Bei roter Ampel (Index unter MA200) werden Push-Signale aus diesem Markt unterdrueckt - im Dashboard bleiben sie sichtbar.",
+    "aktiv": true,
+    "push_bei_rot_unterdruecken": true
+  },
+  "minervini_5080": {
+    "_hinweis": "Minervini 50/80-Regel: sucht den juengsten Gap-down (Vortages-Close -> Open) je Ticker in den letzten fenster_handelstage Handelstagen, der mindestens schwelle_pct betraegt UND mit mindestens volumen_faktor x Ø50-Tage-Volumen einherging. Solche Aktien haben laut Minervini hohe Wahrscheinlichkeit, das Gap-Tief nochmal zu unterschreiten - Score-Malus statt Nachkauf-Empfehlung. Malus klingt bis zum Fensterende linear ab.",
+    "aktiv": true,
+    "schwelle_pct": -10.0,
+    "volumen_faktor": 1.5,
+    "fenster_handelstage": 168
+  },
+  "pivot": {
+    "_hinweis": "Pivot-Armed-Detektor (Signal-Hub/src/pivot.py). armed_schwelle filtert schwache ARMED/WATCH/CHEAT-Treffer. cheat_aktiv schaltet den Cheat-Pivot-Status ab/an (frueher Einstieg vor vollem Stage-2-Template, klein positionieren) - noch unvalidierte Heuristik, daher standardmaessig ohne Push.",
+    "armed_schwelle": 0,
+    "cheat_aktiv": true
+  },
+  "depotabgleich": {
+    "_hinweis": "Markiert Treffer, die du laut Trading System bereits haeltst (Status 'Offen').",
+    "aktiv": true,
+    "datei": "../mts_data.json"
+  },
+  "frische_gewichtung": {
+    "_hinweis": "aktiv=true -> aeltere Nennungen zaehlen weniger im Konsens (Halbwertszeit in Tagen).",
+    "aktiv": false,
+    "halbwertszeit_tage": 10
+  },
+  "benachrichtigung": {
+    "aktiv": true,
+    "kanal": "ntfy",
+    "ntfy_server": "https://ntfy.sh",
+    "ntfy_thema": "DEIN-GEHEIMES-NTFY-TOPIC-HIER",
+    "zeiten": [
+      "07:30",
+      "21:30"
+    ],
+    "min_score_fuer_push": 70,
+    "max_treffer_im_push": 8,
+    "nur_neue": true
+  },
+  "anzeige": {
+    "top_n": 25,
+    "sprache": "de"
+  },
+  "server": {
+    "_hinweis": "Schreib-Endpunkte (Aktualisieren/Speichern) sind nur mit diesem Token erreichbar. Beliebig aenderbar; muss im Dashboard identisch sein (wird automatisch aus config geladen).",
+    "token": "DEIN-SERVER-TOKEN-HIER"
+  }
+}
