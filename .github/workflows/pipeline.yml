@@ -50,6 +50,12 @@ jobs:
           repository: Miksch52/price-action-hub
           path: Price-Action-Hub
 
+      - name: Rotation-Dashboard auschecken (Geschwister-Ordner, oeffentliches Repo, kein Token noetig)
+        uses: actions/checkout@v4
+        with:
+          repository: Miksch52/rotation-dashboard
+          path: Rotation-Dashboard
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -111,6 +117,15 @@ jobs:
             echo "Signal-Hub hat in diesem Lauf keine neuen Daten geschrieben (kein faelliger Slot) - uebersprungen."
           fi
 
+      - name: Rotation-Dashboard Pipeline (nur wenn Signal-Hub in diesem Lauf frisch geschrieben hat)
+        working-directory: Rotation-Dashboard
+        run: |
+          if [ -f "../Signal-Hub/data/signals.json" ]; then
+            python3 src/run.py
+          else
+            echo "Signal-Hub hat in diesem Lauf keine neuen Daten geschrieben (kein faelliger Slot) - uebersprungen."
+          fi
+
       - name: Zustand (state.json) nach R2 sichern
         if: always()
         run: rclone copy ~/"Library/Application Support/SignalHub/state.json" r2:signalhub-magazine/_state/
@@ -119,6 +134,7 @@ jobs:
         run: |
           [ -d data ] && rclone copy data/ r2:signalhub-magazine/_deploy/signal-hub/ --include "*.js"
           [ -d ../Price-Action-Hub/data ] && rclone copy ../Price-Action-Hub/data/ r2:signalhub-magazine/_deploy/price-action-hub/ --include "*.js"
+          [ -d ../Rotation-Dashboard/data ] && rclone copy ../Rotation-Dashboard/data/ r2:signalhub-magazine/_deploy/rotation-dashboard/ --include "*.js"
 
       - name: Deploy im Hauptrepo (Miksch52/maick-trading-system) anstossen
         run: |
