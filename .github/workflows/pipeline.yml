@@ -63,6 +63,20 @@ jobs:
       - name: Python-Abhaengigkeiten installieren
         run: python3 -m pip install --quiet pypdf certifi
 
+      # DNS-Workaround (seit 2026-07-30): der ubuntu-24.04-Runner scheiterte
+      # wiederholt mit "dial tcp: lookup ... on 127.0.0.53:53: server
+      # misbehaving" beim R2-Zugriff (systemd-resolved-Stub-Resolver liefert
+      # SERVFAIL) - kein R2-/Kontingent-/Zugangsdaten-Problem (das waere ein
+      # 401/403, kein DNS-Fehler), sondern ein bekannter Runner-Image-Bug.
+      # Erzwingt oeffentliche DNS-Server, bevor rclone/R2 ueberhaupt genutzt wird.
+      - name: DNS-Workaround fuer GitHub-Runner (systemd-resolved "server misbehaving")
+        run: |
+          sudo mkdir -p /etc/systemd/resolved.conf.d
+          printf '[Resolve]\nDNS=1.1.1.1 8.8.8.8\nFallbackDNS=9.9.9.9 1.0.0.1\n' \
+            | sudo tee /etc/systemd/resolved.conf.d/dns_override.conf
+          sudo systemctl restart systemd-resolved
+          resolvectl status | head -20 || true
+
       - name: rclone installieren (kein Paketmanager auf Runner noetig)
         run: |
           curl -sSL -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
