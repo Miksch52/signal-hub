@@ -157,8 +157,15 @@ jobs:
           [ -d ../Rotation-Dashboard/data ] && rclone copy ../Rotation-Dashboard/data/ r2:signalhub-magazine/_deploy/rotation-dashboard/ --include "*.js"
 
       - name: Deploy im Hauptrepo (Miksch52/maick-trading-system) anstossen
+        # -f: Exit-Code != 0 bei HTTP-Fehlerstatus (4xx/5xx), statt wie zuvor
+        # stillschweigend "erfolgreich" zu melden, obwohl z. B. ein falscher/
+        # abgelaufener DEPLOY_TRIGGER_TOKEN nur eine Fehler-JSON zurueckgibt.
+        # Ersetzt NICHT die inhaltliche Pruefung, ob der eigentliche Deploy-Lauf
+        # im Hauptrepo dann auch durchlief (das Repo bleibt privat und kann am
+        # eigenen, kontoweiten Actions-Minuten-Kontingent scheitern - separat
+        # ueberwachen, z. B. per gh run list --repo Miksch52/maick-trading-system).
         run: |
-          curl -sS -X POST \
+          curl -sS -f -X POST \
             -H "Authorization: Bearer ${{ secrets.DEPLOY_TRIGGER_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/Miksch52/maick-trading-system/actions/workflows/deploy.yml/dispatches \
