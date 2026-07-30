@@ -63,19 +63,25 @@ jobs:
       - name: Python-Abhaengigkeiten installieren
         run: python3 -m pip install --quiet pypdf certifi
 
-      # DNS-Workaround (seit 2026-07-30): der ubuntu-24.04-Runner scheiterte
-      # wiederholt mit "dial tcp: lookup ... on 127.0.0.53:53: server
-      # misbehaving" beim R2-Zugriff (systemd-resolved-Stub-Resolver liefert
-      # SERVFAIL) - kein R2-/Kontingent-/Zugangsdaten-Problem (das waere ein
-      # 401/403, kein DNS-Fehler), sondern ein bekannter Runner-Image-Bug.
-      # Erzwingt oeffentliche DNS-Server, bevor rclone/R2 ueberhaupt genutzt wird.
+      # DNS-Workaround (seit 2026-07-30, verschaerft 2026-07-30 nach erneutem
+      # Fehlschlag): der ubuntu-24.04-Runner scheitert wiederholt (aber nur
+      # INTERMITTIEREND - mal geht ein Schritt durch, der naechste haengt) mit
+      # "dial tcp: lookup ... on 127.0.0.53:53: server misbehaving" beim
+      # R2-Zugriff. 127.0.0.53 ist der lokale systemd-resolved-Stub - erste
+      # Version dieses Fixes hat nur dessen Upstream-DNS umgestellt, der Stub
+      # selbst scheint aber gelegentlich SERVFAIL zu liefern, egal welcher
+      # Upstream konfiguriert ist. Kein R2-/Kontingent-/Zugangsdaten-Problem
+      # (das waere ein 401/403, kein DNS-Fehler), sondern ein Runner-Image-Bug.
+      # Jetzt: /etc/resolv.conf direkt ueberschreiben (Stub komplett umgehen,
+      # nicht nur dessen Upstream aendern) + rclone robuster gegen einzelne
+      # DNS-Aussetzer machen (mehr/schnellere Retries statt 3x im ~4-Min-Abstand).
       - name: DNS-Workaround fuer GitHub-Runner (systemd-resolved "server misbehaving")
         run: |
-          sudo mkdir -p /etc/systemd/resolved.conf.d
-          printf '[Resolve]\nDNS=1.1.1.1 8.8.8.8\nFallbackDNS=9.9.9.9 1.0.0.1\n' \
-            | sudo tee /etc/systemd/resolved.conf.d/dns_override.conf
-          sudo systemctl restart systemd-resolved
-          resolvectl status | head -20 || true
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 9.9.9.9\n' \
+            | sudo tee /etc/resolv.conf
+          cat /etc/resolv.conf
+          getent hosts r2.cloudflarestorage.com || true
 
       - name: rclone installieren (kein Paketmanager auf Runner noetig)
         run: |
