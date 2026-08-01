@@ -156,10 +156,18 @@ jobs:
         # dann Exitcode 1, und unter "bash -e" (Default fuer run-Steps) bricht
         # das die Zeile (und damit sofort den ganzen Schritt/Lauf) ab, obwohl
         # das ein normaler, erwarteter Fall ist, kein echter Fehler.
+        # WICHTIG (Bugfix 2026-08-01): --include griff bisher nur "*.js" - die
+        # echten .json-Dateien (signals.json, priceaction.json, rotation.json,
+        # top_setups.json, ...) landeten NIE im Deploy. Die Cloud-Seite lief
+        # trotzdem, weil jede App einen .js-Fallback (window.X_DATA) hat, aber
+        # jeder direkte fetch("...json") bekam per SPA-Fallback die falsche
+        # HTML-Seite zurueck (200, Content-Type text/html) statt echtem JSON -
+        # unbemerkt, weil der Fallback den Fehler leise schluckt. Jetzt beide
+        # Endungen deployen, damit fetch(...) wie im Code vorgesehen greift.
         run: |
-          [ -d data ] && rclone copy data/ r2:signalhub-magazine/_deploy/signal-hub/ --include "*.js" || true
-          [ -d ../Price-Action-Hub/data ] && rclone copy ../Price-Action-Hub/data/ r2:signalhub-magazine/_deploy/price-action-hub/ --include "*.js" || true
-          [ -d ../Rotation-Dashboard/data ] && rclone copy ../Rotation-Dashboard/data/ r2:signalhub-magazine/_deploy/rotation-dashboard/ --include "*.js" || true
+          [ -d data ] && rclone copy data/ r2:signalhub-magazine/_deploy/signal-hub/ --include "*.js" --include "*.json" || true
+          [ -d ../Price-Action-Hub/data ] && rclone copy ../Price-Action-Hub/data/ r2:signalhub-magazine/_deploy/price-action-hub/ --include "*.js" --include "*.json" || true
+          [ -d ../Rotation-Dashboard/data ] && rclone copy ../Rotation-Dashboard/data/ r2:signalhub-magazine/_deploy/rotation-dashboard/ --include "*.js" --include "*.json" || true
 
       - name: Deploy im Hauptrepo (Miksch52/maick-trading-system) anstossen
         # -f: Exit-Code != 0 bei HTTP-Fehlerstatus (4xx/5xx), statt wie zuvor
