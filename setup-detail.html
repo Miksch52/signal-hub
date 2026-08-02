@@ -57,6 +57,10 @@
   h2{font-size:15px;margin:26px 0 10px;display:flex;align-items:center;gap:8px}
   h2 .sub{font-size:11px;font-weight:400;color:var(--muted)}
 
+  /* Erläuterungen zu den Kriterien erscheinen als native Tooltips (title-Attribut)
+     bei Hover - [title] bekommt einen Hilfe-Cursor als Hinweis, dass dort mehr
+     Info steckt (Sofort-Überblick ist bewusst kompakt, ohne sichtbaren Text). */
+  [title]{cursor:help}
   .quickscan{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;
              background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
   .qs-item{display:flex;align-items:center;gap:7px;font-size:12.5px}
@@ -139,17 +143,42 @@ const TICKER = (params.get('ticker') || '').toUpperCase();
 document.getElementById('nf-ticker').textContent = TICKER || '(kein Ticker)';
 
 const FAKTOR_INFO = {
-  stage2_trend:        {icon:'📈', label:'Stage-2-Trend-Template'},
-  relative_staerke:    {icon:'⚡', label:'Relative Stärke'},
-  naehe_52w_hoch:      {icon:'🎯', label:'Nähe 52W-Hoch'},
-  basis_konsolidierung:{icon:'📦', label:'Basis-Konsolidierung'},
-  volumen_bestaetigung:{icon:'📊', label:'Volumen-Bestätigung'},
-  smart_money:         {icon:'💰', label:'Smart Money (U/D-Volumen)'},
-  cmf:                 {icon:'🌊', label:'Chaikin Money Flow'},
-  quellen_konsens:     {icon:'🔗', label:'Quellen-Konsens'},
-  sektor_staerke:      {icon:'🏭', label:'Branchenstärke'},
-  minervini_5080:      {icon:'⚠️', label:'50/80-Klimax-Check'},
-  fundamental:         {icon:'💵', label:'Fundamental (EPS/Umsatz)'},
+  stage2_trend:        {icon:'📈', label:'Stage-2-Trend-Template', explain:
+    'Minervini Stage-2-Trend-Template: 8 Kriterien für einen intakten Aufwärtstrend (Kurs über SMA150 und SMA200, SMA150 über SMA200, SMA200 und SMA150 steigen, SMA50 über SMA150 über SMA200, Kurs über SMA50, mind. 30% über 52W-Tief, max. 25% unter 52W-Hoch). Je mehr erfüllt, desto stabiler die Basis für eine neue Position.'},
+  relative_staerke:    {icon:'⚡', label:'Relative Stärke', explain:
+    'Gewichtete Kursentwicklung gegen den Markt-Index über 3/6/9/12 Monate (40/20/20/20, jüngste Monate zählen mehr) plus Perzentil-Rang im aktuellen Kandidatenpool. Minervini/IBD: relative Stärke ist ein Rang, keine absolute Zahl.'},
+  naehe_52w_hoch:      {icon:'🎯', label:'Nähe 52W-Hoch', explain:
+    'Abstand zum 52-Wochen-Hoch. Minervini kauft Führungsaktien nahe an neuen Hochs statt vermeintlich billiger Werte weit darunter.'},
+  basis_konsolidierung:{icon:'📦', label:'Basis-Konsolidierung', explain:
+    'Vergleicht die Kursspanne der letzten 4 Wochen mit den 8 Wochen davor. Eine sich verengende Basis (VCP, Volatility Contraction Pattern) zeigt abnehmenden Verkaufsdruck vor einem möglichen Ausbruch.'},
+  volumen_bestaetigung:{icon:'📊', label:'Volumen-Bestätigung', explain:
+    'Volumen der letzten 5 Tage im Verhältnis zum 50-Tage-Durchschnitt. Ein Trend ohne Volumen-Bestätigung ist fragiler - Institutionen hinterlassen Volumenspuren.'},
+  smart_money:         {icon:'💰', label:'Smart Money (U/D-Volumen)', explain:
+    'Up/Down-Volumen-Verhältnis über 50 Tage: Volumen an steigenden gegen Volumen an fallenden Tagen. Werte über 1 deuten auf Akkumulation statt Distribution hin.'},
+  cmf:                 {icon:'🌊', label:'Chaikin Money Flow', explain:
+    'Chaikin Money Flow (21 Tage): misst, ob der Schlusskurs eher im oberen (Akkumulation) oder unteren (Distribution) Bereich der Tagesspanne liegt, gewichtet mit Volumen.'},
+  quellen_konsens:     {icon:'🔗', label:'Quellen-Konsens', explain:
+    'Wie viele unabhängige Quellen (TraderFox, Finviz-Screener, Mail-Signale ...) diesen Ticker unabhängig voneinander highlighten. Mehrfachbestätigung senkt das Risiko eines Einzelfehlers.'},
+  sektor_staerke:      {icon:'🏭', label:'Branchenstärke', explain:
+    'Rang des zugehörigen Sektor-ETFs unter allen 11 S&P-500-Sektoren nach relativer Stärke. Minervini: erst die führende Branchengruppe finden, dann den Marktführer darin.'},
+  minervini_5080:      {icon:'⚠️', label:'50/80-Klimax-Check', explain:
+    'Minervini 50/80-Regel: nach einem scharfen Kurs-Gap auf hohem Volumen (typische Gewinnwarnung) besteht laut Minervini für rund 8 Monate erhöhtes Risiko eines Rückfalls unter das Gap-Tief.'},
+  fundamental:         {icon:'💵', label:'Fundamental (EPS/Umsatz)', explain:
+    'CANSLIM/SEPA-Bestätigung: Gewinn- und Umsatzwachstum gegenüber Vorjahr. Minervini bevorzugt Aktien mit beschleunigtem Gewinnwachstum, nicht nur charttechnische Stärke.'},
+};
+const PIVOT_EXPLAIN = 'Pivot-Armed-Detektor (ergänzt den nachlaufenden Score um die Entstehung des Ausbruchs): BREAKOUT = frischer Ausbruch über die Basis auf hohem Volumen. ARMED = enge, ausgetrocknete Basis knapp unter dem Pivot (Pre-Breakout). WATCH = Trend intakt, Basis noch nicht reif. CHEAT = früher Ausbruch vor vollem Trend-Template, klein positionieren.';
+const PA_EXPLAIN = 'Unabhängige Candlestick-Musteranalyse (Trendbar, Breakout, Gap, Bar-Counting) aus dem Price-Action-Hub - positiver Wert = bullisches Chartbild, kein Ersatz für den Score.';
+const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufwärtsphase, Distribution/Declining = Abwärtsphase - gemessen an Kurs gegen den gleitenden 200-Tage-Durchschnitt und dessen Steigung.';
+const KENNZ_EXPLAIN = {
+  'Pivot': 'Widerstandsniveau - höchster Schlusskurs der Basis. Der Kurs, den ein Ausbruch überwinden muss.',
+  'Abstand zum Pivot': 'Wie weit der aktuelle Kurs noch unter dem Pivot liegt (negativ = bereits darüber).',
+  'Basis-Range (3W)': 'Kursspanne der letzten 3 Wochen relativ zum Kurs - je enger, desto reifer die Basis.',
+  'Verengung': 'Kursspanne davor im Verhältnis zur aktuellen Spanne - Werte über 1 zeigen eine sich zuziehende Basis.',
+  'Vol-Dry-up': '10-Tage- gegen 50-Tage-Volumendurchschnitt. Werte unter 1 zeigen Volumen-Austrocknung - wenig Interesse kurz vor dem Ausbruch, ein gutes Zeichen.',
+  'Vol-Schub heute': 'Heutiges Volumen im Verhältnis zum 50-Tage-Durchschnitt - ein Ausbruch braucht laut Minervini deutlich erhöhtes Volumen (mind. 1,4x) als Bestätigung.',
+  'Supply-Score': 'Anteil des Handelsvolumens der letzten 100 Tage, der unter dem Pivot stattfand (0 bis 1). Hoch = wenig Angebot oberhalb, das ein Ausbruch erst verdauen müsste.',
+  'Pivot-Qualität': 'Zusammengesetzter 0-100-Score aus Enge, Volumen-Austrocknung, Nähe zum Pivot und Supply - je höher, desto schärfer das Setup.',
+  'Stop': 'Empfohlener Stop-Loss knapp unter dem letzten Basis-Tief (Minervini: enger, definierter Stop statt festem Kursziel).',
 };
 const TECH_KEYS = ['stage2_trend','relative_staerke','naehe_52w_hoch','basis_konsolidierung',
                     'volumen_bestaetigung','smart_money','cmf','sektor_staerke','quellen_konsens','minervini_5080'];
@@ -217,28 +246,29 @@ function paBadges(m){
   if(!m || m.status !== 'ok') return '<span class="badge">keine Price-Action-Daten</span>';
   const out=[];
   const tb=m.trend_bar;
-  if(tb && tb.stark) out.push(`<span class="badge ${tb.richtung==='bull'?'b-pa-bull':'b-pa-bear'}" title="Close-Position ${Math.round(tb.close_pos*100)}%, Body-Anteil ${Math.round(tb.body_ratio*100)}%">💪 Starke ${tb.richtung==='bull'?'Bull':'Bär'}-Bar</span>`);
-  if(m.inside_bar && m.inside_bar.inside) out.push(`<span class="badge">📥 Inside Bar</span>`);
+  if(tb && tb.stark) out.push(`<span class="badge ${tb.richtung==='bull'?'b-pa-bull':'b-pa-bear'}" title="Bar mit ausgeprägtem Trendkörper (hoher Body-Anteil, Schluss am Rand der Tagesspanne) - Zeichen für starken Kaufs-/Verkaufsdruck. Close-Position ${Math.round(tb.close_pos*100)}%, Body-Anteil ${Math.round(tb.body_ratio*100)}%">💪 Starke ${tb.richtung==='bull'?'Bull':'Bär'}-Bar</span>`);
+  if(m.inside_bar && m.inside_bar.inside) out.push(`<span class="badge" title="Die Tagesspanne bleibt komplett innerhalb der Vorbar - Konsolidierung/Unentschlossenheit vor der nächsten Bewegung.">📥 Inside Bar</span>`);
   const bc=m.bar_counting;
-  if(bc && bc.typ) out.push(`<span class="badge ${bc.zuverlaessig?(bc.typ.startsWith('High')?'b-pa-bull':'b-pa-bear'):''}" title="${bc.seit_swing_bars} Bar(s) seit Swing">📐 ${bc.typ}${bc.zuverlaessig?'':' (spät)'}</span>`);
+  if(bc && bc.typ) out.push(`<span class="badge ${bc.zuverlaessig?(bc.typ.startsWith('High')?'b-pa-bull':'b-pa-bear'):''}" title="Zählt Bars seit dem letzten Swing-Hoch/-Tief (Livermore-Stil): wenige Bars = zuverlässigeres Fortsetzungssignal, viele Bars = spät und weniger aussagekräftig. ${bc.seit_swing_bars} Bar(s) seit Swing">📐 ${bc.typ}${bc.zuverlaessig?'':' (spät)'}</span>`);
   const bo=m.breakout;
   if(bo && (bo.breakout_up||bo.breakout_down)){
     const st=bo.staerke||{};
-    out.push(`<span class="badge ${bo.breakout_up?'b-pa-bull':'b-pa-bear'}" title="Vol-Ratio ${st.vol_ratio??'–'}x">🚀 Breakout ${bo.breakout_up?'↑':'↓'}${st.vol_ratio?' '+st.vol_ratio+'x Vol':''}</span>`);
-    if(bo.failed) out.push(`<span class="badge b-pa-bear">⛔ Failed</span>`);
+    out.push(`<span class="badge ${bo.breakout_up?'b-pa-bull':'b-pa-bear'}" title="Kurs durchbricht ein vorheriges Referenzband auf erhöhtem Volumen. Vol-Ratio ${st.vol_ratio??'–'}x">🚀 Breakout ${bo.breakout_up?'↑':'↓'}${st.vol_ratio?' '+st.vol_ratio+'x Vol':''}</span>`);
+    if(bo.failed) out.push(`<span class="badge b-pa-bear" title="Kurs ist binnen 5 Bars wieder zurück ins Referenzband gefallen - der Ausbruch hat nicht gehalten, Warnsignal.">⛔ Failed</span>`);
   }
   const g=m.gap;
-  if(g && (g.gap_up||g.gap_down)) out.push(`<span class="badge ${g.gap_up?'b-pa-bull':'b-pa-bear'}">↕️ Gap ${g.gap_pct>0?'+':''}${g.gap_pct}%${g.gefuellt?' (gefüllt)':''}</span>`);
+  if(g && (g.gap_up||g.gap_down)) out.push(`<span class="badge ${g.gap_up?'b-pa-bull':'b-pa-bear'}" title="Kurslücke zwischen Vortagesschluss und heutiger Spanne - ${g.gefuellt?'bereits wieder geschlossen (schwächeres Signal)':'noch offen (stärkeres Signal)'}.">↕️ Gap ${g.gap_pct>0?'+':''}${g.gap_pct}%${g.gefuellt?' (gefüllt)':''}</span>`);
   return out.join('') || '<span class="badge">keine auffälligen Muster</span>';
 }
 
 function fcard(key, info){
+  const fi = FAKTOR_INFO[key];
   if(!info) return `<div class="fcard"><span class="dot d-na"></span><div class="fcard-body">
-    <div class="fcard-head"><span class="fcard-lbl">${FAKTOR_INFO[key].icon} ${FAKTOR_INFO[key].label}</span></div>
+    <div class="fcard-head"><span class="fcard-lbl" title="${fi.explain}">${fi.icon} ${fi.label}</span></div>
     <div class="fcard-detail">keine Daten</div></div></div>`;
   return `<div class="fcard">${dot(info.ampel)}<div class="fcard-body">
     <div class="fcard-head">
-      <span class="fcard-lbl">${FAKTOR_INFO[key].icon} ${FAKTOR_INFO[key].label}</span>
+      <span class="fcard-lbl" title="${fi.explain}">${fi.icon} ${fi.label}</span>
       <span class="fcard-wert">${Math.round(info.wert*100)}%</span>
     </div>
     <div class="fcard-detail">${info.detail||''}</div>
@@ -260,32 +290,32 @@ function render(sig, piv, pa, regime){
   document.title = `🎯 ${t.ticker} — Setup-Analyse`;
 
   // Badges
-  let badges = `<span class="tier tier-${t.tier}">Tier ${t.tier} · ${t.einstufung}</span>`;
+  let badges = `<span class="tier tier-${t.tier}" title="Score-Einstufung: A = Kauf-Kandidat (Score über der Kauf-Schwelle), B = Beobachten, C = darunter.">Tier ${t.tier} · ${t.einstufung}</span>`;
   if(p){
     const st = p.pivot_status;
-    if(st==='BREAKOUT') badges += `<span class="badge b-brk">🚀 BREAKOUT</span>`;
-    else if(st==='ARMED') badges += `<span class="badge b-armed">🎯 ARMED</span>`;
-    else if(st==='CHEAT') badges += `<span class="badge b-cheat">⚡ CHEAT</span>`;
-    else if(st==='WATCH') badges += `<span class="badge b-watch">👁 WATCH</span>`;
+    if(st==='BREAKOUT') badges += `<span class="badge b-brk" title="${PIVOT_EXPLAIN}">🚀 BREAKOUT</span>`;
+    else if(st==='ARMED') badges += `<span class="badge b-armed" title="${PIVOT_EXPLAIN}">🎯 ARMED</span>`;
+    else if(st==='CHEAT') badges += `<span class="badge b-cheat" title="${PIVOT_EXPLAIN}">⚡ CHEAT</span>`;
+    else if(st==='WATCH') badges += `<span class="badge b-watch" title="${PIVOT_EXPLAIN}">👁 WATCH</span>`;
   }
-  if(pa) badges += `<span class="badge ${pa.pa_score>0?'b-pa-bull':pa.pa_score<0?'b-pa-bear':''}">🕯️ PA ${pa.pa_score>0?'+':''}${pa.pa_score}</span>`;
+  if(pa) badges += `<span class="badge ${pa.pa_score>0?'b-pa-bull':pa.pa_score<0?'b-pa-bear':''}" title="${PA_EXPLAIN}">🕯️ PA ${pa.pa_score>0?'+':''}${pa.pa_score}</span>`;
   const regAmpel = regime && t.markt && regime[t.markt] && regime[t.markt].ampel;
-  if(regAmpel) badges += `<span class="badge b-reg-${regAmpel}">Regime ${t.markt} ${({gruen:'🟢',gelb:'🟡',rot:'🔴'})[regAmpel]||''}</span>`;
+  if(regAmpel) badges += `<span class="badge b-reg-${regAmpel}" title="Markt-Regime für ${t.markt} (grün/gelb/rot). Minervini: in einem schwachen Markt keine neuen Positionen eröffnen.">Regime ${t.markt} ${({gruen:'🟢',gelb:'🟡',rot:'🔴'})[regAmpel]||''}</span>`;
   if(t.earnings && t.earnings.status==='termin' && t.earnings.tage!=null && t.earnings.tage<=10 && t.earnings.tage>=0)
-    badges += `<span class="badge b-earn">📅 Earnings in ${t.earnings.tage}T</span>`;
-  if(t.im_depot) badges += `<span class="badge b-depot">📌 im Depot</span>`;
-  if(t.neu) badges += `<span class="badge b-neu">⭐ neu</span>`;
-  if(t.klimax_warnung) badges += `<span class="badge" style="background:rgba(231,76,60,.18);color:#ffb4ab;border-color:rgba(231,76,60,.4)">⚠️ Klimax-Warnung</span>`;
+    badges += `<span class="badge b-earn" title="Earnings-Termin innerhalb des Warnfensters. Minervini: nicht kurz vor Zahlen kaufen, das Gap-Risiko ist unkalkulierbar.">📅 Earnings in ${t.earnings.tage}T</span>`;
+  if(t.im_depot) badges += `<span class="badge b-depot" title="Ticker ist bereits eine offene Position im eigenen Depot (Namensabgleich gegen mts_data.json).">📌 im Depot</span>`;
+  if(t.neu) badges += `<span class="badge b-neu" title="Seit dem letzten Lauf neu als Kauf-Kandidat aufgetaucht (vorher nicht in der Liste oder nach Pause zurückgekehrt).">⭐ neu</span>`;
+  if(t.klimax_warnung) badges += `<span class="badge" style="background:rgba(231,76,60,.18);color:#ffb4ab;border-color:rgba(231,76,60,.4)" title="${FAKTOR_INFO.minervini_5080.explain} Kombiniert mit einer späten Basis (3. oder weiter) - das klassische Minervini-Topmuster.">⚠️ Klimax-Warnung</span>`;
 
   // Quickscan: sofortiger Ampel-Überblick über alle Treiber
   const qsItems = [];
   TECH_KEYS.concat(FUND_KEYS).forEach(k=>{
     const f = t.faktoren && t.faktoren[k];
-    qsItems.push(`<div class="qs-item">${dot(f&&f.ampel)}<span>${FAKTOR_INFO[k].icon} ${FAKTOR_INFO[k].label}</span></div>`);
+    qsItems.push(`<div class="qs-item" title="${FAKTOR_INFO[k].explain}">${dot(f&&f.ampel)}<span>${FAKTOR_INFO[k].icon} ${FAKTOR_INFO[k].label}</span></div>`);
   });
-  if(p) qsItems.push(`<div class="qs-item">${dot(p.pivot_status==='BREAKOUT'||p.pivot_status==='ARMED'?'gruen':p.pivot_status==='WATCH'?'gelb':'rot')}<span>🎯 Pivot: ${p.pivot_status||'—'}</span></div>`);
-  if(m && m.status==='ok') qsItems.push(`<div class="qs-item">${dot(pa.pa_score>0?'gruen':pa.pa_score<0?'rot':'gelb')}<span>🕯️ Price-Action: ${pa.pa_score>0?'bullisch':pa.pa_score<0?'bärisch':'neutral'}</span></div>`);
-  if(m && m.marktstadium && m.marktstadium.stadium) qsItems.push(`<div class="qs-item">${dot(m.marktstadium.stadium==='Advancing'||m.marktstadium.stadium==='Accumulation'?'gruen':m.marktstadium.stadium==='Distribution'?'gelb':'rot')}<span>🏗️ Marktstadium: ${m.marktstadium.stadium}</span></div>`);
+  if(p) qsItems.push(`<div class="qs-item" title="${PIVOT_EXPLAIN}">${dot(p.pivot_status==='BREAKOUT'||p.pivot_status==='ARMED'?'gruen':p.pivot_status==='WATCH'?'gelb':'rot')}<span>🎯 Pivot: ${p.pivot_status||'—'}</span></div>`);
+  if(m && m.status==='ok') qsItems.push(`<div class="qs-item" title="${PA_EXPLAIN}">${dot(pa.pa_score>0?'gruen':pa.pa_score<0?'rot':'gelb')}<span>🕯️ Price-Action: ${pa.pa_score>0?'bullisch':pa.pa_score<0?'bärisch':'neutral'}</span></div>`);
+  if(m && m.marktstadium && m.marktstadium.stadium) qsItems.push(`<div class="qs-item" title="${STADIUM_EXPLAIN}">${dot(m.marktstadium.stadium==='Advancing'||m.marktstadium.stadium==='Accumulation'?'gruen':m.marktstadium.stadium==='Distribution'?'gelb':'rot')}<span>🏗️ Marktstadium: ${m.marktstadium.stadium}</span></div>`);
 
   // Chart: bevorzugt Signal-Hub-Chart (hat SMA50/150/200), sonst PA-Chart
   const chartQuelle = (t.chart && t.chart.c && t.chart.c.length) ? t.chart : (pa && pa.chart);
@@ -314,14 +344,14 @@ function render(sig, piv, pa, regime){
         ${p.megaphone ? '<span class="badge" title="Rechte Seite expandiert statt sich zu beruhigen">🌀 Megaphone</span>' : ''}
       </div>
       <div class="pdetail">${p.detail || p.grund || ''}</div>
-      <div class="kennz">${kennz.map(([l,v])=>`<div><b>${v}</b>${l}</div>`).join('')}</div>
+      <div class="kennz">${kennz.map(([l,v])=>`<div title="${KENNZ_EXPLAIN[l]||''}"><b>${v}</b>${l}</div>`).join('')}</div>
     </div>`;
   }
 
   const paBlock = `<div class="pivotcard">
-    <div class="pdetail">Candlestick-Musteranalyse (Price-Action-Hub), unabhängig vom Score berechnet:</div>
+    <div class="pdetail" title="${PA_EXPLAIN}">Candlestick-Musteranalyse (Price-Action-Hub), unabhängig vom Score berechnet:</div>
     <div class="pabadges">${paBadges(m)}</div>
-    ${m && m.marktstadium && m.marktstadium.stadium ? `<div style="margin-top:10px"><span class="stadium st-${m.marktstadium.stadium}">${m.marktstadium.stadium}</span> <span style="font-size:11px;color:var(--muted)">MA200 ${m.marktstadium.ma200}, Slope ${m.marktstadium.slope}</span></div>` : ''}
+    ${m && m.marktstadium && m.marktstadium.stadium ? `<div style="margin-top:10px"><span class="stadium st-${m.marktstadium.stadium}" title="${STADIUM_EXPLAIN}">${m.marktstadium.stadium}</span> <span style="font-size:11px;color:var(--muted)">MA200 ${m.marktstadium.ma200}, Slope ${m.marktstadium.slope}</span></div>` : ''}
   </div>`;
 
   // Quellen
