@@ -70,6 +70,12 @@
   .chart-wrap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
   .chart-wrap svg{width:100%;height:auto;display:block}
   .chart-cap{font-size:11px;color:var(--muted);margin-top:6px;text-align:center}
+  .tv-box{height:480px;border-radius:10px;overflow:hidden}
+  .tv-box .tradingview-widget-container,.tv-box .tradingview-widget-container__widget{height:100%;width:100%}
+  .chart-links{display:flex;gap:8px;margin-top:10px}
+  .chart-links a{font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);
+                 text-decoration:none;color:var(--txt);background:var(--bg2)}
+  .chart-links a:hover{border-color:var(--primary)}
 
   .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
   .fcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:10px}
@@ -185,6 +191,31 @@ const TECH_KEYS = ['stage2_trend','relative_staerke','naehe_52w_hoch','basis_kon
 const FUND_KEYS = ['fundamental'];
 const flagge = m => m === 'USA' ? '🇺🇸' : m === 'Europa' ? '🇪🇺' : '🏳️';
 const dot = ampel => `<span class="dot d-${ampel||'na'}"></span>`;
+// Yahoo haengt bei Nicht-US-Boersen ein Laender-/Boersen-Kuerzel an (SY1.DE,
+// MC.PA, RIO.L...) - TradingView kennt dieses Suffix nicht und findet dann
+// GAR NICHTS (getestet: "SY1.DE" -> leerer Chart). Der blosse Ticker ohne
+// Suffix loest bei TradingView zwar meist automatisch auf die Standardboerse
+// auf, aber NICHT zuverlaessig (getestet: "SY1" lieferte einmal korrekt
+// XETR:SY1, beim naechsten Laden eine falsche leere Boerse) - deshalb die
+// Exchange-Codes explizit, einzeln via TradingView-Symbolseiten verifiziert
+// (nicht geraten, siehe CLAUDE.md): XETR=tradingview.com/symbols/XETR-IFX,
+// EURONEXT=.../EURONEXT-MC bzw. -ASML, LSE=.../LSE-VOD, SIX=.../SIX-RO,
+// MIL=.../MIL-ENI, OMXSTO=.../OMXSTO-RECSIO, OSL=.../OSL-OBX,
+// OMXCOP=.../OMXCOP-NOVO_B. .MU/.F (Muenchen/Frankfurt-Parkett, je 1 Ticker
+// im Universum) laufen mangels eigener Verifikation auf XETR mit - dieselbe
+// Aktie, liquideste deutsche Boerse. Unbekannte/neue Suffixe: nur abschneiden,
+// TradingViews Autosuche uebernimmt (Best-Effort statt gar kein Chart).
+const YAHOO_SUFFIX_TV_EXCHANGE = {
+  DE:'XETR', F:'XETR', MU:'XETR', PA:'EURONEXT', AS:'EURONEXT',
+  L:'LSE', SW:'SIX', MI:'MIL', ST:'OMXSTO', OL:'OSL', CO:'OMXCOP',
+};
+const tvSymbol = ticker => {
+  const m = ticker.match(/^(.+)\.([A-Za-z]{1,4})$/);
+  if(!m) return ticker;
+  const [, basis, suf] = m;
+  const exch = YAHOO_SUFFIX_TV_EXCHANGE[suf.toUpperCase()];
+  return exch ? `${exch}:${basis}` : basis;
+};
 
 async function ladeJson(pfad){
   try{
@@ -201,44 +232,35 @@ function finde(liste, ticker){
                        || (e.yahoo_symbol||'').toUpperCase() === t) || null;
 }
 
-// ─── Kerzenchart (Port aus signal-hub.html::minichart, groesser fuer die
-//     Detailansicht) ─────────────────────────────────────────────────────
-function grosschart(ch){
-  if(!ch || !ch.c || ch.c.length < 3) return '';
-  const W=760,H=220,volH=42,pad=4,pH=H-volH-3;
-  const c=ch.c, v=ch.v||[], n=c.length;
-  const kerzen = !!(ch.o && ch.h && ch.l && ch.o.length===n);
-  let lo=Infinity, hi=-Infinity;
-  [kerzen?ch.h:c, kerzen?ch.l:null, c, ch.s50, ch.s150, ch.s200].forEach(a=>{
-    if(a) a.forEach(x=>{ if(x!=null){ if(x<lo)lo=x; if(x>hi)hi=x; } });
-  });
-  const rng = (hi-lo)||1;
-  const X = i => pad + i*(W-2*pad)/(n-1);
-  const Y = val => pad + (pH-2*pad)*(1-(val-lo)/rng);
-  const linie = (a,col,wd) => { if(!a) return '';
-    let d='', an=false;
-    a.forEach((val,i)=>{ if(val==null){an=false;return;} d+=(an?'L':'M')+X(i).toFixed(1)+' '+Y(val).toFixed(1)+' '; an=true; });
-    return d ? `<path d="${d}" fill="none" stroke="${col}" stroke-width="${wd}" stroke-linejoin="round"/>` : '';
+// ─── TradingView-Widget (Port aus Minervini/Minervini Dashboard.html::tvWidget) ──
+// Ersetzt den frueheren lokal gerenderten SVG-Kerzenchart (seit 2026-08-02) -
+// echter Live-Chart mit TradingView-eigenem Zoom/Indikatoren statt einer
+// statischen ~6-Monats-Momentaufnahme aus signals.json. Kein Exchange-Praefix
+// (z.B. "NASDAQ:") vor dem Symbol - TradingView loest einen blossen Ticker
+// automatisch ueber die Standardboerse auf (offiziell dokumentiertes
+// Fallback-Verhalten, siehe TradingView Widget-Doku "Dynamic Symbol Change"),
+// das macht das Raten von Exchange-Codes fuer die vielen EU-Boersen in diesem
+// Universum (.DE/.PA/.AS/.SW/...) ueberfluessig - identisch zum bereits
+// bestehenden "TradingView oeffnen"-Link (siehe extlinks).
+function tvWidget(containerId, symbol){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const config = {
+    autosize: true, symbol: symbol, interval: 'D', timezone: 'Europe/Berlin',
+    theme: 'dark', style: '1', locale: 'de_DE', withdateranges: true,
+    allow_symbol_change: true, save_image: false, hide_side_toolbar: false,
+    studies: [
+      { id: 'MASimple@tv-basicstudies', inputs: { length: 50 } },
+      { id: 'MASimple@tv-basicstudies', inputs: { length: 150 } },
+      { id: 'MASimple@tv-basicstudies', inputs: { length: 200 } },
+    ],
   };
-  const vmax = Math.max(...v,1), bw = Math.max(1, W/n*(kerzen?0.62:0.72));
-  let vol='';
-  v.forEach((val,i)=>{ const bh=Math.max(0.5,(val/vmax)*volH); vol+=`<rect x="${(X(i)-bw/2).toFixed(1)}" y="${(H-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="#33485f"/>`; });
-  let preis='';
-  if(kerzen){
-    for(let i=0;i<n;i++){
-      if(ch.o[i]==null||ch.h[i]==null||ch.l[i]==null||c[i]==null) continue;
-      const up = c[i]>=ch.o[i], col = up?'#2FB08D':'#E74C3C', x=X(i);
-      const yO=Y(ch.o[i]), yC=Y(c[i]);
-      const bodyTop=Math.min(yO,yC), bodyH=Math.max(1,Math.abs(yC-yO));
-      preis += `<line x1="${x.toFixed(1)}" y1="${Y(ch.h[i]).toFixed(1)}" x2="${x.toFixed(1)}" y2="${Y(ch.l[i]).toFixed(1)}" stroke="${col}" stroke-width="1"/>`
-             + `<rect x="${(x-bw/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${bodyH.toFixed(1)}" fill="${col}"/>`;
-    }
-  } else {
-    preis = linie(c,'#eaf2fb',1.8);
-  }
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
-       + vol + linie(ch.s200,'#E74C3C',1.2) + linie(ch.s150,'#F39C12',1.2) + linie(ch.s50,'#3b9ae1',1.2) + preis
-       + `</svg>`;
+  el.innerHTML = '<div class="tradingview-widget-container" style="height:100%;width:100%"><div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div></div>';
+  const s = document.createElement('script');
+  s.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+  s.async = true;
+  s.textContent = JSON.stringify(config);
+  el.firstChild.appendChild(s);
 }
 
 // ─── Price-Action-Badges (Port aus Price-Action-Hub/price-action-hub.html) ──
@@ -286,6 +308,7 @@ function earnText(e){
 function render(sig, piv, pa, regime){
   const t = sig, p = piv, m = (pa && pa.muster) || null;
   const tvSym = encodeURIComponent(t.ticker);
+  const tvChartSym = encodeURIComponent(tvSymbol(t.ticker));
   document.getElementById('headtitle').textContent = `🎯 ${t.ticker} — Setup-Analyse`;
   document.title = `🎯 ${t.ticker} — Setup-Analyse`;
 
@@ -316,10 +339,6 @@ function render(sig, piv, pa, regime){
   if(p) qsItems.push(`<div class="qs-item" title="${PIVOT_EXPLAIN}">${dot(p.pivot_status==='BREAKOUT'||p.pivot_status==='ARMED'?'gruen':p.pivot_status==='WATCH'?'gelb':'rot')}<span>🎯 Pivot: ${p.pivot_status||'—'}</span></div>`);
   if(m && m.status==='ok') qsItems.push(`<div class="qs-item" title="${PA_EXPLAIN}">${dot(pa.pa_score>0?'gruen':pa.pa_score<0?'rot':'gelb')}<span>🕯️ Price-Action: ${pa.pa_score>0?'bullisch':pa.pa_score<0?'bärisch':'neutral'}</span></div>`);
   if(m && m.marktstadium && m.marktstadium.stadium) qsItems.push(`<div class="qs-item" title="${STADIUM_EXPLAIN}">${dot(m.marktstadium.stadium==='Advancing'||m.marktstadium.stadium==='Accumulation'?'gruen':m.marktstadium.stadium==='Distribution'?'gelb':'rot')}<span>🏗️ Marktstadium: ${m.marktstadium.stadium}</span></div>`);
-
-  // Chart: bevorzugt Signal-Hub-Chart (hat SMA50/150/200), sonst PA-Chart
-  const chartQuelle = (t.chart && t.chart.c && t.chart.c.length) ? t.chart : (pa && pa.chart);
-  const chartSvg = grosschart(chartQuelle);
 
   // Technik-Karten
   const techCards = TECH_KEYS.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
@@ -377,7 +396,14 @@ function render(sig, piv, pa, regime){
     <h2>🔎 Sofort-Überblick <span class="sub">alle Treiber auf einen Blick</span></h2>
     <div class="quickscan">${qsItems.join('')}</div>
 
-    ${chartSvg ? `<div class="chart-wrap">${chartSvg}<div class="chart-cap">~6 Monate · Kerzen + SMA50 (blau) / SMA150 (orange) / SMA200 (rot) + Volumen</div></div>` : ''}
+    <div class="chart-wrap">
+      <div id="tv-chart" class="tv-box"></div>
+      ${t.markt !== 'USA' ? '<div class="chart-cap">Zeigt der Chart keine Kerzen (manche nicht-US-Börsen sind im kostenlosen TradingView-Embed gesperrt, TradingView selbst meldet dann „Symbol nur bei TradingView verfügbar") → „Vollbild auf TradingView" nutzen.</div>' : ''}
+      <div class="chart-links">
+        <a href="https://www.tradingview.com/chart/?symbol=${tvChartSym}" target="_blank" rel="noopener">📊 Vollbild auf TradingView</a>
+        <a href="https://finviz.com/quote.ashx?t=${tvSym}" target="_blank" rel="noopener">🔍 Finviz-Chart öffnen</a>
+      </div>
+    </div>
 
     <h2>📈 Technische Treiber <span class="sub">Minervini Trend-Template, relative Stärke, Volumen</span></h2>
     <div class="fgrid">${techCards}</div>
@@ -397,9 +423,7 @@ function render(sig, piv, pa, regime){
     <h2>🔗 Quellen &amp; weiterführende Links</h2>
     <div class="srcrow">${srcChips || '<span class="chip">keine Quellen-Info</span>'}</div>
     <div class="extlinks">
-      <a href="https://www.tradingview.com/chart/?symbol=${tvSym}" target="_blank" rel="noopener">📊 TradingView</a>
       <a href="https://finance.yahoo.com/quote/${tvSym}" target="_blank" rel="noopener">💹 Yahoo Finance</a>
-      <a href="https://finviz.com/quote.ashx?t=${tvSym}" target="_blank" rel="noopener">🔍 Finviz</a>
       <a href="signal-hub.html">📈 im Signal Hub öffnen</a>
       <a href="../Price-Action-Hub/price-action-hub.html">🕯️ im Price-Action-Hub öffnen</a>
       <a href="../minervini-coach-2.html?ticker=${tvSym}">🎓 SEPA-Analyse im Coach</a>
@@ -414,6 +438,9 @@ function render(sig, piv, pa, regime){
   `;
   document.getElementById('loading').style.display = 'none';
   document.getElementById('content').style.display = '';
+  // Container muss im DOM sein, bevor das Widget-Script eingehaengt wird
+  // (dynamisch per innerHTML eingefuegte <script>-Tags fuehren sich sonst nicht aus).
+  tvWidget('tv-chart', tvSymbol(t.ticker));
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
     if(!isNaN(dt)) document.getElementById('stand').textContent =
