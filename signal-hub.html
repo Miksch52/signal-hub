@@ -329,6 +329,7 @@
   </details>
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" style="display:none">Keine Treffer für die aktuellen Filter.</div>
+  <button class="btn" id="mehrladen" style="display:none;margin:14px auto" onclick="mehrLaden()">Mehr laden</button>
 </main>
 
 <div class="drawer" id="drawer">
@@ -339,13 +340,23 @@
   <p class="note" id="cfgnote"></p>
 </div>
 
-<script src="data/signals.js"></script>
-<script src="data/pivot.js"></script>
-<script src="data/pivot_history.js"></script>
 <script src="data/top_setups.js"></script>
 <script src="data/config.js"></script>
 <script src="/assets/marktampel.js"></script>
 <script>
+// Performance-Review 2026-08-02: signals.js/pivot.js/pivot_history.js (zusammen
+// >11 MB) wurden bisher IMMER blockierend geladen UND zusaetzlich per fetch()
+// als .json nachgeladen, sobald ein Server antwortet - doppelter Download bei
+// jedem Seitenaufruf. Jetzt nur noch echter Fallback: das .js wird erst dynamisch
+// nachgeladen, wenn der fetch() der .json wirklich fehlschlaegt (file://, Server
+// down). top_setups.js/config.js bleiben statisch (nur wenige KB, kein Problem).
+function _ladeFallbackSkript(src){
+  return new Promise(res=>{
+    const s=document.createElement('script');
+    s.src=src; s.onload=res; s.onerror=res;
+    document.head.appendChild(s);
+  });
+}
 // Geteilter Cloudflare-Worker-Proxy (identisch mit index.html/Dashboard) - fuer
 // die volle Minervini-Marktampel (assets/marktampel.js), damit der US-Chip
 // exakt dasselbe zeigt wie Startseite und Markets 360.
@@ -364,6 +375,12 @@ const FAKT = [
   ["fundamental","⑪ Fundamental"],
 ];
 let DATA=null, CONFIG=null, PIVOT=null, PIVOTMAP={}, PIVHIST=null;
+// Performance-Review 2026-08-02: bis zu ~1300 Karten (inkl. generiertem SVG-
+// Kerzenchart je Karte) wurden bei jedem Filterwechsel komplett ins DOM
+// geschrieben - auf dem iPhone spuerbar ruckelig. Jetzt Pagination: erste
+// PAGE_SIZE Treffer sofort, Rest per "Mehr laden"-Button nachladen.
+const PAGE_SIZE=100;
+let CURRENT_LIST=[], RENDER_LIMIT=PAGE_SIZE;
 // Standard = die urspruengliche Aufgabe (aussichtsreichste Chart-/Volumen-Setups im
 // Minervini/Livermore-Stil): Pivot-Sortierung, nur scharfe Pivot-Setups, Earnings
 // raus, Smart-Money/CMF mitgerechnet, Stage-2/Volumen muessen gruen sein.
@@ -458,6 +475,7 @@ async function ladeDaten(){
     const r=await fetch('data/signals.json',{cache:'no-store'});
     if(r.ok){DATA=await r.json();return;}
   }catch(e){}
+  await _ladeFallbackSkript('data/signals.js');
   DATA = window.SIGNAL_DATA || {treffer:[],erstellt:null,anzahl:0};
 }
 async function ladeConfig(){
@@ -474,7 +492,7 @@ async function ladePivot(){
     const r=await fetch('data/pivot.json',{cache:'no-store'});
     if(r.ok){PIVOT=await r.json();}
   }catch(e){}
-  if(!PIVOT) PIVOT = window.PIVOT_DATA || null;
+  if(!PIVOT){ await _ladeFallbackSkript('data/pivot.js'); PIVOT = window.PIVOT_DATA || null; }
   PIVOTMAP={};
   if(PIVOT&&PIVOT.treffer) PIVOT.treffer.forEach(p=>{ if(p.ticker) PIVOTMAP[p.ticker]=p; });
 }
@@ -538,7 +556,7 @@ async function ladePivotHistory(){
     const r=await fetch('data/pivot_history.json',{cache:'no-store'});
     if(r.ok){PIVHIST=await r.json();}
   }catch(e){}
-  if(!PIVHIST) PIVHIST = window.PIVOT_HISTORY_DATA || null;
+  if(!PIVHIST){ await _ladeFallbackSkript('data/pivot_history.js'); PIVHIST = window.PIVOT_HISTORY_DATA || null; }
 }
 
 // Markt-Regime-Ampel: primaer aus signals.json (marktregime, vom Scorer je
@@ -836,13 +854,32 @@ function render(){
   else list.sort((a,b)=>effScore(b)-effScore(a)||(b.quellen.unabhaengig||[]).length-(a.quellen.unabhaengig||[]).length);
   if(state.topOnly) list=list.slice(0,5);
 
-  const grid=document.getElementById('grid');
+  CURRENT_LIST=list;
+  RENDER_LIMIT=PAGE_SIZE;
   document.getElementById('empty').style.display=list.length?'none':'block';
-  grid.innerHTML=list.map((t,i)=>karte(t,i+1)).join('');
-  // Desktop: Chart+Faktoren je Kachel offen zeigen; mobil eingeklappt (kompakte Liste).
-  if(window.innerWidth>700) grid.querySelectorAll('details.cardchart').forEach(d=>d.open=true);
+  renderGrid();
   renderBreadth();
   renderDropListe();
+}
+
+function renderGrid(){
+  const grid=document.getElementById('grid');
+  grid.innerHTML=CURRENT_LIST.slice(0,RENDER_LIMIT).map((t,i)=>karte(t,i+1)).join('');
+  // Desktop: Chart+Faktoren je Kachel offen zeigen; mobil eingeklappt (kompakte Liste).
+  if(window.innerWidth>700) grid.querySelectorAll('details.cardchart').forEach(d=>d.open=true);
+  const mehr=document.getElementById('mehrladen');
+  if(mehr){
+    if(CURRENT_LIST.length>RENDER_LIMIT){
+      mehr.style.display='';
+      mehr.textContent=`Mehr laden (${RENDER_LIMIT} von ${CURRENT_LIST.length})`;
+    } else {
+      mehr.style.display='none';
+    }
+  }
+}
+function mehrLaden(){
+  RENDER_LIMIT+=PAGE_SIZE;
+  renderGrid();
 }
 
 function minichart(ch){

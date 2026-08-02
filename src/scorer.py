@@ -21,6 +21,7 @@ Test:  python3 scorer.py            # alle Roh-Signale
        python3 scorer.py --limit 40 # nur Top-40 nach Konsens (schnell, schonend)
 """
 
+import concurrent.futures
 import json
 import math
 import os
@@ -449,19 +450,6 @@ def _decay(datum_str, halbwert):
         return 1.0
     return 0.5 ** (alter / float(halbwert)) if alter > 0 else 1.0
 
-def yahoo_suche(name):
-    """EU-Namen -> Ticker. Liefert bestes Equity-Symbol."""
-    url = (f"https://query1.finance.yahoo.com/v1/finance/search?q="
-           f"{urllib.parse.quote(name)}&quotesCount=5&newsCount=0")
-    try:
-        d = _http_json(url)
-    except Exception:
-        return None
-    for q in d.get("quotes", []):
-        if q.get("quoteType") == "EQUITY" and q.get("symbol"):
-            return q["symbol"]
-    return None
-
 # Cache --------------------------------------------------------------------
 def lade_cache():
     if os.path.exists(CACHE_PFAD):
@@ -484,10 +472,58 @@ def hole_chart_cached(symbol, cache):
     try:
         data = yahoo_chart(symbol)
     except Exception:
-        data = None
+        # Performance-Review 2026-08-02: transiente Netzwerkfehler NICHT cachen -
+        # sonst ist ein einmaliger Timeout fuer den Rest des Tages ununterscheidbar
+        # von "Ticker hat wirklich keine Daten" und sperrt ihn aus der Pipeline.
+        # Kein Cache-Eintrag -> ein spaeterer Aufruf (naechster Cron-Slot, oder
+        # falls dieser Aufruf aus dem Haupt-Loop nach einem parallelen Praefetch-
+        # Fehlschlag kommt) versucht es erneut. Nur ein echtes (fehlerfreies)
+        # Leerergebnis von yahoo_chart() gilt als legitimes "keine Daten".
+        time.sleep(0.25)
+        return None
     cache[key] = data
     time.sleep(0.25)  # schonend zu Yahoo
     return data
+
+def prefetch_charts_parallel(symbols, cache, max_workers=5):
+    """Holt alle noch nicht gecachten Charts parallel statt seriell mit
+    time.sleep() dazwischen - bei ~1300 Tickern kostete die serielle Variante
+    allein >5 Minuten reine Sleep-Zeit pro Lauf (Performance-Review 2026-08-02).
+    Schreibt Ergebnisse in `cache` im selben Format/Key wie hole_chart_cached(),
+    danach ist der bestehende sequenzielle Bewertungs-Loop UNVERAENDERT - jeder
+    hole_chart_cached()-Aufruf dort wird zum reinen Cache-Hit (kein Refactoring
+    der 1000+ Zeilen Faktoren-Logik noetig). max_workers bewusst moderat (5),
+    um Yahoo nicht mit zu vielen gleichzeitigen Anfragen zu belasten - jeder
+    Worker pausiert wie bisher zwischen seinen eigenen Anfragen."""
+    heute = datetime.now().strftime("%Y-%m-%d")
+    fehlend, gesehen = [], set()
+    for symbol in symbols:
+        if not symbol or symbol in gesehen:
+            continue
+        gesehen.add(symbol)
+        if f"{symbol}@{heute}" not in cache:
+            fehlend.append(symbol)
+    if not fehlend:
+        return
+    def _fetch(symbol):
+        try:
+            data = yahoo_chart(symbol)
+            fehler = False
+        except Exception:
+            data, fehler = None, True
+        time.sleep(0.2)
+        return symbol, data, fehler
+    print(f"  Praefetch: {len(fehlend)} neue Charts ({max_workers} parallel) ...")
+    fertig = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        for symbol, data, fehler in ex.map(_fetch, fehlend):
+            if not fehler:
+                # nur erfolgreiche Abrufe cachen (auch ein echtes Leerergebnis) -
+                # bei einer Exception bleibt der Key leer, siehe hole_chart_cached()
+                cache[f"{symbol}@{heute}"] = data
+            fertig += 1
+            if fertig % 100 == 0:
+                print(f"    {fertig}/{len(fehlend)} praefetcht ...")
 
 # ---------------------------------------------------------------------------
 # Indikatoren
@@ -1106,6 +1142,8 @@ def score_alle(limit=None):
     print("Yahoo-Crumb fuer EU-Sektor/Earnings:", "ok" if ycrumb else "nicht verfuegbar (EU-Sektor/Earnings entfallen ggf.)")
     frische_aktiv = bool(frische_cfg.get("aktiv"))
     halbwert = frische_cfg.get("halbwertszeit_tage", 10)
+
+    prefetch_charts_parallel([g["symbol"] for g in rang], cache)
 
     ergebnisse = []
     print(f"Bewerte {len(rang)} Ticker ...")
