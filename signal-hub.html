@@ -846,7 +846,14 @@ function render(){
 
   if(state.sort==="konsens") list.sort((a,b)=>b.quellen.ausgaben-a.quellen.ausgaben||b.score-a.score);
   else if(state.sort==="naehe") list.sort((a,b)=>b.faktoren.naehe_52w_hoch.wert-a.faktoren.naehe_52w_hoch.wert);
-  else if(state.sort==="pivot"){const pr={BREAKOUT:2,ARMED:1};const pq=t=>{const p=pivotInfo(t);return p?((pr[p.pivot_status]||0)*1000+(p.qualitaet||0)):-1;};list.sort((a,b)=>pq(b)-pq(a)||(b.quellen.unabhaengig||[]).length-(a.quellen.unabhaengig||[]).length||effScore(b)-effScore(a));}
+  else if(state.sort==="pivot"){
+    // ARMED vor BREAKOUT (seit 2026-08-02 getauscht): unverzerrter Forward-Test
+    // zeigt ARMED 71% Win (n=83) gegen BREAKOUT nur 34% (n=90) - der aeltere
+    // Retro-Backtest hatte BREAKOUT durch Universums-Bias zu gut aussehen lassen.
+    const pr={ARMED:2,BREAKOUT:1};
+    const pq=t=>{const p=pivotInfo(t);return p?((pr[p.pivot_status]||0)*1000+(p.qualitaet||0)):-1;};
+    list.sort((a,b)=>pq(b)-pq(a)||(b.quellen.unabhaengig||[]).length-(a.quellen.unabhaengig||[]).length||effScore(b)-effScore(a));
+  }
   else if(state.sort==="top") list.sort((a,b)=>topScore(b)-topScore(a)||effScore(b)-effScore(a));
   else if(state.sort==="branche") list.sort((a,b)=>(b.faktoren.sektor_staerke?.wert||0)-(a.faktoren.sektor_staerke?.wert||0)||effScore(b)-effScore(a));
   else if(state.sort==="persistenz") list.sort((a,b)=>persistenzTage(b.ticker)-persistenzTage(a.ticker)||effScore(b)-effScore(a));

@@ -1399,8 +1399,15 @@ def score_alle(limit=None):
             lb = []
     if not any(e.get("datum") == heute for e in lb):
         # tier mitloggen: Basis fuer score_backtest.py (Trefferquoten je Tier).
+        # faktoren mitloggen (seit 2026-08-02, Scoring-Erfolgsanalyse): nur
+        # wert+ampel je Faktor (kein detail-Text, bleibt schlank) - damit sich
+        # spaeter (sobald genug Episoden gereift sind) nicht nur Tier A/B,
+        # sondern JEDER EINZELNE Faktor gegen den Forward-Return auswerten
+        # laesst (welche Methoden/Filter tatsaechlich Erfolg vorhersagen).
         top = [{"ticker": e["ticker"], "score": e["score"], "tier": e["tier"],
-                "preis": e["preis"], "markt": e["markt"]}
+                "preis": e["preis"], "markt": e["markt"],
+                "faktoren": {k: {"wert": v["wert"], "ampel": v["ampel"]}
+                             for k, v in (e.get("faktoren") or {}).items()}}
                for e in ergebnisse if e["score"] >= schwellen["beobachten"]]
         lb.append({"datum": heute, "anzahl": len(top), "treffer": top})
         lb = lb[-400:]

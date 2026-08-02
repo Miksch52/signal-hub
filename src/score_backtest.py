@@ -94,7 +94,10 @@ def episoden(lb, schwellen):
             if last is None or (datum - last).days > EPISODE_LUECKE:
                 picks.append({"ticker": p["ticker"], "tier": tier,
                               "datum": tag["datum"], "preis": p["preis"],
-                              "markt": p.get("markt")})
+                              "markt": p.get("markt"),
+                              # seit 2026-08-02 im Logbuch vorhanden (aeltere Eintraege: leer) -
+                              # Basis fuer eine kuenftige Pro-Faktor-Auswertung, siehe Docstring oben.
+                              "faktoren": p.get("faktoren")})
             zuletzt[key] = datum
     return picks
 
