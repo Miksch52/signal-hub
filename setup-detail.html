@@ -148,6 +148,15 @@ const params = new URLSearchParams(location.search);
 const TICKER = (params.get('ticker') || '').toUpperCase();
 document.getElementById('nf-ticker').textContent = TICKER || '(kein Ticker)';
 
+// Fundamentalanalyse/News/Story (seit 2026-08-02): live bei jedem Aufruf ueber
+// denselben Cloudflare-Worker, den Hauptapp/Coach/Markets-360 schon als
+// MTS_PROXY fuer Yahoo/FRED nutzen (siehe cloudflare-worker/README.md) - der
+// neue /story-Endpunkt holt dort serverseitig Yahoo-Fundamentaldaten + News
+// und laesst Claude (ANTHROPIC_API_KEY als Worker-Secret, nie im Client-Code)
+// daraus eine kurze, rein informative Zusammenfassung schreiben. Kein neuer
+// Worker noetig, kein zweites Deployment.
+const MTS_PROXY = 'https://mts-cors.miksch267.workers.dev/';
+
 const FAKTOR_INFO = {
   stage2_trend:        {icon:'📈', label:'Stage-2-Trend-Template', explain:
     'Minervini Stage-2-Trend-Template: 8 Kriterien für einen intakten Aufwärtstrend (Kurs über SMA150 und SMA200, SMA150 über SMA200, SMA200 und SMA150 steigen, SMA50 über SMA150 über SMA200, Kurs über SMA50, mind. 30% über 52W-Tief, max. 25% unter 52W-Hoch). Je mehr erfüllt, desto stabiler die Basis für eine neue Position.'},
@@ -185,6 +194,8 @@ const KENNZ_EXPLAIN = {
   'Supply-Score': 'Anteil des Handelsvolumens der letzten 100 Tage, der unter dem Pivot stattfand (0 bis 1). Hoch = wenig Angebot oberhalb, das ein Ausbruch erst verdauen müsste.',
   'Pivot-Qualität': 'Zusammengesetzter 0-100-Score aus Enge, Volumen-Austrocknung, Nähe zum Pivot und Supply - je höher, desto schärfer das Setup.',
   'Stop': 'Empfohlener Stop-Loss knapp unter dem letzten Basis-Tief (Minervini: enger, definierter Stop statt festem Kursziel).',
+  'Ziel (informativ)': 'Technische Measured-Move-Projektion: Basis-Höhe ab Pivot nochmal aufgesetzt. Rein informativ - Minervini tradet ohne festes Kursziel, sondern trailt den Stop und verkauft in Stärke. Keine Kauf-/Verkaufsregel.',
+  'Chance/Risiko (informativ)': 'Verhältnis von (Ziel − Kurs) zu (Kurs − Stop), bezogen auf das rein informative Kursziel oben - keine Score- oder Kaufauswirkung.',
 };
 const TECH_KEYS = ['stage2_trend','relative_staerke','naehe_52w_hoch','basis_konsolidierung',
                     'volumen_bestaetigung','smart_money','cmf','sektor_staerke','quellen_konsens','minervini_5080'];
@@ -357,10 +368,13 @@ function render(sig, piv, pa, regime){
     if(p.vol_surge!=null) kennz.push(['Vol-Schub heute', p.vol_surge+'x']);
     if(p.supply_score!=null) kennz.push(['Supply-Score', p.supply_score]);
     if(p.qualitaet!=null) kennz.push(['Pivot-Qualität', Math.round(p.qualitaet)]);
-    if(p.stop!=null) kennz.push(['Stop', p.stop + (p.stop_pct!=null?' ('+p.stop_pct+'%)':'')]);
+    if(p.stop!=null) kennz.push(['Stop', p.stop + (p.stop_pct!=null?' ('+p.stop_pct+'%)':'') + (p.stop_warnung?' ⚠️':'')]);
+    if(p.ziel!=null) kennz.push(['Ziel (informativ)', p.ziel]);
+    if(p.chance_risiko!=null) kennz.push(['Chance/Risiko (informativ)', p.chance_risiko+':1']);
     pivotBlock = `<div class="pivotcard">
       <div class="phead"><span class="badge ${stKl}">${p.pivot_status||'—'}</span>
         ${p.megaphone ? '<span class="badge" title="Rechte Seite expandiert statt sich zu beruhigen">🌀 Megaphone</span>' : ''}
+        ${p.stop_warnung ? '<span class="badge" style="background:rgba(243,156,18,.18);color:var(--warn);border-color:rgba(243,156,18,.4)" title="Stop-Distanz über 8% - für ein enges VCP-Setup untypisch weit (Minervini bevorzugt 5-8%). Kein Gate, nur Hinweis.">⚠️ weiter Stop</span>' : ''}
       </div>
       <div class="pdetail">${p.detail || p.grund || ''}</div>
       <div class="kennz">${kennz.map(([l,v])=>`<div title="${KENNZ_EXPLAIN[l]||''}"><b>${v}</b>${l}</div>`).join('')}</div>
@@ -420,6 +434,9 @@ function render(sig, piv, pa, regime){
     ${pivotBlock}
     ${paBlock}
 
+    <h2>📰 Fundamentalanalyse &amp; Story <span class="sub">live, Yahoo Finance + KI-Zusammenfassung</span></h2>
+    <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
+
     <h2>🔗 Quellen &amp; weiterführende Links</h2>
     <div class="srcrow">${srcChips || '<span class="chip">keine Quellen-Info</span>'}</div>
     <div class="extlinks">
@@ -441,10 +458,82 @@ function render(sig, piv, pa, regime){
   // Container muss im DOM sein, bevor das Widget-Script eingehaengt wird
   // (dynamisch per innerHTML eingefuegte <script>-Tags fuehren sich sonst nicht aus).
   tvWidget('tv-chart', tvSymbol(t.ticker));
+  ladeStory(t.ticker, t.yahoo_symbol, t.name);
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
     if(!isNaN(dt)) document.getElementById('stand').textContent =
       'Datenstand ' + dt.toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + ' Uhr';
+  }
+}
+
+// Zahl kompakt formatieren (Marktkap. etc.) - Mrd/Mio statt langer Ziffernketten.
+function fmtGross(v){
+  if(v==null) return '—';
+  const a = Math.abs(v);
+  if(a >= 1e9) return (v/1e9).toFixed(1)+' Mrd';
+  if(a >= 1e6) return (v/1e6).toFixed(0)+' Mio';
+  return String(v);
+}
+function fmtPct(v){ return v==null ? '—' : (v*100).toFixed(1)+'%'; }
+
+// Story/News kommen live von Yahoo bzw. der KI-Zusammenfassung - anders als
+// die kuratierten Pipeline-Dateien (signals.json etc.) nicht "hausgemacht",
+// deshalb hier bewusst escapen statt roh per innerHTML einzufuegen (XSS-Haertung).
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderStory(d){
+  const fx = d.fundamentals || {};
+  const kennz = [
+    ['Marktkap.', fmtGross(fx.marketCap) + (d.currency?(' '+d.currency):'')],
+    ['KGV (trailing)', fx.trailingPE!=null ? fx.trailingPE.toFixed(1) : '—'],
+    ['KGV (forward)', fx.forwardPE!=null ? fx.forwardPE.toFixed(1) : '—'],
+    ['Umsatzwachstum (YoY)', fmtPct(fx.revenueGrowth)],
+    ['Gewinnwachstum (YoY)', fmtPct(fx.earningsGrowth)],
+    ['Bruttomarge', fmtPct(fx.grossMargins)],
+    ['Analysten-Konsens (Yahoo)', esc(fx.recommendationKey) || '—'],
+  ];
+  const newsHtml = (d.news || []).map(n => {
+    const href = /^https?:\/\//.test(n.link||'') ? n.link : null;
+    const titel = esc(n.title);
+    return `<div style="margin-top:9px;font-size:12.5px">
+      ${href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${titel}</a>` : titel}
+      <div style="color:var(--muted);font-size:11px">${esc(n.publisher)||''}${n.zeit ? ' · '+esc(n.zeit) : ''}</div>
+    </div>`;
+  }).join('') || '<div style="color:var(--muted);font-size:12.5px">Keine aktuellen Schlagzeilen gefunden.</div>';
+  const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+  return `
+    <div class="pivotcard">
+      <div class="pdetail"><b>Unternehmen:</b> ${esc(d.profil) || '—'}</div>
+      <div class="pdetail"><b>Aktuelle Story:</b> ${esc(d.story) || '—'}</div>
+      <div class="kennz">${kennz.map(([l,v])=>`<div><b>${v}</b>${l}</div>`).join('')}</div>
+    </div>
+    <div class="pivotcard">
+      <div class="pdetail" style="margin-bottom:0">📰 Aktuelle Schlagzeilen</div>
+      ${newsHtml}
+    </div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
+      KI-generierte Zusammenfassung (Claude, Yahoo-Finance-Daten) · rein informativ, keine Anlageberatung,
+      keine Kauf-/Verkaufsempfehlung · Stand ${stand} Uhr
+    </div>`;
+}
+
+async function ladeStory(ticker, yahooSymbol, name){
+  const el = document.getElementById('storyblock');
+  if(!el || !ticker) return;
+  try{
+    const u = MTS_PROXY + 'story?ticker=' + encodeURIComponent(yahooSymbol || ticker)
+      + '&name=' + encodeURIComponent(name || '');
+    const r = await fetch(u, {signal: AbortSignal.timeout(25000)});
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
+    el.innerHTML = renderStory(d);
+  }catch(e){
+    el.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
+      Fundamentalanalyse gerade nicht verfügbar (${esc((e && e.message) || e)}).
+      <a href="https://finance.yahoo.com/quote/${encodeURIComponent(yahooSymbol || ticker)}" target="_blank" rel="noopener">Direkt bei Yahoo Finance nachsehen →</a>
+    </div></div>`;
   }
 }
 

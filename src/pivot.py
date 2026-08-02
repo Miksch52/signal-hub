@@ -87,14 +87,29 @@ def clamp(x, lo=0.0, hi=1.0):
     return max(lo, min(hi, x))
 
 
-def _stop_info(price, stop_preis):
+STOP_WARN_PCT = 8.0   # Minervini: Stop moeglichst eng (5-8%). Darueber nur ein
+                       # Warnhinweis (informativ, kein Gate/Score-Abzug).
+
+
+def _stop_info(price, pivot, stop_preis):
     """Stop knapp unter dem letzten Basis-Tief (Minervini: enger, definierter
-    Stop statt fixem Kursziel - es gibt bewusst kein Reward/Ziel dazu, die
-    Methode traden ohne festes Kursziel, sondern trailen/verkaufen in Staerke)."""
+    Stop statt fixem Kursziel - die Methode tradet ohne festes Kursziel,
+    sondern trailt/verkauft in Staerke). Ziel & Chance/Risiko sind deshalb
+    bewusst rein INFORMATIV: eine klassische Measured-Move-Projektion
+    (Basis-Hoehe ab Pivot nochmal aufgesetzt), keine Kauf-/Verkaufsregel und
+    ohne Einfluss auf Score/Status. stop_warnung markiert nur einen fuer ein
+    enges VCP-Setup untypisch weiten Stop."""
     if not stop_preis or stop_preis <= 0 or not price:
         return {}
     pct = (price - stop_preis) / price * 100
-    return {"stop": round(stop_preis, 2), "stop_pct": round(pct, 1)}
+    info = {"stop": round(stop_preis, 2), "stop_pct": round(pct, 1),
+            "stop_warnung": pct > STOP_WARN_PCT}
+    risiko = price - stop_preis
+    if pivot and pivot > stop_preis and risiko > 0:
+        ziel = pivot + (pivot - stop_preis)
+        info["ziel"] = round(ziel, 2)
+        info["chance_risiko"] = round((ziel - price) / risiko, 1)
+    return info
 
 
 def _mean(xs):
@@ -281,8 +296,11 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
         s_surge = clamp((vol_surge - BREAKOUT_VOL) / (3.0 - BREAKOUT_VOL))
         s_naehe = clamp((BREAKOUT_DEHN - max(0.0, price / pivot_brk - 1)) / BREAKOUT_DEHN)
         qual = round(100 * (0.5 * s_basis + 0.3 * s_surge + 0.2 * s_naehe), 1)
-        stop = _stop_info(price, min(basis_brk) if basis_brk else None)
-        stop_txt = f", Stop {stop['stop']:.2f} (-{stop['stop_pct']:.1f}%)" if stop else ""
+        stop = _stop_info(price, pivot_brk, min(basis_brk) if basis_brk else None)
+        stop_txt = ""
+        if stop:
+            warn = " ⚠️weiter Stop" if stop.get("stop_warnung") else ""
+            stop_txt = f", Stop {stop['stop']:.2f} (-{stop['stop_pct']:.1f}%){warn}"
         return {"status": "BREAKOUT", "qualitaet": qual, "armed_score": armed_score,
                 "pivot": round(pivot_brk, 2), "dist_pct": round((price / pivot_brk - 1) * 100, 1),
                 "eng_pct": kennz["eng_pct"], "contraction": kennz["contraction"],
@@ -301,8 +319,11 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
                     "detail": (f"{dist*100:.0f}% unter Pivot {pivot:.2f}, eng+trocken, aber "
                                f"Supply-Score {supply_score:.2f} < {SUPPLY_MIN:.2f} "
                                f"(zu viel Angebot ueber dem Pivot - Backtest: Win 48% statt 67%)")}
-        stop = _stop_info(price, min(c[-ENG_FENSTER:]))
-        stop_txt = f", Stop {stop['stop']:.2f} (-{stop['stop_pct']:.1f}%)" if stop else ""
+        stop = _stop_info(price, pivot, min(c[-ENG_FENSTER:]))
+        stop_txt = ""
+        if stop:
+            warn = " ⚠️weiter Stop" if stop.get("stop_warnung") else ""
+            stop_txt = f", Stop {stop['stop']:.2f} (-{stop['stop_pct']:.1f}%){warn}"
         return {"status": "ARMED", "qualitaet": armed_score, "armed_score": armed_score, **kennz, **stop,
                 "detail": (f"{dist*100:.0f}% unter Pivot {pivot:.2f}, Range {eng*100:.0f}%, "
                            f"Vol-Dry-up {dryup:.2f}{stop_txt}")}

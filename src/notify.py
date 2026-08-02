@@ -8,6 +8,11 @@ als Push an dein ntfy-Thema (App "ntfy" auf iPhone/iPad abonnieren).
 
 Test:  python3 src/notify.py            # sendet aktuelle Top-Treffer
        python3 src/notify.py --test     # sendet eine Testnachricht
+       python3 src/notify.py --morgens  # Morning-Brief-Format (Marktampel-Status
+                                         # je Markt vorangestellt, auch ohne
+                                         # Kandidaten nicht stumm) - wird von
+                                         # run.py automatisch beim ersten
+                                         # faelligen Slot des Tages gesetzt
 """
 
 import json
@@ -58,7 +63,21 @@ def _state_save(s):
     with open(STATE, "w", encoding="utf-8") as f:
         json.dump(s, f, ensure_ascii=False, indent=2)
 
-def baue_nachricht(cfg):
+AMPEL_ICON = {"gruen": "🟢", "gelb": "🟡", "rot": "🔴"}
+
+def _ampel_zeilen(d):
+    """Eine Zeile je aktivem Markt mit Ampel-Icon + Klartext-Hinweis - Basis
+    fuers Morning Brief, damit der erste Push des Tages immer die Marktlage
+    zeigt statt sie (wie die anderen drei Slots) nur bei Unterdrueckung zu
+    erwaehnen."""
+    zeilen = []
+    for markt, r in (d.get("marktregime") or {}).items():
+        icon = AMPEL_ICON.get(r.get("ampel"), "⚪")
+        zeilen.append(f"{icon} {markt}: {r.get('hinweis') or r.get('ampel') or '?'}")
+    return zeilen
+
+
+def baue_nachricht(cfg, morgens=False):
     bcfg = cfg["benachrichtigung"]
     ecfg = cfg.get("earnings", {})
     rcfg = cfg.get("marktregime", {})
@@ -101,18 +120,25 @@ def baue_nachricht(cfg):
     else:
         liste = qual
     liste = liste[:maxn]
+    kopf = ("\n".join(_ampel_zeilen(d)) + "\n\n") if morgens else ""
+
     if not liste:
         if unterdrueckt:
             # Statt stiller Leere einmal ehrlich melden, WARUM nichts kommt.
             rot_txt = ", ".join(sorted(rot))
             return ("🔴 Markt rot – Push-Signale unterdrückt",
-                    f"{unterdrueckt} Kauf-Kandidat(en) zurückgehalten ({rot_txt}: "
+                    kopf + f"{unterdrueckt} Kauf-Kandidat(en) zurückgehalten ({rot_txt}: "
                     f"Index unter MA200). Minervini: in einem schwachen Markt "
                     f"keine neuen Positionen eröffnen.")
+        if morgens:
+            # Morning Brief bleibt nicht stumm wie die anderen drei Slots -
+            # ohne Kandidaten zeigt es wenigstens die Marktlage.
+            return "☀️ Morning Brief", kopf.rstrip() + "\nKeine Kauf-Kandidaten über der Schwelle."
         return None, None
 
-    titel = (f"📈 {len(liste)} NEUE Kauf-Kandidaten (≥ {minscore})" if nur_neue
-             else f"📈 Signal Hub – {len(liste)} Top-Werte (≥ {minscore})")
+    titel = ("☀️ Morning Brief · " if morgens else "") + (
+        f"📈 {len(liste)} NEUE Kauf-Kandidaten (≥ {minscore})" if nur_neue
+        else f"📈 Signal Hub – {len(liste)} Top-Werte (≥ {minscore})")
     zeilen = []
     for t in liste:
         markt = FLAGGE.get(t["markt"], "")
@@ -122,7 +148,7 @@ def baue_nachricht(cfg):
     fuss = f"\n{len(qual)} Kauf-Kandidaten gesamt · {d.get('anzahl',0)} bewertet"
     if unterdrueckt:
         fuss += f"\n🔴 {unterdrueckt} Wert(e) aus {', '.join(sorted(rot))} unterdrückt (Markt rot)"
-    return titel, "\n".join(zeilen) + fuss
+    return titel, kopf + "\n".join(zeilen) + fuss
 
 def main():
     cfg = lade_config()
@@ -141,7 +167,7 @@ def main():
         print(f"Testnachricht an {server}/{thema} gesendet.")
         return
 
-    titel, text = baue_nachricht(cfg)
+    titel, text = baue_nachricht(cfg, morgens="--morgens" in sys.argv)
     if not text:
         if cfg["benachrichtigung"].get("nur_neue"):
             print("Keine NEUEN Kauf-Kandidaten seit letztem Push – nichts gesendet.")

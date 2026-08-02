@@ -131,7 +131,11 @@ def main():
             return  # ausserhalb der Sendezeiten -> still beenden
         print(f"[{datetime.now():%Y-%m-%d %H:%M}] Faellige Slots {slots} -> Lauf + Push")
         ok = pipeline(c)
-        lauf("notify.py")
+        # Erster konfigurierter Slot des Tages (zeiten[0], typischerweise
+        # 07:30) wird als Morning Brief gepusht (Marktampel-Status vorweg,
+        # siehe notify.py::baue_nachricht) statt der normalen Top-Liste.
+        morgens_slot = (c["benachrichtigung"].get("zeiten") or [None])[0]
+        lauf("notify.py", "--morgens") if morgens_slot in slots else lauf("notify.py")
         markiere_gesendet(state, slots)
         # Fehlschlag sichtbar machen (z.B. CI-Job als "failed" statt gruen) -
         # sonst schluckt lauf() den Fehler und ein kompletter Ausfall des
