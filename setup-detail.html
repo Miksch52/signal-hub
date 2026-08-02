@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎯 Setup-Analyse</title>
+<style>
+  :root{
+    --primary:#208091; --primary2:#2FD0C6; --ok:#2FB08D; --warn:#F39C12; --bad:#E74C3C;
+    --bg:#0B1524; --bg2:#142236; --card:rgba(23,36,53,.55); --line:rgba(255,255,255,.08);
+    --txt:#ECF0F1; --muted:#8194A6; --glass-blur:16px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg);color:var(--txt);line-height:1.45}
+  a{color:var(--primary2)}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#13243a,#0f1c2e);
+         border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header a.back{color:var(--muted);text-decoration:none;font-size:14px;white-space:nowrap}
+  header a.back:hover{color:var(--txt)}
+  header h1{font-size:17px;margin:0;font-weight:700;flex:1;min-width:120px}
+  header .stand{font-size:11px;color:var(--muted)}
+
+  main{padding:18px 20px 60px;max-width:980px;margin:0 auto}
+  #loading,#notfound{padding:60px 10px;text-align:center;color:var(--muted)}
+  #notfound b{color:var(--txt)}
+
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px;
+        display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-bottom:16px}
+  .hero-id{flex:1;min-width:200px}
+  .hero-tick{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .hero-name{font-size:14px;color:var(--muted);margin-top:2px}
+  .hero-px{font-size:14px;margin-top:6px}
+  .hero-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .scoregauge{text-align:center;min-width:90px}
+  .scoregauge .num{font-size:34px;font-weight:800;line-height:1}
+  .scoregauge .lbl{font-size:11px;color:var(--muted);margin-top:3px}
+  .tier{font-size:11px;padding:2px 9px;border-radius:20px;display:inline-block;margin-top:6px;font-weight:700}
+  .tier-A{background:rgba(47,176,141,.2);color:var(--ok)}
+  .tier-B{background:rgba(243,156,18,.2);color:var(--warn)}
+  .tier-C{background:rgba(138,160,184,.15);color:var(--muted)}
+
+  .badge{font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap;border:1px solid var(--line);color:var(--muted)}
+  .b-armed{background:rgba(243,156,18,.18);color:#f4b350;border-color:rgba(243,156,18,.5)}
+  .b-brk{background:rgba(231,76,60,.2);color:#ff8c7a;border-color:rgba(231,76,60,.55)}
+  .b-cheat{background:rgba(155,89,182,.2);color:#c9a0dc;border-color:rgba(155,89,182,.55)}
+  .b-watch{background:rgba(138,160,184,.15);color:var(--muted)}
+  .b-pa-bull{background:rgba(47,176,141,.18);color:var(--ok);border-color:rgba(47,176,141,.4)}
+  .b-pa-bear{background:rgba(231,76,60,.18);color:var(--bad);border-color:rgba(231,76,60,.4)}
+  .b-reg-gruen{background:rgba(47,176,141,.18);color:var(--ok);border-color:rgba(47,176,141,.4)}
+  .b-reg-gelb{background:rgba(243,156,18,.18);color:var(--warn);border-color:rgba(243,156,18,.4)}
+  .b-reg-rot{background:rgba(231,76,60,.18);color:var(--bad);border-color:rgba(231,76,60,.4)}
+  .b-earn{background:rgba(231,76,60,.18);color:#ffb4ab;border-color:rgba(231,76,60,.4)}
+  .b-depot{background:rgba(32,128,145,.25);color:#7fd3e0;border-color:var(--primary)}
+  .b-neu{background:rgba(47,176,141,.2);color:var(--ok);border-color:rgba(47,176,141,.4)}
+
+  h2{font-size:15px;margin:26px 0 10px;display:flex;align-items:center;gap:8px}
+  h2 .sub{font-size:11px;font-weight:400;color:var(--muted)}
+
+  .quickscan{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;
+             background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .qs-item{display:flex;align-items:center;gap:7px;font-size:12.5px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .d-gruen{background:var(--ok)} .d-gelb{background:var(--warn)} .d-rot{background:var(--bad)} .d-na{background:#3a4b60}
+
+  .chart-wrap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
+  .chart-wrap svg{width:100%;height:auto;display:block}
+  .chart-cap{font-size:11px;color:var(--muted);margin-top:6px;text-align:center}
+
+  .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .fcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:10px}
+  .fcard .dot{margin-top:4px}
+  .fcard-body{flex:1;min-width:0}
+  .fcard-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .fcard-lbl{font-size:12.5px;font-weight:700}
+  .fcard-wert{font-size:12px;color:var(--muted);white-space:nowrap}
+  .fcard-detail{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4}
+  .fcard-gew{font-size:10.5px;color:#5c7188;margin-top:5px}
+
+  .klimax-warn{background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.4);border-radius:12px;
+               padding:10px 14px;font-size:12.5px;color:#ffb4ab;margin-bottom:12px}
+
+  .pivotcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  .pivotcard .phead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .pivotcard .pdetail{font-size:13px;color:var(--txt);margin-bottom:10px}
+  .kennz{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;font-size:11.5px}
+  .kennz div{background:var(--bg2);border-radius:8px;padding:6px 9px}
+  .kennz b{display:block;font-size:13px;color:var(--txt)}
+
+  .pabadges{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .pabadges .badge{border-radius:6px}
+  .stadium{font-size:10.5px;padding:3px 9px;border-radius:6px;border:1px solid var(--line);font-weight:700}
+  .st-Advancing{background:rgba(47,176,141,.18);color:var(--ok)}
+  .st-Accumulation{background:rgba(47,208,198,.15);color:var(--primary2)}
+  .st-Distribution{background:rgba(243,156,18,.18);color:var(--warn)}
+  .st-Declining{background:rgba(231,76,60,.18);color:var(--bad)}
+
+  .srcrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+
+  .extlinks{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .extlinks a{font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);
+              text-decoration:none;color:var(--txt);background:var(--bg2)}
+  .extlinks a:hover{border-color:var(--primary)}
+
+  .disclaimer{margin-top:28px;font-size:11.5px;color:var(--muted);line-height:1.5;
+              border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" id="backlink" href="signal-hub.html">← Signal Hub</a>
+  <h1 id="headtitle">🎯 Setup-Analyse</h1>
+  <span class="stand" id="stand"></span>
+</header>
+<main>
+  <div id="loading">Lädt Technik-, Fundamental- und Chartdaten …</div>
+  <div id="notfound" style="display:none">
+    Kein Treffer für <b id="nf-ticker"></b> gefunden — entweder kein aktueller Signal-Hub-Kandidat
+    (Score unter „Beobachten") oder noch nicht von Price-Action-Hub/Pivot-Detektor bewertet.
+    <div style="margin-top:14px"><a href="signal-hub.html">→ zum Signal Hub</a></div>
+  </div>
+  <div id="content" style="display:none"></div>
+</main>
+<script>
+// =====================================================================
+//  Setup-Analyse: sofortiger Minervini-Überblick (technisch/fundamental/
+//  charttechnisch) für EINEN Ticker aus den Top-Setups. Reiner Frontend-
+//  JSON-Join wie Price-Action-Hub/src/top_setups.py (kein Cross-App-Python-
+//  Import, siehe CLAUDE.md "Entflechtung") - liest drei fertige Ausgaben:
+//    Signal-Hub/data/signals.json          - Score + 11 Faktoren (Minervini-
+//                                             Trend-Template, RS, Fundamental...)
+//    Signal-Hub/data/pivot.json            - Pivot-Armed-Detektor (VCP/Ausbruch)
+//    Price-Action-Hub/data/priceaction.json - Candlestick-Musteranalyse
+//  Aufruf: setup-detail.html?ticker=NVDA
+// =====================================================================
+const params = new URLSearchParams(location.search);
+const TICKER = (params.get('ticker') || '').toUpperCase();
+document.getElementById('nf-ticker').textContent = TICKER || '(kein Ticker)';
+
+const FAKTOR_INFO = {
+  stage2_trend:        {icon:'📈', label:'Stage-2-Trend-Template'},
+  relative_staerke:    {icon:'⚡', label:'Relative Stärke'},
+  naehe_52w_hoch:      {icon:'🎯', label:'Nähe 52W-Hoch'},
+  basis_konsolidierung:{icon:'📦', label:'Basis-Konsolidierung'},
+  volumen_bestaetigung:{icon:'📊', label:'Volumen-Bestätigung'},
+  smart_money:         {icon:'💰', label:'Smart Money (U/D-Volumen)'},
+  cmf:                 {icon:'🌊', label:'Chaikin Money Flow'},
+  quellen_konsens:     {icon:'🔗', label:'Quellen-Konsens'},
+  sektor_staerke:      {icon:'🏭', label:'Branchenstärke'},
+  minervini_5080:      {icon:'⚠️', label:'50/80-Klimax-Check'},
+  fundamental:         {icon:'💵', label:'Fundamental (EPS/Umsatz)'},
+};
+const TECH_KEYS = ['stage2_trend','relative_staerke','naehe_52w_hoch','basis_konsolidierung',
+                    'volumen_bestaetigung','smart_money','cmf','sektor_staerke','quellen_konsens','minervini_5080'];
+const FUND_KEYS = ['fundamental'];
+const flagge = m => m === 'USA' ? '🇺🇸' : m === 'Europa' ? '🇪🇺' : '🏳️';
+const dot = ampel => `<span class="dot d-${ampel||'na'}"></span>`;
+
+async function ladeJson(pfad){
+  try{
+    const r = await fetch(pfad, {cache:'no-store'});
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+}
+
+function finde(liste, ticker){
+  if(!Array.isArray(liste)) return null;
+  const t = ticker.toUpperCase();
+  return liste.find(e => (e.ticker||'').toUpperCase() === t
+                       || (e.yahoo_symbol||'').toUpperCase() === t) || null;
+}
+
+// ─── Kerzenchart (Port aus signal-hub.html::minichart, groesser fuer die
+//     Detailansicht) ─────────────────────────────────────────────────────
+function grosschart(ch){
+  if(!ch || !ch.c || ch.c.length < 3) return '';
+  const W=760,H=220,volH=42,pad=4,pH=H-volH-3;
+  const c=ch.c, v=ch.v||[], n=c.length;
+  const kerzen = !!(ch.o && ch.h && ch.l && ch.o.length===n);
+  let lo=Infinity, hi=-Infinity;
+  [kerzen?ch.h:c, kerzen?ch.l:null, c, ch.s50, ch.s150, ch.s200].forEach(a=>{
+    if(a) a.forEach(x=>{ if(x!=null){ if(x<lo)lo=x; if(x>hi)hi=x; } });
+  });
+  const rng = (hi-lo)||1;
+  const X = i => pad + i*(W-2*pad)/(n-1);
+  const Y = val => pad + (pH-2*pad)*(1-(val-lo)/rng);
+  const linie = (a,col,wd) => { if(!a) return '';
+    let d='', an=false;
+    a.forEach((val,i)=>{ if(val==null){an=false;return;} d+=(an?'L':'M')+X(i).toFixed(1)+' '+Y(val).toFixed(1)+' '; an=true; });
+    return d ? `<path d="${d}" fill="none" stroke="${col}" stroke-width="${wd}" stroke-linejoin="round"/>` : '';
+  };
+  const vmax = Math.max(...v,1), bw = Math.max(1, W/n*(kerzen?0.62:0.72));
+  let vol='';
+  v.forEach((val,i)=>{ const bh=Math.max(0.5,(val/vmax)*volH); vol+=`<rect x="${(X(i)-bw/2).toFixed(1)}" y="${(H-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="#33485f"/>`; });
+  let preis='';
+  if(kerzen){
+    for(let i=0;i<n;i++){
+      if(ch.o[i]==null||ch.h[i]==null||ch.l[i]==null||c[i]==null) continue;
+      const up = c[i]>=ch.o[i], col = up?'#2FB08D':'#E74C3C', x=X(i);
+      const yO=Y(ch.o[i]), yC=Y(c[i]);
+      const bodyTop=Math.min(yO,yC), bodyH=Math.max(1,Math.abs(yC-yO));
+      preis += `<line x1="${x.toFixed(1)}" y1="${Y(ch.h[i]).toFixed(1)}" x2="${x.toFixed(1)}" y2="${Y(ch.l[i]).toFixed(1)}" stroke="${col}" stroke-width="1"/>`
+             + `<rect x="${(x-bw/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${bodyH.toFixed(1)}" fill="${col}"/>`;
+    }
+  } else {
+    preis = linie(c,'#eaf2fb',1.8);
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+       + vol + linie(ch.s200,'#E74C3C',1.2) + linie(ch.s150,'#F39C12',1.2) + linie(ch.s50,'#3b9ae1',1.2) + preis
+       + `</svg>`;
+}
+
+// ─── Price-Action-Badges (Port aus Price-Action-Hub/price-action-hub.html) ──
+function paBadges(m){
+  if(!m || m.status !== 'ok') return '<span class="badge">keine Price-Action-Daten</span>';
+  const out=[];
+  const tb=m.trend_bar;
+  if(tb && tb.stark) out.push(`<span class="badge ${tb.richtung==='bull'?'b-pa-bull':'b-pa-bear'}" title="Close-Position ${Math.round(tb.close_pos*100)}%, Body-Anteil ${Math.round(tb.body_ratio*100)}%">💪 Starke ${tb.richtung==='bull'?'Bull':'Bär'}-Bar</span>`);
+  if(m.inside_bar && m.inside_bar.inside) out.push(`<span class="badge">📥 Inside Bar</span>`);
+  const bc=m.bar_counting;
+  if(bc && bc.typ) out.push(`<span class="badge ${bc.zuverlaessig?(bc.typ.startsWith('High')?'b-pa-bull':'b-pa-bear'):''}" title="${bc.seit_swing_bars} Bar(s) seit Swing">📐 ${bc.typ}${bc.zuverlaessig?'':' (spät)'}</span>`);
+  const bo=m.breakout;
+  if(bo && (bo.breakout_up||bo.breakout_down)){
+    const st=bo.staerke||{};
+    out.push(`<span class="badge ${bo.breakout_up?'b-pa-bull':'b-pa-bear'}" title="Vol-Ratio ${st.vol_ratio??'–'}x">🚀 Breakout ${bo.breakout_up?'↑':'↓'}${st.vol_ratio?' '+st.vol_ratio+'x Vol':''}</span>`);
+    if(bo.failed) out.push(`<span class="badge b-pa-bear">⛔ Failed</span>`);
+  }
+  const g=m.gap;
+  if(g && (g.gap_up||g.gap_down)) out.push(`<span class="badge ${g.gap_up?'b-pa-bull':'b-pa-bear'}">↕️ Gap ${g.gap_pct>0?'+':''}${g.gap_pct}%${g.gefuellt?' (gefüllt)':''}</span>`);
+  return out.join('') || '<span class="badge">keine auffälligen Muster</span>';
+}
+
+function fcard(key, info){
+  if(!info) return `<div class="fcard"><span class="dot d-na"></span><div class="fcard-body">
+    <div class="fcard-head"><span class="fcard-lbl">${FAKTOR_INFO[key].icon} ${FAKTOR_INFO[key].label}</span></div>
+    <div class="fcard-detail">keine Daten</div></div></div>`;
+  return `<div class="fcard">${dot(info.ampel)}<div class="fcard-body">
+    <div class="fcard-head">
+      <span class="fcard-lbl">${FAKTOR_INFO[key].icon} ${FAKTOR_INFO[key].label}</span>
+      <span class="fcard-wert">${Math.round(info.wert*100)}%</span>
+    </div>
+    <div class="fcard-detail">${info.detail||''}</div>
+    <div class="fcard-gew">Gewicht im Score: ${info.gewicht}</div>
+  </div></div>`;
+}
+
+function earnText(e){
+  if(!e) return 'keine Prüfung konfiguriert';
+  if(e.status==='termin') return `in ${e.tage} Tagen (${e.datum})`;
+  if(e.status==='kein_termin') return 'kein Termin im Prüf-Fenster';
+  return 'unbekannt (Quelle nicht erreichbar)';
+}
+
+function render(sig, piv, pa, regime){
+  const t = sig, p = piv, m = (pa && pa.muster) || null;
+  const tvSym = encodeURIComponent(t.ticker);
+  document.getElementById('headtitle').textContent = `🎯 ${t.ticker} — Setup-Analyse`;
+  document.title = `🎯 ${t.ticker} — Setup-Analyse`;
+
+  // Badges
+  let badges = `<span class="tier tier-${t.tier}">Tier ${t.tier} · ${t.einstufung}</span>`;
+  if(p){
+    const st = p.pivot_status;
+    if(st==='BREAKOUT') badges += `<span class="badge b-brk">🚀 BREAKOUT</span>`;
+    else if(st==='ARMED') badges += `<span class="badge b-armed">🎯 ARMED</span>`;
+    else if(st==='CHEAT') badges += `<span class="badge b-cheat">⚡ CHEAT</span>`;
+    else if(st==='WATCH') badges += `<span class="badge b-watch">👁 WATCH</span>`;
+  }
+  if(pa) badges += `<span class="badge ${pa.pa_score>0?'b-pa-bull':pa.pa_score<0?'b-pa-bear':''}">🕯️ PA ${pa.pa_score>0?'+':''}${pa.pa_score}</span>`;
+  const regAmpel = regime && t.markt && regime[t.markt] && regime[t.markt].ampel;
+  if(regAmpel) badges += `<span class="badge b-reg-${regAmpel}">Regime ${t.markt} ${({gruen:'🟢',gelb:'🟡',rot:'🔴'})[regAmpel]||''}</span>`;
+  if(t.earnings && t.earnings.status==='termin' && t.earnings.tage!=null && t.earnings.tage<=10 && t.earnings.tage>=0)
+    badges += `<span class="badge b-earn">📅 Earnings in ${t.earnings.tage}T</span>`;
+  if(t.im_depot) badges += `<span class="badge b-depot">📌 im Depot</span>`;
+  if(t.neu) badges += `<span class="badge b-neu">⭐ neu</span>`;
+  if(t.klimax_warnung) badges += `<span class="badge" style="background:rgba(231,76,60,.18);color:#ffb4ab;border-color:rgba(231,76,60,.4)">⚠️ Klimax-Warnung</span>`;
+
+  // Quickscan: sofortiger Ampel-Überblick über alle Treiber
+  const qsItems = [];
+  TECH_KEYS.concat(FUND_KEYS).forEach(k=>{
+    const f = t.faktoren && t.faktoren[k];
+    qsItems.push(`<div class="qs-item">${dot(f&&f.ampel)}<span>${FAKTOR_INFO[k].icon} ${FAKTOR_INFO[k].label}</span></div>`);
+  });
+  if(p) qsItems.push(`<div class="qs-item">${dot(p.pivot_status==='BREAKOUT'||p.pivot_status==='ARMED'?'gruen':p.pivot_status==='WATCH'?'gelb':'rot')}<span>🎯 Pivot: ${p.pivot_status||'—'}</span></div>`);
+  if(m && m.status==='ok') qsItems.push(`<div class="qs-item">${dot(pa.pa_score>0?'gruen':pa.pa_score<0?'rot':'gelb')}<span>🕯️ Price-Action: ${pa.pa_score>0?'bullisch':pa.pa_score<0?'bärisch':'neutral'}</span></div>`);
+  if(m && m.marktstadium && m.marktstadium.stadium) qsItems.push(`<div class="qs-item">${dot(m.marktstadium.stadium==='Advancing'||m.marktstadium.stadium==='Accumulation'?'gruen':m.marktstadium.stadium==='Distribution'?'gelb':'rot')}<span>🏗️ Marktstadium: ${m.marktstadium.stadium}</span></div>`);
+
+  // Chart: bevorzugt Signal-Hub-Chart (hat SMA50/150/200), sonst PA-Chart
+  const chartQuelle = (t.chart && t.chart.c && t.chart.c.length) ? t.chart : (pa && pa.chart);
+  const chartSvg = grosschart(chartQuelle);
+
+  // Technik-Karten
+  const techCards = TECH_KEYS.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
+  const fundCards = FUND_KEYS.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
+
+  // Pivot-Kennzahlen
+  let pivotBlock = '<div class="pivotcard"><div class="pdetail">Kein Pivot-Datensatz für diesen Ticker (noch nicht bewertet oder kein Aufwärtstrend/Stage-2-Gate erfüllt).</div></div>';
+  if(p){
+    const stKl = {BREAKOUT:'b-brk',ARMED:'b-armed',CHEAT:'b-cheat',WATCH:'b-watch'}[p.pivot_status] || '';
+    const kennz = [];
+    if(p.pivot!=null) kennz.push(['Pivot', p.pivot]);
+    if(p.dist_pct!=null) kennz.push(['Abstand zum Pivot', p.dist_pct+'%']);
+    if(p.eng_pct!=null) kennz.push(['Basis-Range (3W)', p.eng_pct+'%']);
+    if(p.contraction!=null) kennz.push(['Verengung', p.contraction+'x']);
+    if(p.dryup!=null) kennz.push(['Vol-Dry-up', p.dryup+'x']);
+    if(p.vol_surge!=null) kennz.push(['Vol-Schub heute', p.vol_surge+'x']);
+    if(p.supply_score!=null) kennz.push(['Supply-Score', p.supply_score]);
+    if(p.qualitaet!=null) kennz.push(['Pivot-Qualität', Math.round(p.qualitaet)]);
+    if(p.stop!=null) kennz.push(['Stop', p.stop + (p.stop_pct!=null?' ('+p.stop_pct+'%)':'')]);
+    pivotBlock = `<div class="pivotcard">
+      <div class="phead"><span class="badge ${stKl}">${p.pivot_status||'—'}</span>
+        ${p.megaphone ? '<span class="badge" title="Rechte Seite expandiert statt sich zu beruhigen">🌀 Megaphone</span>' : ''}
+      </div>
+      <div class="pdetail">${p.detail || p.grund || ''}</div>
+      <div class="kennz">${kennz.map(([l,v])=>`<div><b>${v}</b>${l}</div>`).join('')}</div>
+    </div>`;
+  }
+
+  const paBlock = `<div class="pivotcard">
+    <div class="pdetail">Candlestick-Musteranalyse (Price-Action-Hub), unabhängig vom Score berechnet:</div>
+    <div class="pabadges">${paBadges(m)}</div>
+    ${m && m.marktstadium && m.marktstadium.stadium ? `<div style="margin-top:10px"><span class="stadium st-${m.marktstadium.stadium}">${m.marktstadium.stadium}</span> <span style="font-size:11px;color:var(--muted)">MA200 ${m.marktstadium.ma200}, Slope ${m.marktstadium.slope}</span></div>` : ''}
+  </div>`;
+
+  // Quellen
+  const q = t.quellen || {};
+  const srcChips = (q.typen||[]).map(s=>`<span class="chip">${s}</span>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="hero">
+      <div class="hero-id">
+        <div class="hero-tick">${t.ticker} ${flagge(t.markt)}</div>
+        <div class="hero-name">${t.name||''} ${t.exchange?'· '+t.exchange:''}</div>
+        <div class="hero-px">${t.preis} ${t.currency||''} ${t.sektor?'· '+t.sektor+(t.branche?' / '+t.branche:''):''}</div>
+        <div class="hero-badges">${badges}</div>
+      </div>
+      <div class="scoregauge">
+        <div class="num">${t.score}</div>
+        <div class="lbl">Score / 100</div>
+      </div>
+    </div>
+
+    ${t.klimax_warnung ? `<div class="klimax-warn">⚠️ <b>Minervini 50/80-Klimax-Warnung:</b> ${(t.faktoren.minervini_5080||{}).detail||''} Späte Basis (≥3) + frischer Gap-down auf hohem Volumen ist das klassische Topmuster — nicht als „billig" nachkaufen.</div>` : ''}
+
+    <h2>🔎 Sofort-Überblick <span class="sub">alle Treiber auf einen Blick</span></h2>
+    <div class="quickscan">${qsItems.join('')}</div>
+
+    ${chartSvg ? `<div class="chart-wrap">${chartSvg}<div class="chart-cap">~6 Monate · Kerzen + SMA50 (blau) / SMA150 (orange) / SMA200 (rot) + Volumen</div></div>` : ''}
+
+    <h2>📈 Technische Treiber <span class="sub">Minervini Trend-Template, relative Stärke, Volumen</span></h2>
+    <div class="fgrid">${techCards}</div>
+
+    <h2>💵 Fundamentale Treiber <span class="sub">CANSLIM/SEPA-Bestätigung</span></h2>
+    <div class="fgrid">${fundCards}
+      <div class="fcard"><span class="dot d-na"></span><div class="fcard-body">
+        <div class="fcard-head"><span class="fcard-lbl">📅 Nächste Earnings</span></div>
+        <div class="fcard-detail">${earnText(t.earnings)}</div>
+      </div></div>
+    </div>
+
+    <h2>🕯️ Charttechnik <span class="sub">Pivot-Armed-Detektor + Price-Action-Muster</span></h2>
+    ${pivotBlock}
+    ${paBlock}
+
+    <h2>🔗 Quellen &amp; weiterführende Links</h2>
+    <div class="srcrow">${srcChips || '<span class="chip">keine Quellen-Info</span>'}</div>
+    <div class="extlinks">
+      <a href="https://www.tradingview.com/chart/?symbol=${tvSym}" target="_blank" rel="noopener">📊 TradingView</a>
+      <a href="https://finance.yahoo.com/quote/${tvSym}" target="_blank" rel="noopener">💹 Yahoo Finance</a>
+      <a href="https://finviz.com/quote.ashx?t=${tvSym}" target="_blank" rel="noopener">🔍 Finviz</a>
+      <a href="signal-hub.html">📈 im Signal Hub öffnen</a>
+      <a href="../Price-Action-Hub/price-action-hub.html">🕯️ im Price-Action-Hub öffnen</a>
+      <a href="../minervini-coach-2.html?ticker=${tvSym}">🎓 SEPA-Analyse im Coach</a>
+    </div>
+
+    <div class="disclaimer">
+      Alle Werte stammen aus den zuletzt gelaufenen Screenern (Signal-Hub-Score, Pivot-Armed-Detektor,
+      Price-Action-Hub) — keine Live-Kurse, keine automatische Neuberechnung beim Öffnen dieser Seite.
+      Ampel-Farben sind Heuristiken, keine Kauf-/Verkaufsempfehlung; Branchenstärke/CHEAT/Megaphone sind
+      laut Wiki (noch) unvalidierte Zusatz-Signale. Eigene Prüfung vor jedem Trade bleibt nötig.
+    </div>
+  `;
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = '';
+  if(sig && sig.__erstellt){
+    const dt = new Date(sig.__erstellt);
+    if(!isNaN(dt)) document.getElementById('stand').textContent =
+      'Datenstand ' + dt.toLocaleString('de-DE', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + ' Uhr';
+  }
+}
+
+async function init(){
+  if(!TICKER){
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('notfound').style.display = '';
+    return;
+  }
+  const [signals, pivot, pa] = await Promise.all([
+    ladeJson('data/signals.json'),
+    ladeJson('data/pivot.json'),
+    ladeJson('../Price-Action-Hub/data/priceaction.json'),
+  ]);
+  const treffer = finde(signals && signals.treffer, TICKER);
+  if(!treffer){
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('notfound').style.display = '';
+    return;
+  }
+  treffer.__erstellt = signals.erstellt;
+  const pivTreffer = finde(pivot && pivot.treffer, TICKER);
+  const paTreffer = finde(pa && pa.treffer, TICKER);
+  render(treffer, pivTreffer, paTreffer, signals.marktregime);
+}
+init();
+</script>
+</body>
+</html>
