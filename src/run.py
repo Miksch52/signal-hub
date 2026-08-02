@@ -70,6 +70,10 @@ def pipeline(c):
         # Trefferquoten des Momentum-Scores (Tier A/B, Forward-Test gegen das
         # Score-Logbuch). Teilt den Tages-Yahoo-Cache mit dem Scorer -> billig.
         lauf("score_backtest.py")
+        # Pro-Faktor-Erfolgsanalyse (seit 2026-08-02): reift wie score_backtest.py
+        # ueber Kalenderzeit, meldet bis dahin nur "noch nicht reif" und tut
+        # sonst nichts - kein gesondertes Scheduling noetig.
+        lauf("score_faktoren_backtest.py")
     return scorer_ok
 
 # --- Zeitplan-Status ------------------------------------------------------
