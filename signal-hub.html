@@ -75,6 +75,11 @@
   .legend b{color:var(--txt);font-weight:600}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
   .d-gruen{background:var(--ok)} .d-gelb{background:var(--warn)} .d-rot{background:var(--bad)}
+  /* Sofort-Ueberblick (seit 2026-08-03, direkt auf jeder Karte sichtbar,
+     dieselbe Punkte-Optik wie Signal-Hub/setup-detail.html::quickscan) -
+     ersetzt die vorherigen Balken in "Chart & Faktoren" (redundant geworden). */
+  .qscan{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:3px 8px}
+  .qscan .qi{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:help;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
@@ -1034,11 +1039,10 @@ function fokuslisteBadge(t){
 function karte(t,rang){
   const sc=effScore(t);
   const eins=state.smOn?einstufFor(sc):t.einstufung;
-  const fac=FAKT.map(([k,lbl])=>{
-    const f=t.faktoren[k]; if(!f) return ''; // altes Datenfile ohne diesen Faktor -> Balken auslassen
-    const pct=Math.round(f.wert*100);
-    return `<div class="fac" title="${lbl}: ${f.detail} (Gewicht ${f.gewicht})">
-      ${lbl.slice(0,1)}<div class="bar"><i class="b-${f.ampel}" style="width:${pct}%"></i></div></div>`;
+  const qscan=FAKT.map(([k,lbl])=>{
+    const f=t.faktoren[k]; if(!f) return ''; // altes Datenfile ohne diesen Faktor -> Punkt auslassen
+    return `<div class="qi" title="${lbl}: ${f.detail} (Gewicht ${f.gewicht})">
+      <span class="dot d-${f.ampel}"></span>${lbl}</div>`;
   }).join('');
   const typen=(t.quellen.typen||[]).map(x=>`<span class="srcbadge">${quelleLabel(x)}</span>`).join('');
   const nUnabh=(t.quellen.unabhaengig||[]).length;
@@ -1066,10 +1070,10 @@ function karte(t,rang){
         ${state.smOn?`<div class="muted2" style="font-size:9px">Basis ${t.score}</div>`:''}
       </div>
     </div>
+    <div class="qscan">${qscan}</div>
     <details class="cardchart">
-      <summary class="cardchart-sum">📈 Chart &amp; Faktoren</summary>
+      <summary class="cardchart-sum">📈 Chart</summary>
       ${minichart(t.chart)}
-      <div class="factors">${fac}</div>
     </details>
     <div class="srcrow"><span>📚 ${t.quellen.ausgaben} Ausgaben</span>${typen}
       ${konsensBadge}${maBadge}
