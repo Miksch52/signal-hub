@@ -242,11 +242,11 @@ def evaluate():
         import scorer
     except Exception as ex:
         print(f"  ! scorer-Import fehlgeschlagen ({ex}) -> kein Yahoo-Abruf moeglich.")
-        return {}
+        return {}, []
     lb = _logbuch_load()
     if not lb:
         print("Forward-Logbuch leer -> erst --log sammeln lassen.")
-        return {}
+        return {}, []
     cache = scorer.lade_cache()
     heute = datetime.now().date()
     # Qualitaets-Split (seit 2026-07-24): Basis fuer die Kalibrierung von
@@ -255,6 +255,11 @@ def evaluate():
     basis_stati = ("BREAKOUT", "ARMED")
     qual_stati = ("ARMED_q70+", "ARMED_q<70")
     eimer = {s: {h: [] for h, _ in HORIZONTE} for s in basis_stati + qual_stati}
+    # Einzelfaelle (seit 2026-08): dieselben Belege wie eimer, aber ticker-
+    # scharf statt aggregiert - Basis fuer die "Fundstellen"-Ansicht im
+    # Backtest-Report (dashboard.html hat sonst keinen Zugriff auf das lokale,
+    # nie synchronisierte Forward-Logbuch in ~/Library/Application Support).
+    einzelfaelle = []
     aktuell = {}
     for e in lb:
         try:
@@ -277,9 +282,16 @@ def evaluate():
         eimer[e["status"]][bk].append(ret)
         if e["status"] == "ARMED" and e.get("qualitaet") is not None:
             eimer["ARMED_q70+" if e["qualitaet"] >= 70 else "ARMED_q<70"][bk].append(ret)
+        einzelfaelle.append({
+            "ticker": e["ticker"], "yahoo_symbol": sym, "status": e["status"],
+            "qualitaet": e.get("qualitaet"), "datum": e["datum"],
+            "preis_signal": e["preis_signal"], "horizont": bk,
+            "return_pct": round(ret * 100, 2),
+        })
     scorer.speichere_cache(cache)
     _logbuch_save(lb)
-    return {st: {h: _stats(eimer[st][h]) for h, _ in HORIZONTE} for st in eimer}
+    fr = {st: {h: _stats(eimer[st][h]) for h, _ in HORIZONTE} for st in eimer}
+    return fr, einzelfaelle
 
 
 SCHWELLE_PUSH = 8        # ab so vielen gereiften Picks je Kohorte gilt der Test als "reif"
@@ -336,6 +348,18 @@ def push_reife(fr):
 
 
 # ---------------------------------------------------------------------------
+def _schreibe_backtest(out):
+    """JSON + window.PIVOT_BACKTEST_DATA-Fallback (file://-Zugriff ohne Server),
+    analog pivot_screener.py::schreibe()."""
+    with open(pfade.PIVOT_BACKTEST, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=1)
+    with open(pfade.PIVOT_BACKTEST_JS, "w", encoding="utf-8") as f:
+        f.write("window.PIVOT_BACKTEST_DATA = ")
+        json.dump(out, f, ensure_ascii=False)
+        f.write(";")
+
+
+# ---------------------------------------------------------------------------
 def _druck_tabelle(titel, block, mit_edge=False):
     print(f"\n{titel}")
     print(f"{'Status':10s}{'Hor':5s}{'n':>6s}{'Win%':>7s}{'Ø%':>7s}{'ØR':>6s}"
@@ -370,7 +394,7 @@ def main():
         return
 
     if "--evaluate" in args:
-        fr = evaluate()
+        fr, einzelfaelle = evaluate()
         if fr and "--nopush" not in args:
             push_reife(fr)
         bestand = {}
@@ -380,12 +404,12 @@ def main():
             except Exception:
                 bestand = {}
         bestand["forward_realisiert"] = fr
+        bestand["forward_einzelfaelle"] = einzelfaelle
         bestand["forward_stand"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with open(pfade.PIVOT_BACKTEST, "w", encoding="utf-8") as f:
-            json.dump(bestand, f, ensure_ascii=False, indent=1)
+        _schreibe_backtest(bestand)
         if fr:
             _druck_tabelle("=== FORWARD realisiert (unverzerrt, reift ueber Zeit) ===", fr)
-        print(f"\nGespeichert: {pfade.PIVOT_BACKTEST}")
+        print(f"\nGespeichert: {pfade.PIVOT_BACKTEST} ({len(einzelfaelle)} Einzelfaelle)")
         return
 
     # Default: RETRO
@@ -402,8 +426,18 @@ def main():
         "schritt_tage": RETRO_STEP,
         "ergebnis": ergebnis,
     }
-    with open(pfade.PIVOT_BACKTEST, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=1)
+    # forward_realisiert/-einzelfaelle stammen aus --evaluate - beim RETRO-Lauf
+    # (der taeglich VOR --evaluate laeuft, siehe run.py) nicht ueberschreiben,
+    # falls schon vorhanden.
+    if os.path.exists(pfade.PIVOT_BACKTEST):
+        try:
+            alt = json.load(open(pfade.PIVOT_BACKTEST, encoding="utf-8"))
+            for k in ("forward_realisiert", "forward_einzelfaelle", "forward_stand"):
+                if k in alt:
+                    out[k] = alt[k]
+        except Exception:
+            pass
+    _schreibe_backtest(out)
     _druck_tabelle(f"=== RETRO Walk-Forward ueber {n} Charts (Bias: s. Hinweis) ===",
                    ergebnis, mit_edge=True)
     print(f"\nGespeichert: {pfade.PIVOT_BACKTEST}")

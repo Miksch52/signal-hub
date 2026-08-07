@@ -32,6 +32,7 @@ PIVOT_JS = os.path.join(DATA, "pivot.js")               # file://-Fallback
 PIVOT_HISTORY = os.path.join(DATA, "pivot_history.json")  # Tages-Historie BREAKOUT/ARMED/CHEAT
 PIVOT_HISTORY_JS = os.path.join(DATA, "pivot_history.js")  # file://-Fallback
 PIVOT_BACKTEST = os.path.join(DATA, "pivot_backtest.json")  # Backtest-Auswertung
+PIVOT_BACKTEST_JS = os.path.join(DATA, "pivot_backtest.js")  # file://-Fallback
 SCORE_BACKTEST = os.path.join(DATA, "score_backtest.json")  # Trefferquoten Momentum-Score (Tier A/B)
 SCORE_FAKTOREN_BACKTEST = os.path.join(DATA, "score_faktoren_backtest.json")  # Pro-Faktor-Erfolgsanalyse
 

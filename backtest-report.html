@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📊 Backtest-Report</title>
+<style>
+  :root{
+    --paper:#eceef0; --paper2:#e2e5e7; --ink:#1c2b3a; --ink-muted:#5b6b78;
+    --rule:#c3cbd1; --gold:#a4813f; --good:#2f5d4f; --bad:#7a2e2e;
+    --hbg:#f7f7f4; --hborder:#dddad2;
+  }
+  *{box-sizing:border-box;}
+  html,body{background:var(--hbg);margin:0;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+       color:var(--ink);-webkit-font-smoothing:antialiased;}
+  a{color:inherit;}
+
+  header.top{position:sticky;top:0;z-index:20;background:var(--hbg);border-bottom:1px solid var(--hborder);
+    padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  header.top a.back{color:var(--ink-muted);text-decoration:none;font-size:14px;white-space:nowrap;}
+  header.top a.back:hover{color:var(--ink);}
+  header.top h1{font-size:16px;margin:0;font-weight:700;flex:1;min-width:140px;}
+  header.top .stand{font-size:11px;color:var(--ink-muted);}
+
+  .page{max-width:980px;margin:0 auto;padding:2rem 1.25rem 5rem;}
+
+  #status-msg{padding:3rem 1rem;text-align:center;color:var(--ink-muted);font-size:.95rem;}
+
+  .ledger{background:var(--paper);color:var(--ink);border:1px solid var(--rule);display:none;
+    font-family:Georgia,"Iowan Old Style","Times New Roman",serif;}
+  .lg-mast{border-bottom:3px double var(--rule);padding:1.75rem clamp(1.25rem,4vw,3rem) 1.25rem;}
+  .lg-eyebrow{font-family:-apple-system,system-ui,sans-serif;font-size:.72rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--gold);font-weight:700;margin:0 0 .5rem;}
+  .lg-mast h2{font-size:clamp(1.35rem,2.4vw,1.8rem);line-height:1.25;margin:0 0 .5rem;text-wrap:balance;max-width:38ch;}
+  .lg-mast .byline{font-family:-apple-system,system-ui,sans-serif;font-size:.78rem;color:var(--ink-muted);}
+
+  .lg-split{display:grid;grid-template-columns:minmax(200px,260px) 1fr;}
+  @media (max-width:760px){ .lg-split{grid-template-columns:1fr;} }
+  .lg-split input{position:absolute;opacity:0;pointer-events:none;}
+
+  .lg-index{border-right:1px solid var(--rule);padding:1rem 0;}
+  @media (max-width:760px){ .lg-index{border-right:none;border-bottom:1px solid var(--rule);} }
+  .lg-idx-row{display:block;cursor:pointer;padding:1rem 1.4rem;border-left:3px solid transparent;}
+  .lg-idx-row:hover{background:var(--paper2);}
+  .lg-idx-row .no{font-family:-apple-system,system-ui,sans-serif;font-size:.68rem;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-muted);display:block;margin-bottom:.3rem;}
+  .lg-idx-row .ti{font-size:1.02rem;font-weight:700;display:block;}
+  .lg-idx-row .su{font-family:-apple-system,system-ui,sans-serif;font-size:.74rem;color:var(--ink-muted);
+    display:block;margin-top:.35rem;}
+
+  #s-armed:checked ~ .lg-detail #d-armed,
+  #s-breakout:checked ~ .lg-detail #d-breakout,
+  #s-watch:checked ~ .lg-detail #d-watch{display:block;}
+  #s-armed:checked ~ label[for="s-armed"],
+  #s-breakout:checked ~ label[for="s-breakout"],
+  #s-watch:checked ~ label[for="s-watch"]{border-left-color:var(--gold);background:var(--paper2);}
+
+  .lg-panel{display:none;padding:1.75rem clamp(1.25rem,4vw,3rem) 2.5rem;}
+
+  .lg-body{max-width:62ch;font-size:1.02rem;line-height:1.72;}
+  .lg-body p{margin:0 0 1.05rem;}
+  .lg-body .good{color:var(--good);font-weight:700;}
+  .lg-body .bad{color:var(--bad);font-weight:700;}
+  .lg-body a{text-decoration:none;font-weight:700;border-bottom:1px solid currentColor;}
+  .lg-body a:hover{color:var(--gold);}
+
+  .lg-pull{margin:1.75rem 0;padding:1.1rem 0 1.1rem 1.4rem;border-left:3px solid var(--gold);}
+  .lg-pull .num{font-size:clamp(2.2rem,4.6vw,3rem);line-height:1;font-weight:400;color:var(--ink);
+    font-variant-numeric:tabular-nums;}
+  .lg-pull .cap{font-family:-apple-system,system-ui,sans-serif;font-size:.83rem;color:var(--ink-muted);
+    margin-top:.4rem;max-width:42ch;}
+
+  table.lg-tbl{width:100%;border-collapse:collapse;margin:1.5rem 0;font-family:-apple-system,system-ui,sans-serif;font-size:.84rem;}
+  table.lg-tbl caption{text-align:left;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-muted);margin-bottom:.5rem;font-weight:600;}
+  table.lg-tbl th{text-align:right;font-weight:600;padding:.45rem .55rem;border-bottom:1px solid var(--ink);font-size:.68rem;
+    text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);}
+  table.lg-tbl th:first-child,table.lg-tbl td:first-child{text-align:left;}
+  table.lg-tbl td{padding:.5rem .55rem;text-align:right;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums;}
+  table.lg-tbl td.good{color:var(--good);font-weight:600;} table.lg-tbl td.bad{color:var(--bad);font-weight:600;}
+
+  .lg-evtable{width:100%;border-collapse:collapse;margin:.75rem 0 0;font-family:-apple-system,system-ui,sans-serif;font-size:.8rem;}
+  .lg-evtable th{text-align:right;font-weight:600;padding:.4rem .5rem;border-bottom:1px solid var(--ink);font-size:.65rem;
+    text-transform:uppercase;letter-spacing:.04em;color:var(--ink-muted);}
+  .lg-evtable th:first-child,.lg-evtable td:first-child{text-align:left;}
+  .lg-evtable td{padding:.45rem .5rem;text-align:right;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums;}
+  .lg-evtable td:first-child a{text-decoration:none;font-weight:700;border-bottom:1px solid currentColor;color:var(--ink);}
+  .lg-evtable td:first-child a:hover{color:var(--gold);}
+  .lg-evtable td.good{color:var(--good);font-weight:600;} .lg-evtable td.bad{color:var(--bad);font-weight:600;}
+  .lg-evtable td.go a{font-size:.72rem;color:var(--gold);text-decoration:none;font-weight:600;}
+
+  .lg-sec-lbl{font-family:-apple-system,system-ui,sans-serif;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-muted);font-weight:700;margin:1.75rem 0 0;display:block;}
+  .lg-empty{font-style:italic;color:var(--ink-muted);}
+
+  footer.outro{margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid var(--hborder);
+    font-size:.86rem;color:var(--ink-muted);line-height:1.6;font-family:-apple-system,system-ui,sans-serif;}
+  footer.outro .caveat{border:1px solid var(--hborder);border-radius:3px;padding:1rem 1.25rem;margin-top:1rem;background:var(--paper);}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <a class="back" href="signal-hub.html">‹ Signal-Hub</a>
+  <h1>📊 Backtest-Report — Pivot-Setups</h1>
+  <span class="stand" id="topstand"></span>
+</header>
+
+<div class="page">
+
+  <div id="status-msg">Lade Backtest-Daten …</div>
+
+  <div class="ledger" id="ledger">
+    <div class="lg-mast">
+      <p class="lg-eyebrow">Wochennotiz · Signal-Hub Research</p>
+      <h2>Was bislang tatsächlich funktioniert hat</h2>
+      <p class="byline" id="byline">—</p>
+    </div>
+
+    <div class="lg-split">
+      <input type="radio" name="lgsel" id="s-armed" checked>
+      <input type="radio" name="lgsel" id="s-breakout">
+      <input type="radio" name="lgsel" id="s-watch">
+
+      <div class="lg-index">
+        <label class="lg-idx-row" for="s-armed">
+          <span class="no">Eintrag 1</span><span class="ti">ARMED</span>
+          <span class="su" id="idx-armed">–</span>
+        </label>
+        <label class="lg-idx-row" for="s-breakout">
+          <span class="no">Eintrag 2</span><span class="ti">BREAKOUT</span>
+          <span class="su" id="idx-breakout">–</span>
+        </label>
+        <label class="lg-idx-row" for="s-watch">
+          <span class="no">Eintrag 3</span><span class="ti">WATCH</span>
+          <span class="su" id="idx-watch">–</span>
+        </label>
+      </div>
+
+      <div class="lg-detail">
+        <div class="lg-panel" id="d-armed"></div>
+        <div class="lg-panel" id="d-breakout"></div>
+        <div class="lg-panel" id="d-watch"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="outro">
+    <h3 style="font-size:.95rem;color:var(--ink);margin:0 0 .5rem;">Zur Einordnung</h3>
+    <p>Alle Zahlen und Ticker auf dieser Seite kommen live aus <code>data/pivot_backtest.json</code> — nichts ist hier fest verdrahtet. Der Ticker-Name öffnet die Setup-Analyse (Technik, Fundamentaldaten, Story), „Chart ↗" öffnet den Live-Chart auf TradingView.</p>
+    <div class="caveat">
+      <strong>Datenbasis:</strong> Die 12-Wochen-Kohorten reifen erst über mehrere Monate (n=0 ist normal, kein Fehler). Erneute inhaltliche Prüfung mit mehr gereiften Episoden ist für Ende August 2026 vorgemerkt.
+    </div>
+  </footer>
+
+</div>
+
+<script>
+function fmtPct(v){ return v==null ? '–' : v.toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1})+' %'; }
+function fmtSigned(v){ if(v==null) return '–'; const s=v>0?'+':''; return s+v.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' %'; }
+function fmtDatum(iso){
+  if(!iso) return '–';
+  const [y,m,d]=iso.split('-'); return `${d}.${m}.`;
+}
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// TradingView-Symbol-Mapping 1:1 aus setup-detail.html::tvSymbol uebernommen
+// (einzeln verifizierte Exchange-Codes, nicht geraten - siehe CLAUDE.md).
+const YAHOO_SUFFIX_TV_EXCHANGE = {
+  DE:'XETR', F:'XETR', MU:'XETR', PA:'EURONEXT', AS:'EURONEXT',
+  L:'LSE', SW:'SIX', MI:'MIL', ST:'OMXSTO', OL:'OSL', CO:'OMXCOP',
+};
+const tvSymbol = ticker => {
+  const m = ticker.match(/^(.+)\.([A-Za-z]{1,4})$/);
+  if(!m) return ticker;
+  const [, basis, suf] = m;
+  const exch = YAHOO_SUFFIX_TV_EXCHANGE[suf.toUpperCase()];
+  return exch ? `${exch}:${basis}` : basis;
+};
+function tvChartUrl(ticker){ return `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol(ticker))}`; }
+// Dieselbe Detailseite, die auch das 🔍-Icon der Top-Setups (index.html) und
+// der Setup-Analyse-Link oeffnet: technische + fundamentale Kennzahlen, Story,
+// TradingView-Chart-Widget - alles fuer genau diesen Ticker an einem Ort.
+function setupDetailUrl(ticker){ return `setup-detail.html?ticker=${encodeURIComponent(ticker)}`; }
+
+function _ladeFallbackSkript(src){
+  return new Promise(res=>{
+    const s=document.createElement('script');
+    s.src=src; s.onload=res; s.onerror=res;
+    document.head.appendChild(s);
+  });
+}
+
+function evtableRows(faelle){
+  if(!faelle.length) return `<tr><td colspan="5" class="lg-empty">Noch keine gereiften Einzelfälle (frühestens 21 Kalendertage nach Signal).</td></tr>`;
+  return faelle.map(e=>{
+    const cls = e.return_pct>0?'good':(e.return_pct<0?'bad':'');
+    const detailUrl = setupDetailUrl(e.ticker);
+    const chartUrl = tvChartUrl(e.yahoo_symbol||e.ticker);
+    return `<tr><td><a href="${detailUrl}" target="_blank" rel="noopener" title="Setup-Analyse: Technik, Fundamentaldaten, Story">${esc(e.ticker)}</a></td>`
+      + `<td>${fmtDatum(e.datum)}</td><td>${e.preis_signal!=null?e.preis_signal.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}):'–'}</td>`
+      + `<td class="${cls}">${fmtSigned(e.return_pct)}</td>`
+      + `<td class="go"><a href="${chartUrl}" target="_blank" rel="noopener" title="Chart auf TradingView">Chart ↗</a></td></tr>`;
+  }).join('');
+}
+
+function bestWorstSatz(faelle){
+  if(!faelle.length) return 'Es liegen noch keine gereiften Einzelfälle vor.';
+  const sortiert=[...faelle].sort((a,b)=>b.return_pct-a.return_pct);
+  const beste=sortiert.slice(0,2), schlechteste=sortiert.slice(-2).reverse();
+  const link=e=>`<a href="${setupDetailUrl(e.ticker)}" target="_blank" rel="noopener" title="Setup-Analyse: Technik, Fundamentaldaten, Story">${esc(e.ticker)}</a>`;
+  const wert=e=>`<span class="${e.return_pct>=0?'good':'bad'}">${fmtSigned(e.return_pct)}</span>`;
+  let satz = `Bester Einzelfall: ${link(beste[0])} (${fmtDatum(beste[0].datum)} → ${wert(beste[0])} nach ${beste[0].horizont})`;
+  if(beste[1]) satz += `, gefolgt von ${link(beste[1])} (${wert(beste[1])})`;
+  satz += `. `;
+  if(sortiert.length>1 && schlechteste[0].ticker!==beste[0].ticker){
+    satz += `Schwächster Fall: ${link(schlechteste[0])} (${fmtDatum(schlechteste[0].datum)} → ${wert(schlechteste[0])})`;
+    if(schlechteste[1] && schlechteste[1].ticker!==beste[0].ticker && schlechteste[1].ticker!==schlechteste[0].ticker){
+      satz += `, gefolgt von ${link(schlechteste[1])} (${wert(schlechteste[1])})`;
+    }
+    satz += `.`;
+  }
+  return satz;
+}
+
+function render(data){
+  document.getElementById('status-msg').style.display='none';
+  document.getElementById('ledger').style.display='block';
+
+  const stand=(data.forward_stand||data.erstellt||'').slice(0,10).split('-').reverse().join('.');
+  document.getElementById('topstand').textContent = stand ? `Stand ${stand}` : '';
+  document.getElementById('byline').textContent = `Auswertungsstand ${stand||'–'} — ${data.n_charts||0} Charts im Retro-Universum`;
+
+  const fr = data.forward_realisiert || {};
+  const ev = data.forward_einzelfaelle || [];
+  const retro = data.ergebnis || {};
+
+  const armedAll = fr.ARMED && fr.ARMED['4W'] ? fr.ARMED['4W'] : {n:0};
+  const armedQ70 = fr['ARMED_q70+'] && fr['ARMED_q70+']['4W'] ? fr['ARMED_q70+']['4W'] : {n:0};
+  const armedQlo = fr['ARMED_q<70'] && fr['ARMED_q<70']['4W'] ? fr['ARMED_q<70']['4W'] : {n:0};
+  const armedFaelle = ev.filter(e=>e.status==='ARMED').sort((a,b)=>b.return_pct-a.return_pct);
+
+  document.getElementById('idx-armed').textContent = armedAll.n
+    ? `${fmtPct(armedAll.win)} Win · ${armedAll.n} Fälle` : 'noch keine gereiften Fälle';
+
+  document.getElementById('d-armed').innerHTML = `
+    <div class="lg-body">
+      <p>ARMED ist die Basis, die fertig ist, aber noch nicht ausgebrochen — der Moment kurz bevor der Markt reagiert.
+      ${armedAll.n
+        ? `Von den bislang <strong>${armedAll.n}</strong> unverzerrt ausgewerteten Fällen lagen nach vier Wochen <strong>${fmtPct(armedAll.win)}</strong> im Plus, mit einem mittleren Ertrag von <strong>${fmtSigned(armedAll.avg)}</strong>.`
+        : `Für diese Kategorie sind noch keine Fälle alt genug (mindestens 21 Kalendertage seit Signal), um unverzerrt ausgewertet zu werden.`}</p>
+      <!-- EDITORIAL: beim naechsten Review (Ende Aug 2026) gegen aktuelle Zahlen pruefen -->
+      <p>Filtert man zusätzlich auf einen Score ab 70 — also die Fälle, die der Scorer selbst für besonders überzeugend hält
+      ${armedQ70.n ? ` — steigt die Trefferquote auf <strong>${fmtPct(armedQ70.win)}</strong> (n=${armedQ70.n}${armedQlo.n?`, gegenüber ${fmtPct(armedQlo.win)} bei Score &lt; 70`:''}).`
+                   : ` — liegen dafür noch nicht genug gereifte Fälle vor.`}
+      ${armedQ70.n && armedQ70.n<40 ? ' Die Stichprobe ist noch klein, aber die Richtung ist bislang die konsistenteste im ganzen System: je höher der Score, desto besser das Ergebnis.' : ''}</p>
+    </div>
+
+    <div class="lg-pull">
+      <div class="num">${armedQ70.n ? fmtPct(armedQ70.win) : (armedAll.n ? fmtPct(armedAll.win) : '–')}</div>
+      <div class="cap">${armedQ70.n
+        ? `Trefferquote bei ARMED-Setups mit Score ≥ 70 auf vier Wochen (n=${armedQ70.n}) — die bislang stärkste Spur im System.`
+        : `Trefferquote bei ARMED-Setups gesamt auf vier Wochen (n=${armedAll.n||0}).`}</div>
+    </div>
+
+    <table class="lg-tbl">
+      <caption>Forward-Test, unverzerrt · 4 Wochen</caption>
+      <thead><tr><th>Kohorte</th><th>n</th><th>Win-Rate</th><th>Ø-Return</th></tr></thead>
+      <tbody>
+        <tr><td>ARMED gesamt</td><td>${armedAll.n||0}</td><td class="${armedAll.win>50?'good':''}">${fmtPct(armedAll.win)}</td><td class="${armedAll.avg>0?'good':armedAll.avg<0?'bad':''}">${fmtSigned(armedAll.avg)}</td></tr>
+        <tr><td>ARMED · Score ≥ 70</td><td>${armedQ70.n||0}</td><td class="${armedQ70.win>50?'good':''}">${fmtPct(armedQ70.win)}</td><td class="${armedQ70.avg>0?'good':armedQ70.avg<0?'bad':''}">${fmtSigned(armedQ70.avg)}</td></tr>
+        <tr><td>ARMED · Score &lt; 70</td><td>${armedQlo.n||0}</td><td class="${armedQlo.win>50?'good':''}">${fmtPct(armedQlo.win)}</td><td class="${armedQlo.avg>0?'good':armedQlo.avg<0?'bad':''}">${fmtSigned(armedQlo.avg)}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="lg-body"><p>${bestWorstSatz(armedFaelle)}</p></div>
+
+    <span class="lg-sec-lbl">Alle Fundstellen — ARMED (${armedFaelle.length})</span>
+    <table class="lg-evtable">
+      <thead><tr><th>Ticker</th><th>Signal</th><th>Einstieg</th><th>Return</th><th></th></tr></thead>
+      <tbody>${evtableRows(armedFaelle)}</tbody>
+    </table>
+  `;
+
+  const breakoutAll = fr.BREAKOUT && fr.BREAKOUT['4W'] ? fr.BREAKOUT['4W'] : {n:0};
+  const breakoutRetro12 = retro.BREAKOUT && retro.BREAKOUT['12W'] ? retro.BREAKOUT['12W'] : null;
+  const breakoutFaelle = ev.filter(e=>e.status==='BREAKOUT').sort((a,b)=>b.return_pct-a.return_pct);
+
+  document.getElementById('idx-breakout').textContent = breakoutAll.n
+    ? `${fmtPct(breakoutAll.win)} Win · ${breakoutAll.n} Fälle` : 'noch keine gereiften Fälle';
+
+  document.getElementById('d-breakout').innerHTML = `
+    <div class="lg-body">
+      <p>BREAKOUT markiert den bestätigten Ausbruch aus der Basis — den Moment, in dem die meisten Trading-Systeme überhaupt erst einsteigen.
+      ${breakoutAll.n
+        ? `Im bisherigen Forward-Test lagen nur <strong>${fmtPct(breakoutAll.win)}</strong> der <strong>${breakoutAll.n}</strong> unverzerrt ausgewerteten Fälle nach vier Wochen im Plus, im Schnitt <strong>${fmtSigned(breakoutAll.avg)}</strong>.`
+        : `Für diese Kategorie sind noch keine Fälle alt genug, um unverzerrt ausgewertet zu werden.`}</p>
+      <!-- EDITORIAL: beim naechsten Review (Ende Aug 2026) gegen aktuelle Zahlen pruefen -->
+      <p>Ein Ausbruch allein scheint als kurzfristiges Einstiegssignal oft zu spät zu kommen.
+      ${breakoutRetro12 && breakoutRetro12.n
+        ? `Auffällig: in der rückblickenden RETRO-Baseline (verzerrtes Vergleichsuniversum) sieht BREAKOUT auf 12 Wochen deutlich besser aus (${fmtPct(breakoutRetro12.win)} Win${breakoutRetro12.edge_win!=null?`, ${breakoutRetro12.edge_win>0?'+':''}${breakoutRetro12.edge_win}pp Edge`:''}) — das deutet darauf hin, dass Fehlausbrüche erst nach mehreren Wochen wieder aufgeholt werden, wenn überhaupt.`
+        : ''}
+      Für den kurzfristigen Einstieg liefert die Basis davor (ARMED) bislang die klar bessere Kombination aus Trefferquote und Risiko.</p>
+    </div>
+
+    <div class="lg-pull">
+      <div class="num">${breakoutAll.n ? fmtPct(breakoutAll.win) : '–'}</div>
+      <div class="cap">Trefferquote bei BREAKOUT auf vier Wochen (n=${breakoutAll.n||0}).</div>
+    </div>
+
+    <table class="lg-tbl">
+      <caption>Forward-Test, unverzerrt · 4 Wochen — zum Vergleich: Retro-Baseline 12 Wochen</caption>
+      <thead><tr><th>Kohorte</th><th>n</th><th>Win-Rate</th><th>Ø-Return</th></tr></thead>
+      <tbody>
+        <tr><td>BREAKOUT · Forward 4W</td><td>${breakoutAll.n||0}</td><td class="${breakoutAll.win>50?'good':breakoutAll.win<50?'bad':''}">${fmtPct(breakoutAll.win)}</td><td class="${breakoutAll.avg>0?'good':breakoutAll.avg<0?'bad':''}">${fmtSigned(breakoutAll.avg)}</td></tr>
+        ${breakoutRetro12 && breakoutRetro12.n ? `<tr><td>BREAKOUT · Retro 12W (Baseline-Vergleich)</td><td>${breakoutRetro12.n}</td><td class="good">${fmtPct(breakoutRetro12.win)}</td><td class="good">${fmtSigned(breakoutRetro12.avg)}</td></tr>` : ''}
+      </tbody>
+    </table>
+
+    <div class="lg-body"><p>${bestWorstSatz(breakoutFaelle)}</p></div>
+
+    <span class="lg-sec-lbl">Alle Fundstellen — BREAKOUT (${breakoutFaelle.length})</span>
+    <table class="lg-evtable">
+      <thead><tr><th>Ticker</th><th>Signal</th><th>Einstieg</th><th>Return</th><th></th></tr></thead>
+      <tbody>${evtableRows(breakoutFaelle)}</tbody>
+    </table>
+  `;
+
+  const watch8 = retro.WATCH && retro.WATCH['8W'] ? retro.WATCH['8W'] : {n:0};
+  document.getElementById('idx-watch').textContent = watch8.n ? `${fmtPct(watch8.win)} Win (Retro)` : 'keine Daten';
+
+  document.getElementById('d-watch').innerHTML = `
+    <div class="lg-body">
+      <p>WATCH ist die reine Beobachtungsliste — Aktien, die im Blick bleiben, ohne dass eines der beiden konkreten Chartmuster (ARMED oder BREAKOUT) vorliegt. Für diese Kategorie gibt es im Forward-Logbuch keine unverzerrten Einzelfälle; dafür ist WATCH schlicht zu breit und zu wenig spezifisch gefasst, um bislang gezielt nachverfolgt zu werden.</p>
+      <p>${watch8.n
+        ? `Einzig die rückblickende RETRO-Baseline liefert eine erste, methodisch schwächere Einschätzung: <strong>${fmtPct(watch8.win)}</strong> Trefferquote auf acht Wochen${watch8.edge_win!=null?` — ${watch8.edge_win>0?'ein leichter':'praktisch kein'} Vorsprung gegenüber einem zufälligen Tag im selben Aufwärtstrend (Edge ${watch8.edge_win>0?'+':''}${watch8.edge_win}pp)`:''}. WATCH ist damit, Stand heute, eher eine Warteliste als ein eigenständiges Signal.`
+        : `Auch die rückblickende RETRO-Baseline liegt noch nicht vor.`}</p>
+    </div>
+
+    ${watch8.n ? `
+    <table class="lg-tbl">
+      <caption>Retro-Baseline (kein unverzerrter Forward-Test verfügbar)</caption>
+      <thead><tr><th>Kohorte</th><th>n</th><th>Win-Rate</th><th>Edge ggü. Baseline</th></tr></thead>
+      <tbody><tr><td>WATCH · 8 Wochen</td><td>${watch8.n}</td><td>${fmtPct(watch8.win)}</td><td class="${watch8.edge_win>0?'good':watch8.edge_win<0?'bad':''}">${watch8.edge_win!=null?(watch8.edge_win>0?'+':'')+watch8.edge_win+'pp':'–'}</td></tr></tbody>
+    </table>` : ''}
+
+    <div class="lg-body"><p class="lg-empty">Keine Fundstellen — sobald WATCH-Fälle im Forward-Logbuch reifen, erscheinen sie hier in derselben Form wie bei ARMED und BREAKOUT.</p></div>
+  `;
+}
+
+async function init(){
+  let data=null;
+  try{
+    const r=await fetch('data/pivot_backtest.json',{cache:'no-store'});
+    if(r.ok) data=await r.json();
+  }catch(e){}
+  if(!data){ await _ladeFallbackSkript('data/pivot_backtest.js'); data = window.PIVOT_BACKTEST_DATA || null; }
+  if(!data){
+    document.getElementById('status-msg').textContent = 'Backtest-Daten nicht erreichbar. Läuft der Server, und existiert data/pivot_backtest.json?';
+    return;
+  }
+  render(data);
+}
+init();
+</script>
+</body>
+</html>
