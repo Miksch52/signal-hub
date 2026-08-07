@@ -1103,10 +1103,11 @@ function karte(t,rang){
       ${earnBadge(t)}</div>
     ${t.quellen.kontext?`<div class="ctx">„${t.quellen.kontext}“</div>`:''}
     <div class="links">
+      <a href="setup-detail.html?ticker=${encodeURIComponent(t.ticker)}" target="_blank" title="Setup-Analyse: alle Score-Faktoren, Pivot-Kennzahlen, Price-Action-Muster, TradingView-Chart, Fundamentaldaten &amp; Story für diesen Ticker">🔍 Setup-Analyse</a>
       <a href="https://www.tradingview.com/chart/?symbol=${tvSym}" target="_blank">📊 TradingView</a>
       <a href="https://finviz.com/quote.ashx?t=${encodeURIComponent(t.ticker.split('.')[0])}" target="_blank">Finviz</a>
       <a href="https://finance.yahoo.com/quote/${encodeURIComponent(t.yahoo_symbol)}" target="_blank">Yahoo</a>
-      ${location.protocol.startsWith('http')?`<a href="${mtsHauptappBasis()}/${encodeURI("Maick's Trading System.html")}?ticker=${encodeURIComponent((t.yahoo_symbol||t.ticker||'').trim())}" target="_blank" title="Startet direkt die SEPA-Analyse für diesen Ticker in der Hauptapp (Risk-Management-Tab) – bei Bestätigung dort mit einem Klick zur Fokusliste hinzufügen">🔍 SEPA-Analyse</a>`:''}
+      ${location.protocol.startsWith('http')?`<a href="${mtsHauptappBasis()}/${encodeURI("Maick's Trading System.html")}?ticker=${encodeURIComponent((t.yahoo_symbol||t.ticker||'').trim())}" target="_blank" title="Startet direkt die SEPA-Analyse für diesen Ticker in der Hauptapp (Risk-Management-Tab) – bei Bestätigung dort mit einem Klick zur Fokusliste hinzufügen">🔎 SEPA-Analyse</a>`:''}
       ${location.protocol.startsWith('http')?`<a href="${mtsHauptappBasis()}/${encodeURI("Maick's Trading System.html")}?neuerTrade=${encodeURIComponent(t.ticker)}&quelle=Signal-Hub${tradeParams(t)}" target="_blank" title="${tradeTitle(t)}">📈 Trade</a>`:''}
     </div>
     <details class="more">
