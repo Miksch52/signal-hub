@@ -107,6 +107,9 @@
 
   .srcrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
   .chip{font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  .deepbtn{font:inherit;font-size:13px;font-weight:700;color:var(--primary2);background:rgba(47,208,198,.1);
+    border:1px solid rgba(47,208,198,.4);border-radius:10px;padding:9px 16px;cursor:pointer;transition:background .15s}
+  .deepbtn:hover{background:rgba(47,208,198,.2)}
 
   .extlinks{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .extlinks a{font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);
@@ -436,6 +439,7 @@ function render(sig, piv, pa, regime){
 
     <h2>📰 Fundamentalanalyse &amp; Story <span class="sub">live, Yahoo Finance + KI-Zusammenfassung</span></h2>
     <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
+    <div id="deepwrap" style="margin-top:10px"></div>
 
     <h2>🔗 Quellen &amp; weiterführende Links</h2>
     <div class="srcrow">${srcChips || '<span class="chip">keine Quellen-Info</span>'}</div>
@@ -459,6 +463,7 @@ function render(sig, piv, pa, regime){
   // (dynamisch per innerHTML eingefuegte <script>-Tags fuehren sich sonst nicht aus).
   tvWidget('tv-chart', tvSymbol(t.ticker));
   ladeStory(t.ticker, t.yahoo_symbol, t.name);
+  renderDeepButton(t.ticker, t.yahoo_symbol, t.name);
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
     if(!isNaN(dt)) document.getElementById('stand').textContent =
@@ -534,6 +539,78 @@ async function ladeStory(ticker, yahooSymbol, name){
       Fundamentalanalyse gerade nicht verfügbar (${esc((e && e.message) || e)}).
       <a href="https://finance.yahoo.com/quote/${encodeURIComponent(yahooSymbol || ticker)}" target="_blank" rel="noopener">Direkt bei Yahoo Finance nachsehen →</a>
     </div></div>`;
+  }
+}
+
+// ─── Erweiterter Bericht (seit 2026-08-08) ──────────────────────────────
+// Manuell per Button, NICHT automatisch: mehr externe Aufrufe (Google News +
+// ggf. Reddit) als /story, daher spuerbar langsamer. Reddit-Abschnitt taucht
+// nur auf, wenn der Worker REDDIT_CLIENT_ID/-SECRET gesetzt hat (reddit_aktiv).
+function renderDeepButton(ticker, yahooSymbol, name){
+  const wrap = document.getElementById('deepwrap');
+  if(!wrap) return;
+  wrap.innerHTML = `<button id="deepbtn" class="deepbtn" onclick="ladeDeepStory('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🔬 Erweiterter Bericht</button>`;
+}
+
+function renderDeep(d){
+  const newsHtml = (d.news || []).map(n => {
+    const href = /^https?:\/\//.test(n.link||'') ? n.link : null;
+    const titel = esc(n.title);
+    return `<div style="margin-top:8px;font-size:12.5px">
+      ${href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${titel}</a>` : titel}
+      <div style="color:var(--muted);font-size:11px">${esc(n.publisher)||''}${n.zeit ? ' · '+esc(n.zeit) : ''}</div>
+    </div>`;
+  }).join('') || '<div style="color:var(--muted);font-size:12.5px">Keine weiteren Schlagzeilen gefunden.</div>';
+
+  const redditHtml = (d.reddit || []).map(p => `<div style="margin-top:8px;font-size:12.5px">
+      <a href="${esc(p.link)}" target="_blank" rel="noopener">${esc(p.title)}</a>
+      <div style="color:var(--muted);font-size:11px">${esc(p.subreddit)} · ${p.num_comments} Kommentare${p.zeit?' · '+esc(p.zeit):''}</div>
+    </div>`).join('');
+  const redditBlock = d.reddit_aktiv
+    ? `<div class="pivotcard">
+        <div class="pdetail" style="margin-bottom:0">💬 Reddit-Diskussionen (r/stocks, r/investing, r/wallstreetbets, r/StockMarket)</div>
+        ${redditHtml || '<div style="color:var(--muted);font-size:12.5px">Keine Treffer im letzten Monat.</div>'}
+      </div>`
+    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">
+        💬 Reddit-Anbindung noch nicht eingerichtet (Worker-Secrets fehlen) — Bericht basiert nur auf Google News.
+      </div></div>`;
+
+  const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+  return `
+    <div class="pivotcard">
+      <div class="pdetail"><b>Unternehmen:</b> ${esc(d.profil) || '—'}</div>
+      <div class="pdetail"><b>Story &amp; Katalysatoren:</b> ${esc(d.story) || '—'}</div>
+      <div class="pdetail"><b>Marktstimmung/Diskussion:</b> ${esc(d.diskussion) || '—'}</div>
+      <div class="pdetail"><b>Risiken:</b> ${esc(d.risiken) || '—'}</div>
+    </div>
+    ${redditBlock}
+    <div class="pivotcard">
+      <div class="pdetail" style="margin-bottom:0">📰 Weitere Schlagzeilen (Google News)</div>
+      ${newsHtml}
+    </div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
+      KI-generierter erweiterter Bericht (Google News${d.reddit_aktiv?' + Reddit':''}) · rein informativ, keine
+      Anlageberatung, keine Kauf-/Verkaufsempfehlung · Stand ${stand} Uhr
+    </div>`;
+}
+
+async function ladeDeepStory(ticker, yahooSymbol, name){
+  const wrap = document.getElementById('deepwrap');
+  if(!wrap) return;
+  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt erweiterten Bericht (Google News' +
+    ', ggf. Reddit) — kann etwas länger dauern …</div></div>';
+  try{
+    const u = MTS_PROXY + 'deep-story?ticker=' + encodeURIComponent(yahooSymbol || ticker)
+      + '&name=' + encodeURIComponent(name || '');
+    const r = await fetch(u, {signal: AbortSignal.timeout(40000)});
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
+    wrap.innerHTML = renderDeep(d);
+  }catch(e){
+    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
+      Erweiterter Bericht gerade nicht verfügbar (${esc((e && e.message) || e)}).
+    </div></div>
+    <button class="deepbtn" onclick="ladeDeepStory('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🔄 Erneut versuchen</button>`;
   }
 }
 
