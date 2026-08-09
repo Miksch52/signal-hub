@@ -79,6 +79,16 @@ def pipeline(c, push=False):
         # ueber Kalenderzeit, meldet bis dahin nur "noch nicht reif" und tut
         # sonst nichts - kein gesondertes Scheduling noetig.
         lauf("score_faktoren_backtest.py")
+        # Beide lesen LOGBUCH (pfade.LOKAL, waechst nur auf DIESER Maschine ueber
+        # Kalenderzeit) - im Cloud-Lauf ist es bei jedem Job leer, beide Skripte
+        # schreiben dort also gar keine Datei (siehe deren main(): "if not lb:
+        # return"). Nur hier lokal gibt es je echte Ausgabedateien zum Hochladen -
+        # Bugfix 2026-08-09, sonst sah der automatisierte Cloud-Deploy (der jetzt
+        # dank der neuen deploy-trigger.yml-Workflows viel haeufiger laeuft) nie
+        # frische Trefferquoten-Daten, weil R2 sie nie bekam.
+        if not os.environ.get("GITHUB_ACTIONS"):
+            subprocess.run([os.path.join(PROJEKT, "scripts", "upload_to_r2.sh"),
+                            "score_backtest.json", "score_faktoren_backtest.json"])
     return scorer_ok
 
 # --- Zeitplan-Status ------------------------------------------------------

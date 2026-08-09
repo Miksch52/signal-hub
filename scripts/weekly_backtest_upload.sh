@@ -12,9 +12,11 @@
 #    Rotation-Dashboard laeuft deploy.yml deutlich haeufiger - ohne diesen Upload
 #    waere die Live-Seite fast immer veraltet gewesen.
 #
-# Nutzt "wrangler r2 object put" (bereits lokal per "npx wrangler login"
-# authentifiziert, siehe cloudflare-worker/) statt rclone - keine zusaetzlichen
-# R2-S3-Zugangsdaten auf diesem Mac noetig.
+# Upload laeuft ueber den gemeinsamen Helfer upload_to_r2.sh (wrangler r2 object
+# put, bereits lokal per "npx wrangler login" authentifiziert - keine zusaetzlichen
+# R2-S3-Zugangsdaten noetig). Derselbe Helfer wird auch von run.py fuer
+# score_backtest.json/score_faktoren_backtest.json genutzt (dort direkt nach
+# jedem lokalen Lauf statt nur woechentlich, siehe run.py::pipeline()).
 #
 # WICHTIG: laedt NUR das aggregierte Ergebnis hoch (pivot_backtest.json/.js) -
 # NIEMALS die Rohhistorien (pivot_logbuch.json, pivot_eval_state.json, logbuch.json
@@ -28,15 +30,4 @@ cd "$PROJ/Signal-Hub"
 /usr/bin/python3 src/pivot_backtest.py --evaluate
 /usr/bin/python3 src/pivot_backtest.py
 
-cd "$PROJ/cloudflare-worker"
-for f in pivot_backtest.json pivot_backtest.js; do
-  src="../Signal-Hub/data/$f"
-  if [ -f "$src" ]; then
-    /usr/local/bin/npx --yes wrangler r2 object put \
-      "signalhub-magazine/_deploy/signal-hub/$f" \
-      --file="$src" --remote -y
-    echo "Hochgeladen: $f"
-  else
-    echo "Uebersprungen (fehlt): $f"
-  fi
-done
+"$HIER/upload_to_r2.sh" pivot_backtest.json pivot_backtest.js
