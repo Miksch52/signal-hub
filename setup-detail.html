@@ -579,21 +579,44 @@ function renderDeep(d){
         💬 Reddit-Anbindung noch nicht eingerichtet (Worker-Secrets fehlen) — Bericht basiert nur auf Google News.
       </div></div>`;
 
+  // SEC-EDGAR-Filings (seit 2026-08-09): echte offizielle Einreichungen statt
+  // eines IR-Website-Scrapes, siehe cloudflare-worker/mts-cors-proxy.js::
+  // handleDeepStory-Kommentar fuer die Begruendung. Nur fuer US-boersen-
+  // notierte Ticker (edgar_aktiv) - fuer alle anderen erscheint ein Hinweis
+  // statt einer leeren Karte.
+  const edgarLabel = { '10-K': 'Jahresbericht (10-K)', '10-Q': 'Quartalsbericht (10-Q)', '8-K': 'Ad-hoc-Meldung (8-K)' };
+  const edgarZeile = (f) => f ? `<div style="margin-top:8px;font-size:12.5px">
+      <a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(edgarLabel[f.form] || f.form)}</a>
+      <div style="color:var(--muted);font-size:11px">eingereicht am ${esc(f.filingDate)}</div>
+    </div>` : '';
+  const edgarHtml = d.edgar ? [edgarZeile(d.edgar.latest10K), edgarZeile(d.edgar.latest10Q),
+      ...(d.edgar.latest8Ks || []).map(edgarZeile)].join('') : '';
+  const edgarBlock = d.edgar_aktiv
+    ? `<div class="pivotcard">
+        <div class="pdetail" style="margin-bottom:0">📑 Offizielle SEC-Einreichungen (EDGAR)</div>
+        ${edgarHtml || '<div style="color:var(--muted);font-size:12.5px">Bei der SEC registriert, aber keine aktuellen 10-K/10-Q/8-K gefunden.</div>'}
+      </div>`
+    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">
+        📑 Keine SEC-EDGAR-Daten (kein US-börsennotiertes Unternehmen) — für europäische Ticker gibt es keine vergleichbare freie Quelle.
+      </div></div>`;
+
   const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
   return `
     <div class="pivotcard">
       <div class="pdetail"><b>Unternehmen:</b> ${esc(d.profil) || '—'}</div>
       <div class="pdetail"><b>Story &amp; Katalysatoren:</b> ${esc(d.story) || '—'}</div>
+      <div class="pdetail"><b>Unternehmensberichte (SEC):</b> ${esc(d.unternehmensberichte) || '—'}</div>
       <div class="pdetail"><b>Marktstimmung/Diskussion:</b> ${esc(d.diskussion) || '—'}</div>
       <div class="pdetail"><b>Risiken:</b> ${esc(d.risiken) || '—'}</div>
     </div>
+    ${edgarBlock}
     ${redditBlock}
     <div class="pivotcard">
       <div class="pdetail" style="margin-bottom:0">📰 Weitere Schlagzeilen (Google News)</div>
       ${newsHtml}
     </div>
     <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
-      KI-generierter erweiterter Bericht (Google News${d.reddit_aktiv?' + Reddit':''}) · rein informativ, keine
+      KI-generierter erweiterter Bericht (Google News${d.reddit_aktiv?' + Reddit':''}${d.edgar_aktiv?' + SEC EDGAR':''}) · rein informativ, keine
       Anlageberatung, keine Kauf-/Verkaufsempfehlung · Stand ${stand} Uhr
     </div>`;
 }
@@ -602,7 +625,7 @@ async function ladeDeepStory(ticker, yahooSymbol, name){
   const wrap = document.getElementById('deepwrap');
   if(!wrap) return;
   wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt erweiterten Bericht (Google News' +
-    ', ggf. Reddit) — kann etwas länger dauern …</div></div>';
+    ', ggf. Reddit/SEC EDGAR) — kann etwas länger dauern …</div></div>';
   try{
     const u = MTS_PROXY + 'deep-story?ticker=' + encodeURIComponent(yahooSymbol || ticker)
       + '&name=' + encodeURIComponent(name || '');
