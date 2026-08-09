@@ -150,8 +150,16 @@ jobs:
       # faelligen Cron-Anstoesse mit einem roten Fehler abbrechen, obwohl das
       # der normale, erwartete Fall ist (siehe "|| true"-Kommentar weiter
       # unten fuer dasselbe Problem beim R2-Upload).
+      # WICHTIG (Bugfix 2026-08-09): Dateiname darf NICHT mit "." beginnen -
+      # actions/upload-artifact@v4 ignoriert versteckte Dateien beim
+      # Datei-Matching, ein Ordner mit nur einer Dotfile-Datei zaehlt als leer
+      # ("No files were found ... No artifacts will be uploaded") und legt
+      # dann GAR KEIN Artifact an, statt eines mit nur dem Platzhalter drin -
+      # genau das Gegenteil vom beabsichtigten Zweck dieses Schritts. Fuehrte
+      # dazu, dass price-action-hub/rotation-dashboard bei JEDEM Nicht-Slot-
+      # Lauf mit "Artifact not found for name: signal-hub-data" abbrachen.
       - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
-        run: mkdir -p data && touch data/.artifact-keep
+        run: mkdir -p data && touch data/ARTIFACT_KEEP
 
       - name: Signal-Hub-Ausgabe fuer Price-Action-Hub/Rotation-Dashboard bereitstellen
         uses: actions/upload-artifact@v4
@@ -254,7 +262,7 @@ jobs:
         run: rclone copy ~/"Library/Application Support/PriceActionHub/top_setups_state.json" r2:signalhub-magazine/_state/ || true
 
       - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
-        run: mkdir -p Price-Action-Hub/data && touch Price-Action-Hub/data/.artifact-keep
+        run: mkdir -p Price-Action-Hub/data && touch Price-Action-Hub/data/ARTIFACT_KEEP
 
       - name: Price-Action-Hub-Ausgabe fuer den Deploy-Schritt bereitstellen
         uses: actions/upload-artifact@v4
@@ -272,7 +280,7 @@ jobs:
       # Workspace); jetzt braucht es einen eigenen Artifact-Umweg zurueck in
       # den signal-hub-Datenordner des deploy-Jobs.
       - name: Platzhalter fuer Top-Setups-Artifact sicherstellen (auch ohne faelligen Slot)
-        run: touch Signal-Hub/data/.top-setups-keep
+        run: touch Signal-Hub/data/TOP_SETUPS_KEEP
 
       - name: Top-Setups-Aggregat fuer den Deploy-Schritt bereitstellen
         uses: actions/upload-artifact@v4
@@ -281,7 +289,7 @@ jobs:
           path: |
             Signal-Hub/data/top_setups.json
             Signal-Hub/data/top_setups.js
-            Signal-Hub/data/.top-setups-keep
+            Signal-Hub/data/TOP_SETUPS_KEEP
           retention-days: 1
 
   rotation-dashboard:
@@ -324,7 +332,7 @@ jobs:
           fi
 
       - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
-        run: mkdir -p Rotation-Dashboard/data && touch Rotation-Dashboard/data/.artifact-keep
+        run: mkdir -p Rotation-Dashboard/data && touch Rotation-Dashboard/data/ARTIFACT_KEEP
 
       - name: Rotation-Dashboard-Ausgabe fuer den Deploy-Schritt bereitstellen
         uses: actions/upload-artifact@v4
@@ -400,7 +408,7 @@ jobs:
 
       - name: Ausgabedateien nach R2 hochladen (fuer den Deploy-Workflow im Hauptrepo)
         # "|| true" pro Zeile noetig: bei uebersprungenen Slots enthalten die
-        # Ordner nur den .artifact-keep-Platzhalter - "[ -d ... ] && ..."
+        # Ordner nur den ARTIFACT_KEEP-Platzhalter - "[ -d ... ] && ..."
         # liefert trotzdem Erfolg, aber zur Sicherheit (und weil unter
         # "bash -e" jede fehlschlagende Zeile sofort den ganzen Schritt
         # abbricht) bleibt das Muster erhalten.
