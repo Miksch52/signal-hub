@@ -184,6 +184,7 @@ const FAKTOR_INFO = {
   fundamental:         {icon:'💵', label:'Fundamental (EPS/Umsatz)', explain:
     'CANSLIM/SEPA-Bestätigung: Gewinn- und Umsatzwachstum gegenüber Vorjahr. Minervini bevorzugt Aktien mit beschleunigtem Gewinnwachstum, nicht nur charttechnische Stärke.'},
 };
+const VERIFY_EXPLAIN = 'Unabhängige Gegenprüfung des Stage-2-Trend-Templates: berechnet die 8 Kriterien frisch aus eigenen Yahoo-Kursdaten (Cloudflare Worker, sieht die Pipeline-Begründung nicht) und vergleicht sie mit dem gespeicherten Wert. Rein deterministisch, kein KI-Aufruf - Prinzip "wer etwas berechnet hat, prüft es nicht selbst nach".';
 const PIVOT_EXPLAIN = 'Pivot-Armed-Detektor (ergänzt den nachlaufenden Score um die Entstehung des Ausbruchs): BREAKOUT = frischer Ausbruch über die Basis auf hohem Volumen. ARMED = enge, ausgetrocknete Basis knapp unter dem Pivot (Pre-Breakout). WATCH = Trend intakt, Basis noch nicht reif. CHEAT = früher Ausbruch vor vollem Trend-Template, klein positionieren.';
 const PA_EXPLAIN = 'Unabhängige Candlestick-Musteranalyse (Trendbar, Breakout, Gap, Bar-Counting) aus dem Price-Action-Hub - positiver Wert = bullisches Chartbild, kein Ersatz für den Score.';
 const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufwärtsphase, Distribution/Declining = Abwärtsphase - gemessen an Kurs gegen den gleitenden 200-Tage-Durchschnitt und dessen Steigung.';
@@ -425,6 +426,9 @@ function render(sig, piv, pa, regime){
     <h2>📈 Technische Treiber <span class="sub">Minervini Trend-Template, relative Stärke, Volumen</span></h2>
     <div class="fgrid">${techCards}</div>
 
+    <h2>🔍 Unabhängige Gegenprüfung <span class="sub" title="${VERIFY_EXPLAIN}">Stage-2-Trend-Template, frisch aus eigenen Kursdaten</span></h2>
+    <div id="verifywrap"><button class="deepbtn" onclick="ladeVerify('${esc(t.ticker)}','${esc(t.yahoo_symbol||t.ticker)}',${(t.faktoren && t.faktoren.stage2_trend && t.faktoren.stage2_trend.wert!=null) ? t.faktoren.stage2_trend.wert : 'null'})">🔍 Jetzt gegenprüfen</button></div>
+
     <h2>💵 Fundamentale Treiber <span class="sub">CANSLIM/SEPA-Bestätigung</span></h2>
     <div class="fgrid">${fundCards}
       <div class="fcard"><span class="dot d-na"></span><div class="fcard-body">
@@ -611,6 +615,55 @@ async function ladeDeepStory(ticker, yahooSymbol, name){
       Erweiterter Bericht gerade nicht verfügbar (${esc((e && e.message) || e)}).
     </div></div>
     <button class="deepbtn" onclick="ladeDeepStory('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🔄 Erneut versuchen</button>`;
+  }
+}
+
+// ─── Unabhängige Gegenprüfung (seit 2026-08-09) ─────────────────────────
+// Rechnet die 8 Stage-2-Trend-Template-Kriterien im Worker frisch aus einem
+// eigenen Yahoo-Kursabruf nach (siehe cloudflare-worker/mts-cors-proxy.js::
+// handleVerify) - unabhängig von signals.json, kein KI-Aufruf (harte
+// Zahlenvergleiche statt einer Meinung). Manuell per Button wie der
+// erweiterte Bericht, damit nicht bei jedem Seitenaufruf automatisch ein
+// zusätzlicher Yahoo-Abruf läuft.
+function renderVerify(d, claimedWert){
+  const claimedErfuellt = (claimedWert!=null && !isNaN(claimedWert)) ? Math.round(claimedWert * d.gesamt) : null;
+  const abweichend = claimedErfuellt!=null && claimedErfuellt !== d.erfuellt;
+  const rows = d.kriterien.map(k => `<div class="qs-item">${dot(k.erfuellt?'gruen':'rot')}<span>${esc(k.label)}</span></div>`).join('');
+  const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+  let urteil;
+  if(!d.historie_ausreichend) urteil = '<span style="color:var(--warn)">⚠️ Kursreihe zu kurz für eine verlässliche Prüfung</span>';
+  else if(claimedErfuellt==null) urteil = '<span style="color:var(--muted)">kein Pipeline-Wert zum Vergleich vorhanden</span>';
+  else if(abweichend) urteil = '<span style="color:var(--bad)">⚠️ weicht vom Pipeline-Stand ab</span>';
+  else urteil = '<span style="color:var(--ok)">✓ bestätigt den Pipeline-Stand</span>';
+  return `
+    <div class="pivotcard">
+      <div class="pdetail">
+        <b>Frisch nachgerechnet:</b> ${d.erfuellt}/${d.gesamt} Kriterien erfüllt
+        ${claimedErfuellt!=null ? ` &middot; <b>Pipeline-Stand:</b> ${claimedErfuellt}/${d.gesamt}` : ''}
+        &middot; ${urteil}
+      </div>
+      <div class="quickscan" style="margin-top:8px">${rows}</div>
+    </div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
+      ${esc(d.quelle)} · kein KI-Aufruf, reine Zahlenprüfung · Stand ${stand} Uhr
+    </div>`;
+}
+
+async function ladeVerify(ticker, yahooSymbol, claimedWert){
+  const wrap = document.getElementById('verifywrap');
+  if(!wrap) return;
+  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Berechnet die 8 Trend-Template-Kriterien unabhängig aus frischen Kursdaten neu …</div></div>';
+  try{
+    const u = MTS_PROXY + 'verify?ticker=' + encodeURIComponent(yahooSymbol || ticker);
+    const r = await fetch(u, {signal: AbortSignal.timeout(20000)});
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
+    wrap.innerHTML = renderVerify(d, claimedWert);
+  }catch(e){
+    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
+      Gegenprüfung gerade nicht verfügbar (${esc((e && e.message) || e)}).
+    </div></div>
+    <button class="deepbtn" onclick="ladeVerify('${esc(ticker)}','${esc(yahooSymbol)}',${(claimedWert!=null && !isNaN(claimedWert)) ? claimedWert : 'null'})">🔄 Erneut versuchen</button>`;
   }
 }
 
