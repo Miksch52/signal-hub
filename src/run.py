@@ -40,7 +40,7 @@ def lauf(script, *args):
         print(f"  ! {script} endete mit Code {r.returncode}")
     return r.returncode == 0
 
-def pipeline(c):
+def pipeline(c, push=False):
     q = c["quellen"]
     if q.get("pdf", {}).get("aktiv"):
         lauf("pdf_screener.py")
@@ -59,7 +59,12 @@ def pipeline(c):
     # wenn der Scorer wirklich geschrieben hat (sonst nur ein zweiter, verwirrender
     # FileNotFoundError obendrauf - das eigentliche Problem steht schon oben).
     if c.get("pivot", {}).get("aktiv", True) and scorer_ok:
-        lauf("pivot_screener.py")
+        # --notify nur, wenn dieser Lauf ohnehin schon einen Push ausloest
+        # (faelliger Slot bzw. --notify/--push) - Anti-Spam-Zustand
+        # (pivot_state.json, siehe pivot_screener.py::neuzugaenge) wird
+        # unabhaengig davon IMMER aktualisiert, nur der tatsaechliche Versand
+        # haengt an derselben Bedingung wie der normale Signal-Push.
+        lauf("pivot_screener.py", *(["--notify"] if push else []))
         # Heutige ARMED/BREAKOUT ins Forward-Logbuch (unverzerrte Stichprobe,
         # reift ueber Kalenderzeit -> Basis fuer pivot_backtest.py --evaluate).
         lauf("pivot_backtest.py", "--log")
@@ -130,7 +135,7 @@ def main():
         if not slots:
             return  # ausserhalb der Sendezeiten -> still beenden
         print(f"[{datetime.now():%Y-%m-%d %H:%M}] Faellige Slots {slots} -> Lauf + Push")
-        ok = pipeline(c)
+        ok = pipeline(c, push=True)
         # Erster konfigurierter Slot des Tages (zeiten[0], typischerweise
         # 07:30) wird als Morning Brief gepusht (Marktampel-Status vorweg,
         # siehe notify.py::baue_nachricht) statt der normalen Top-Liste.
@@ -142,8 +147,9 @@ def main():
         # Scorers sieht von aussen wie ein normaler, erfolgreicher Lauf aus.
         sys.exit(0 if ok else 1)
 
-    ok = pipeline(c)
-    if "--notify" in args or "--push" in args:
+    push = "--notify" in args or "--push" in args
+    ok = pipeline(c, push=push)
+    if push:
         lauf("notify.py")
     print("\nFertig. signal-hub.html neu laden.")
     sys.exit(0 if ok else 1)

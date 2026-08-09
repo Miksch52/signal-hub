@@ -99,10 +99,16 @@ jobs:
           no_check_bucket = true
           CONF
 
-      - name: Zustand (state.json) aus R2 wiederherstellen
+      # pivot_state.json (seit 2026-08-09): pivot_screener.py's Anti-Spam-
+      # Zustand fuer "neu ARMED/BREAKOUT"-Pushes (siehe pivot_screener.py::
+      # neuzugaenge) - ohne diese Zeile waere er bei jedem Cloud-Lauf leer
+      # (frische VM), jeder aktuell ARMED/BREAKOUT-Ticker wuerde dann bei
+      # JEDEM Lauf erneut als "neu" gelten statt nur beim echten Uebergang.
+      - name: Zustand (state.json, pivot_state.json) aus R2 wiederherstellen
         run: |
           mkdir -p ~/"Library/Application Support/SignalHub"
           rclone copy r2:signalhub-magazine/_state/state.json ~/"Library/Application Support/SignalHub/" || true
+          rclone copy r2:signalhub-magazine/_state/pivot_state.json ~/"Library/Application Support/SignalHub/" || true
 
       - name: Magazine aus R2 laden
         run: |
@@ -130,9 +136,11 @@ jobs:
       # "Pipeline laufen lassen"-Schritts selbst) - Price-Action-Hub und
       # Rotation-Dashboard laufen jetzt in eigenen Jobs und koennen diesen
       # Schritt hier gar nicht mehr beeinflussen.
-      - name: Zustand (state.json) nach R2 sichern
+      - name: Zustand (state.json, pivot_state.json) nach R2 sichern
         if: always()
-        run: rclone copy ~/"Library/Application Support/SignalHub/state.json" r2:signalhub-magazine/_state/
+        run: |
+          rclone copy ~/"Library/Application Support/SignalHub/state.json" r2:signalhub-magazine/_state/
+          rclone copy ~/"Library/Application Support/SignalHub/pivot_state.json" r2:signalhub-magazine/_state/ || true
 
       # Platzhalter, falls kein faelliger Slot lief (data/ existiert dann gar
       # nicht - run.py kehrt vor dem ersten os.makedirs(DATA) zurueck, siehe
