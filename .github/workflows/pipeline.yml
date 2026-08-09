@@ -193,6 +193,53 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Ab hier fuer den Top-Setups-Push (top_setups.py, seit 2026-08-09):
+      # braucht denselben ntfy-Kanal wie die drei anderen Push-Quellen sowie
+      # einen R2-gesicherten Anti-Spam-Zustand (top_setups_state.json), sonst
+      # waere er bei jedem frischen Runner leer und jedes aktuell gueltige
+      # Top-Setup wuerde bei JEDEM Lauf erneut als "neu" gelten. Gleiches
+      # Vorgehen wie im signal-hub-Job oben (DNS-Workaround/rclone/R2), hier
+      # nur fuer diesen Job separat, da jeder Job auf einem frischen Runner
+      # startet.
+      - name: DNS-Workaround fuer GitHub-Runner (systemd-resolved "server misbehaving")
+        run: |
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 9.9.9.9\n' \
+            | sudo tee /etc/resolv.conf
+
+      - name: rclone installieren (kein Paketmanager auf Runner noetig)
+        run: |
+          curl -sSL -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
+          unzip -q /tmp/rclone.zip -d /tmp
+          sudo cp /tmp/rclone-*-linux-amd64/rclone /usr/local/bin/rclone
+
+      - name: R2-Remote konfigurieren
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<CONF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret_access_key = ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint = ${{ secrets.R2_ENDPOINT }}
+          acl = private
+          no_check_bucket = true
+          CONF
+
+      - name: Zustand (top_setups_state.json) aus R2 wiederherstellen
+        run: |
+          mkdir -p ~/"Library/Application Support/PriceActionHub"
+          rclone copy r2:signalhub-magazine/_state/top_setups_state.json ~/"Library/Application Support/PriceActionHub/" || true
+
+      # NUR fuer den ntfy-Kanal (benachrichtigung.ntfy_thema/-server) gebraucht,
+      # reiner Datei-Read in top_setups.py (siehe pfade.py::SIGNAL_HUB_CONFIG,
+      # kein Cross-App-Python-Import). Landet NICHT in einem Artifact-Upload
+      # dieses Jobs -> bleibt innerhalb des ephemeren Runners, wird nie
+      # veroeffentlicht (das Repo hier ist oeffentlich).
+      - name: Signal-Hub config.json aus Secret schreiben (ntfy-Zugangsdaten fuer Top-Setups-Push)
+        run: printf '%s' '${{ secrets.SIGNALHUB_CONFIG_JSON }}' > Signal-Hub/config.json
+
       - name: Price-Action-Hub Pipeline (nur wenn Signal-Hub in diesem Lauf frisch geschrieben hat)
         working-directory: Price-Action-Hub
         run: |
@@ -201,6 +248,10 @@ jobs:
           else
             echo "Signal-Hub hat in diesem Lauf keine neuen Daten geschrieben (kein faelliger Slot) - uebersprungen."
           fi
+
+      - name: Zustand (top_setups_state.json) nach R2 sichern
+        if: always()
+        run: rclone copy ~/"Library/Application Support/PriceActionHub/top_setups_state.json" r2:signalhub-magazine/_state/ || true
 
       - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
         run: mkdir -p Price-Action-Hub/data && touch Price-Action-Hub/data/.artifact-keep
