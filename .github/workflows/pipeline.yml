@@ -29,32 +29,27 @@ on:
 env:
   TZ: Europe/Berlin
 
+# Vier Jobs statt (bis 2026-08-09) ein einzelner Job mit sechs Schritten in
+# Kette. Grund: Price-Action-Hub und Rotation-Dashboard haben KEINE echte
+# Abhaengigkeit voneinander (Rotation-Dashboard liest nur Signal-Hubs
+# signals.json als Gate + die schon vorher aus R2 gezogene Markets-360-CSV,
+# siehe Rotation-Dashboard/src/pfade.py - niemals Price-Action-Hub-Output).
+# Die einzige echte Kante ist Signal-Hub -> {Price-Action-Hub,
+# Rotation-Dashboard}. Beide haengen nur an Signal-Hub, nicht aneinander,
+# liefen bisher aber trotzdem nacheinander. Jetzt: fan-out nach Signal-Hub,
+# beide parallel, convergieren im deploy-Job (Diamant-Muster) - kuerzere
+# Laufzeit, weniger GitHub-Actions-Minuten (die schon einmal das Kontingent
+# gesprengt haben, siehe Cloud-Pipeline-Ausfall 2026-08).
 jobs:
-  run:
+  signal-hub:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: Signal-Hub
     steps:
-      # Self-Checkout bewusst nach ./Signal-Hub (nicht Workspace-Root):
-      # Price-Action-Hub erwartet die Signal-Hub-Ausgabe unter einem
-      # Geschwister-Ordner exakt "Signal-Hub" (siehe dessen pfade.py) -
-      # genau wie lokal in iCloud, wo beide Ordner nebeneinander liegen.
       - uses: actions/checkout@v4
         with:
           path: Signal-Hub
-
-      - name: Price-Action-Hub auschecken (Geschwister-Ordner, oeffentliches Repo, kein Token noetig)
-        uses: actions/checkout@v4
-        with:
-          repository: Miksch52/price-action-hub
-          path: Price-Action-Hub
-
-      - name: Rotation-Dashboard auschecken (Geschwister-Ordner, oeffentliches Repo, kein Token noetig)
-        uses: actions/checkout@v4
-        with:
-          repository: Miksch52/rotation-dashboard
-          path: Rotation-Dashboard
 
       - uses: actions/setup-python@v5
         with:
@@ -128,6 +123,68 @@ jobs:
             python3 src/run.py --scheduled
           fi
 
+      # War frueher der letzte Schritt im Gesamtjob (if: always(), damit ein
+      # Fehler in einem SPAETEREN Schritt - z.B. Price-Action-Hub-Pipeline -
+      # die Sicherung nicht verhindert). Jetzt genuegt if: always() alleine
+      # innerhalb DIESES Jobs (schuetzt nur noch vor einem Absturz des
+      # "Pipeline laufen lassen"-Schritts selbst) - Price-Action-Hub und
+      # Rotation-Dashboard laufen jetzt in eigenen Jobs und koennen diesen
+      # Schritt hier gar nicht mehr beeinflussen.
+      - name: Zustand (state.json) nach R2 sichern
+        if: always()
+        run: rclone copy ~/"Library/Application Support/SignalHub/state.json" r2:signalhub-magazine/_state/
+
+      # Platzhalter, falls kein faelliger Slot lief (data/ existiert dann gar
+      # nicht - run.py kehrt vor dem ersten os.makedirs(DATA) zurueck, siehe
+      # src/run.py::main). Ohne Platzhalter haette upload-artifact nichts zum
+      # Hochladen und wuerde KEIN Artifact anlegen - der Download in den
+      # beiden Folge-Jobs wuerde dann bei jedem der taeglich vier NICHT
+      # faelligen Cron-Anstoesse mit einem roten Fehler abbrechen, obwohl das
+      # der normale, erwartete Fall ist (siehe "|| true"-Kommentar weiter
+      # unten fuer dasselbe Problem beim R2-Upload).
+      - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
+        run: mkdir -p data && touch data/.artifact-keep
+
+      - name: Signal-Hub-Ausgabe fuer Price-Action-Hub/Rotation-Dashboard bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: signal-hub-data
+          path: Signal-Hub/data
+          retention-days: 1
+
+      - name: Markets-360-Magazinauszug fuer Rotation-Dashboard bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: signal-hub-magazine-markets360
+          path: Signal-Hub/_magazine/markets360
+          retention-days: 1
+
+  price-action-hub:
+    needs: signal-hub
+    runs-on: ubuntu-latest
+    steps:
+      # Kein eigener Signal-Hub-Checkout noetig: Price-Action-Hub/src/pfade.py
+      # erwartet die Signal-Hub-Ausgabe nur unter dem Geschwister-Ordner
+      # "Signal-Hub/data/signals.json" (Fake-Edge-Test: echte Abhaengigkeit
+      # ist die Datei, nicht der Signal-Hub-Code oder -Checkout). download-
+      # artifact legt den Zielordner selbst an, ein Checkout waere hier nur
+      # totes Gewicht.
+      - name: Signal-Hub-Ausgabe herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: signal-hub-data
+          path: Signal-Hub/data
+
+      - name: Price-Action-Hub auschecken (Geschwister-Ordner, oeffentliches Repo, kein Token noetig)
+        uses: actions/checkout@v4
+        with:
+          repository: Miksch52/price-action-hub
+          path: Price-Action-Hub
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Price-Action-Hub Pipeline (nur wenn Signal-Hub in diesem Lauf frisch geschrieben hat)
         working-directory: Price-Action-Hub
         run: |
@@ -136,6 +193,67 @@ jobs:
           else
             echo "Signal-Hub hat in diesem Lauf keine neuen Daten geschrieben (kein faelliger Slot) - uebersprungen."
           fi
+
+      - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
+        run: mkdir -p Price-Action-Hub/data && touch Price-Action-Hub/data/.artifact-keep
+
+      - name: Price-Action-Hub-Ausgabe fuer den Deploy-Schritt bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: price-action-hub-data
+          path: Price-Action-Hub/data
+          retention-days: 1
+
+      # Sonderfall: top_setups.py (Teil von Price-Action-Hub, siehe
+      # src/top_setups.py::OUT_JSON/OUT_JS) schreibt NICHT nach
+      # Price-Action-Hub/data, sondern direkt nach Signal-Hub/data/
+      # (liest signals.json + pivot.json + priceaction.json per JSON-Join
+      # und legt das Ergebnis dorthin, wo die Startseite/Dashboard es laden).
+      # Im alten Ein-Job-Design lief das automatisch mit (gleicher
+      # Workspace); jetzt braucht es einen eigenen Artifact-Umweg zurueck in
+      # den signal-hub-Datenordner des deploy-Jobs.
+      - name: Platzhalter fuer Top-Setups-Artifact sicherstellen (auch ohne faelligen Slot)
+        run: touch Signal-Hub/data/.top-setups-keep
+
+      - name: Top-Setups-Aggregat fuer den Deploy-Schritt bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: top-setups-data
+          path: |
+            Signal-Hub/data/top_setups.json
+            Signal-Hub/data/top_setups.js
+            Signal-Hub/data/.top-setups-keep
+          retention-days: 1
+
+  rotation-dashboard:
+    needs: signal-hub
+    runs-on: ubuntu-latest
+    steps:
+      # Gleiches Prinzip wie im price-action-hub-Job: nur die Ausgabedateien
+      # von Signal-Hub werden gebraucht (signals.json als Gate, die
+      # Markets-360-CSV aus dem Magazin), nicht der Signal-Hub-Code selbst -
+      # download-artifact legt beide Zielordner selbst an, kein Checkout noetig.
+      - name: Signal-Hub-Ausgabe herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: signal-hub-data
+          path: Signal-Hub/data
+
+      - name: Markets-360-Magazinauszug herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: signal-hub-magazine-markets360
+          path: Signal-Hub/_magazine/markets360
+
+      - name: Rotation-Dashboard auschecken (Geschwister-Ordner, oeffentliches Repo, kein Token noetig)
+        uses: actions/checkout@v4
+        with:
+          repository: Miksch52/rotation-dashboard
+          path: Rotation-Dashboard
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Rotation-Dashboard Pipeline (nur wenn Signal-Hub in diesem Lauf frisch geschrieben hat)
         working-directory: Rotation-Dashboard
@@ -146,16 +264,87 @@ jobs:
             echo "Signal-Hub hat in diesem Lauf keine neuen Daten geschrieben (kein faelliger Slot) - uebersprungen."
           fi
 
-      - name: Zustand (state.json) nach R2 sichern
-        if: always()
-        run: rclone copy ~/"Library/Application Support/SignalHub/state.json" r2:signalhub-magazine/_state/
+      - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
+        run: mkdir -p Rotation-Dashboard/data && touch Rotation-Dashboard/data/.artifact-keep
+
+      - name: Rotation-Dashboard-Ausgabe fuer den Deploy-Schritt bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: rotation-dashboard-data
+          path: Rotation-Dashboard/data
+          retention-days: 1
+
+  # Convergence-Schritt des Diamanten: wartet auf alle drei Vorgaenger-Jobs
+  # (Standard-Verhalten von "needs" - laeuft nur, wenn signal-hub UND
+  # price-action-hub UND rotation-dashboard erfolgreich waren; genau wie
+  # zuvor stoppt ein echter Fehler in "Pipeline laufen lassen" die gesamte
+  # Kette, da dann price-action-hub/rotation-dashboard gar nicht erst starten).
+  deploy:
+    needs: [signal-hub, price-action-hub, rotation-dashboard]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Signal-Hub-Ausgabe herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: signal-hub-data
+          path: data/signal-hub
+
+      # Landet im selben Ordner wie oben (data/signal-hub) - top_setups.json/js
+      # kommen zwar aus dem price-action-hub-Job, gehoeren inhaltlich aber zur
+      # Signal-Hub-Ausgabe (siehe Kommentar im price-action-hub-Job oben).
+      - name: Top-Setups-Aggregat herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: top-setups-data
+          path: data/signal-hub
+
+      - name: Price-Action-Hub-Ausgabe herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: price-action-hub-data
+          path: data/price-action-hub
+
+      - name: Rotation-Dashboard-Ausgabe herunterladen
+        uses: actions/download-artifact@v4
+        with:
+          name: rotation-dashboard-data
+          path: data/rotation-dashboard
+
+      - name: DNS-Workaround fuer GitHub-Runner (systemd-resolved "server misbehaving")
+        run: |
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 9.9.9.9\n' \
+            | sudo tee /etc/resolv.conf
+          cat /etc/resolv.conf
+          getent hosts r2.cloudflarestorage.com || true
+
+      - name: rclone installieren (kein Paketmanager auf Runner noetig)
+        run: |
+          curl -sSL -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
+          unzip -q /tmp/rclone.zip -d /tmp
+          sudo cp /tmp/rclone-*-linux-amd64/rclone /usr/local/bin/rclone
+          rclone --version | head -1
+
+      - name: R2-Remote konfigurieren
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<CONF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret_access_key = ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint = ${{ secrets.R2_ENDPOINT }}
+          acl = private
+          no_check_bucket = true
+          CONF
 
       - name: Ausgabedateien nach R2 hochladen (fuer den Deploy-Workflow im Hauptrepo)
-        # "|| true" pro Zeile noetig: bei uebersprungenen Slots (kein
-        # faelliger Push) existiert data/ nicht - "[ -d data ] && ..." liefert
-        # dann Exitcode 1, und unter "bash -e" (Default fuer run-Steps) bricht
-        # das die Zeile (und damit sofort den ganzen Schritt/Lauf) ab, obwohl
-        # das ein normaler, erwarteter Fall ist, kein echter Fehler.
+        # "|| true" pro Zeile noetig: bei uebersprungenen Slots enthalten die
+        # Ordner nur den .artifact-keep-Platzhalter - "[ -d ... ] && ..."
+        # liefert trotzdem Erfolg, aber zur Sicherheit (und weil unter
+        # "bash -e" jede fehlschlagende Zeile sofort den ganzen Schritt
+        # abbricht) bleibt das Muster erhalten.
         # WICHTIG (Bugfix 2026-08-01): --include griff bisher nur "*.js" - die
         # echten .json-Dateien (signals.json, priceaction.json, rotation.json,
         # top_setups.json, ...) landeten NIE im Deploy. Die Cloud-Seite lief
@@ -165,9 +354,9 @@ jobs:
         # unbemerkt, weil der Fallback den Fehler leise schluckt. Jetzt beide
         # Endungen deployen, damit fetch(...) wie im Code vorgesehen greift.
         run: |
-          [ -d data ] && rclone copy data/ r2:signalhub-magazine/_deploy/signal-hub/ --include "*.js" --include "*.json" || true
-          [ -d ../Price-Action-Hub/data ] && rclone copy ../Price-Action-Hub/data/ r2:signalhub-magazine/_deploy/price-action-hub/ --include "*.js" --include "*.json" || true
-          [ -d ../Rotation-Dashboard/data ] && rclone copy ../Rotation-Dashboard/data/ r2:signalhub-magazine/_deploy/rotation-dashboard/ --include "*.js" --include "*.json" || true
+          [ -d data/signal-hub ] && rclone copy data/signal-hub/ r2:signalhub-magazine/_deploy/signal-hub/ --include "*.js" --include "*.json" || true
+          [ -d data/price-action-hub ] && rclone copy data/price-action-hub/ r2:signalhub-magazine/_deploy/price-action-hub/ --include "*.js" --include "*.json" || true
+          [ -d data/rotation-dashboard ] && rclone copy data/rotation-dashboard/ r2:signalhub-magazine/_deploy/rotation-dashboard/ --include "*.js" --include "*.json" || true
 
       - name: Deploy im Hauptrepo (Miksch52/maick-trading-system) anstossen
         # -f: Exit-Code != 0 bei HTTP-Fehlerstatus (4xx/5xx), statt wie zuvor
