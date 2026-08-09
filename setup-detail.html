@@ -5,118 +5,142 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🎯 Setup-Analyse</title>
 <style>
+  /* ===================================================================
+     Design "Tagesordnung" (seit 2026-08-09) - helle Papier-Basis mit
+     weichen, schattierten Karten statt der fruehen dunklen Glas-Optik.
+     Teal als einziger Marken-Akzent (--primary); Serif nur fuer das
+     Story-Zitat (.story-quote), sonst durchgehend Sans/Mono - siehe
+     wiki.html-Abschnitt zur Setup-Analyse fuer die Design-Herleitung.
+     =================================================================== */
   :root{
-    --primary:#208091; --primary2:#2FD0C6; --ok:#2FB08D; --warn:#F39C12; --bad:#E74C3C;
-    --bg:#0B1524; --bg2:#142236; --card:rgba(23,36,53,.55); --line:rgba(255,255,255,.08);
-    --txt:#ECF0F1; --muted:#8194A6; --glass-blur:16px;
+    --primary:#1F6E66; --primary2:#1F6E66; --ok:#2E8B57; --warn:#C08A2E; --bad:#B23A2E;
+    --bg:#F6F3EC; --bg2:#FFFFFF; --card:#FFFFFF; --line:#E2DED2; --line2:#EDEAE0;
+    --txt:#1B241D; --muted:#6B7268; --muted2:#93998C; --teal-dim:rgba(31,110,102,.09);
+    --shadow:0 1px 2px rgba(27,36,29,.05);
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
        background:var(--bg);color:var(--txt);line-height:1.45}
-  a{color:var(--primary2)}
-  header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#13243a,#0f1c2e);
-         border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  a{color:var(--primary)}
+  header{position:sticky;top:0;z-index:20;background:var(--bg2);
+         border-bottom:1px solid var(--line);box-shadow:0 1px 3px rgba(27,36,29,.04);
+         padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   header a.back{color:var(--muted);text-decoration:none;font-size:14px;white-space:nowrap}
   header a.back:hover{color:var(--txt)}
   header h1{font-size:17px;margin:0;font-weight:700;flex:1;min-width:120px}
-  header .stand{font-size:11px;color:var(--muted)}
+  header .stand{font-size:11px;color:var(--muted2)}
 
   main{padding:18px 20px 60px;max-width:980px;margin:0 auto}
   #loading,#notfound{padding:60px 10px;text-align:center;color:var(--muted)}
   #notfound b{color:var(--txt)}
 
-  .hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px;
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;
+        box-shadow:var(--shadow);
         display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin-bottom:16px}
   .hero-id{flex:1;min-width:200px}
-  .hero-tick{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--primary);margin-bottom:4px}
+  .hero-tick{font-size:32px;font-weight:800;letter-spacing:.3px}
   .hero-name{font-size:14px;color:var(--muted);margin-top:2px}
   .hero-px{font-size:14px;margin-top:6px}
   .hero-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
   .scoregauge{text-align:center;min-width:90px}
-  .scoregauge .num{font-size:34px;font-weight:800;line-height:1}
-  .scoregauge .lbl{font-size:11px;color:var(--muted);margin-top:3px}
+  .scoregauge .num{font-size:34px;font-weight:800;line-height:1;color:var(--primary)}
+  .scoregauge .lbl{font-size:11px;color:var(--muted2);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
   .tier{font-size:11px;padding:2px 9px;border-radius:20px;display:inline-block;margin-top:6px;font-weight:700}
-  .tier-A{background:rgba(47,176,141,.2);color:var(--ok)}
-  .tier-B{background:rgba(243,156,18,.2);color:var(--warn)}
-  .tier-C{background:rgba(138,160,184,.15);color:var(--muted)}
+  .tier-A{background:rgba(46,139,87,.12);color:var(--ok)}
+  .tier-B{background:rgba(192,138,46,.14);color:var(--warn)}
+  .tier-C{background:rgba(107,114,104,.12);color:var(--muted)}
 
-  .badge{font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap;border:1px solid var(--line);color:var(--muted)}
-  .b-armed{background:rgba(243,156,18,.18);color:#f4b350;border-color:rgba(243,156,18,.5)}
-  .b-brk{background:rgba(231,76,60,.2);color:#ff8c7a;border-color:rgba(231,76,60,.55)}
-  .b-cheat{background:rgba(155,89,182,.2);color:#c9a0dc;border-color:rgba(155,89,182,.55)}
-  .b-watch{background:rgba(138,160,184,.15);color:var(--muted)}
-  .b-pa-bull{background:rgba(47,176,141,.18);color:var(--ok);border-color:rgba(47,176,141,.4)}
-  .b-pa-bear{background:rgba(231,76,60,.18);color:var(--bad);border-color:rgba(231,76,60,.4)}
-  .b-reg-gruen{background:rgba(47,176,141,.18);color:var(--ok);border-color:rgba(47,176,141,.4)}
-  .b-reg-gelb{background:rgba(243,156,18,.18);color:var(--warn);border-color:rgba(243,156,18,.4)}
-  .b-reg-rot{background:rgba(231,76,60,.18);color:var(--bad);border-color:rgba(231,76,60,.4)}
-  .b-earn{background:rgba(231,76,60,.18);color:#ffb4ab;border-color:rgba(231,76,60,.4)}
-  .b-depot{background:rgba(32,128,145,.25);color:#7fd3e0;border-color:var(--primary)}
-  .b-neu{background:rgba(47,176,141,.2);color:var(--ok);border-color:rgba(47,176,141,.4)}
+  .badge{font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap;
+         border:1px solid var(--line);color:var(--muted);background:var(--card)}
+  .b-armed{background:rgba(192,138,46,.12);color:#8a611f;border-color:rgba(192,138,46,.4)}
+  .b-brk{background:rgba(178,58,46,.12);color:var(--bad);border-color:rgba(178,58,46,.4)}
+  .b-cheat{background:rgba(124,92,140,.12);color:#6b4f83;border-color:rgba(124,92,140,.4)}
+  .b-watch{background:var(--line2);color:var(--muted)}
+  .b-pa-bull{background:rgba(46,139,87,.12);color:var(--ok);border-color:rgba(46,139,87,.4)}
+  .b-pa-bear{background:rgba(178,58,46,.12);color:var(--bad);border-color:rgba(178,58,46,.4)}
+  .b-reg-gruen{background:rgba(46,139,87,.12);color:var(--ok);border-color:rgba(46,139,87,.4)}
+  .b-reg-gelb{background:rgba(192,138,46,.14);color:var(--warn);border-color:rgba(192,138,46,.4)}
+  .b-reg-rot{background:rgba(178,58,46,.12);color:var(--bad);border-color:rgba(178,58,46,.4)}
+  .b-earn{background:rgba(178,58,46,.12);color:var(--bad);border-color:rgba(178,58,46,.4)}
+  .b-depot{background:var(--teal-dim);color:var(--primary);border-color:rgba(31,110,102,.35)}
+  .b-neu{background:rgba(46,139,87,.12);color:var(--ok);border-color:rgba(46,139,87,.4)}
 
-  h2{font-size:15px;margin:26px 0 10px;display:flex;align-items:center;gap:8px}
-  h2 .sub{font-size:11px;font-weight:400;color:var(--muted)}
+  h2{font-size:15px;margin:30px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);
+     display:flex;align-items:center;gap:8px;color:var(--txt)}
+  h2 .sub{font-size:11px;font-weight:400;color:var(--muted2)}
 
   /* Erläuterungen zu den Kriterien erscheinen als native Tooltips (title-Attribut)
      bei Hover - [title] bekommt einen Hilfe-Cursor als Hinweis, dass dort mehr
      Info steckt (Sofort-Überblick ist bewusst kompakt, ohne sichtbaren Text). */
   [title]{cursor:help}
-  .quickscan{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;
-             background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
-  .qs-item{display:flex;align-items:center;gap:7px;font-size:12.5px}
+  .quickscan{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .qs-item{display:flex;align-items:center;gap:7px;font-size:12.5px;
+           background:var(--card);border:1px solid var(--line);border-radius:8px;
+           padding:10px 12px;box-shadow:var(--shadow)}
   .dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex-shrink:0}
-  .d-gruen{background:var(--ok)} .d-gelb{background:var(--warn)} .d-rot{background:var(--bad)} .d-na{background:#3a4b60}
+  .d-gruen{background:var(--ok)} .d-gelb{background:var(--warn)} .d-rot{background:var(--bad)} .d-na{background:#C9C3B4}
 
-  .chart-wrap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
+  .chart-wrap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
+              margin-top:14px;box-shadow:var(--shadow)}
   .chart-wrap svg{width:100%;height:auto;display:block}
   .chart-cap{font-size:11px;color:var(--muted);margin-top:6px;text-align:center}
   .tv-box{height:480px;border-radius:10px;overflow:hidden}
   .tv-box .tradingview-widget-container,.tv-box .tradingview-widget-container__widget{height:100%;width:100%}
   .chart-links{display:flex;gap:8px;margin-top:10px}
   .chart-links a{font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);
-                 text-decoration:none;color:var(--txt);background:var(--bg2)}
+                 text-decoration:none;color:var(--txt);background:var(--card)}
   .chart-links a:hover{border-color:var(--primary)}
 
   .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-  .fcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;gap:10px}
+  .fcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+         display:flex;gap:10px;box-shadow:var(--shadow)}
   .fcard .dot{margin-top:4px}
   .fcard-body{flex:1;min-width:0}
   .fcard-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
   .fcard-lbl{font-size:12.5px;font-weight:700}
   .fcard-wert{font-size:12px;color:var(--muted);white-space:nowrap}
   .fcard-detail{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4}
-  .fcard-gew{font-size:10.5px;color:#5c7188;margin-top:5px}
+  .fcard-gew{font-size:10.5px;color:var(--muted2);margin-top:5px}
 
-  .klimax-warn{background:rgba(231,76,60,.12);border:1px solid rgba(231,76,60,.4);border-radius:12px;
-               padding:10px 14px;font-size:12.5px;color:#ffb4ab;margin-bottom:12px}
+  .klimax-warn{background:rgba(178,58,46,.08);border:1px solid rgba(178,58,46,.35);border-radius:12px;
+               padding:10px 14px;font-size:12.5px;color:var(--bad);margin-bottom:12px}
 
-  .pivotcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+  .pivotcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;
+             margin-bottom:12px;box-shadow:var(--shadow)}
   .pivotcard .phead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
   .pivotcard .pdetail{font-size:13px;color:var(--txt);margin-bottom:10px}
   .kennz{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;font-size:11.5px}
-  .kennz div{background:var(--bg2);border-radius:8px;padding:6px 9px}
+  .kennz div{background:var(--line2);border-radius:8px;padding:6px 9px}
   .kennz b{display:block;font-size:13px;color:var(--txt)}
+
+  /* Story-Zitat (seit 2026-08-09): einzige Serif-Stelle der Seite - siehe
+     renderStory()/renderDeep() im Script, dort in .story-quote gewrappt.
+     Alles andere bleibt Sans/Mono, damit der Akzent nicht verwaessert. */
+  .story-quote{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+               font-style:italic;font-size:15.5px;line-height:1.55;color:var(--txt);
+               border-left:3px solid var(--primary);padding-left:14px;margin:4px 0 12px}
 
   .pabadges{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
   .pabadges .badge{border-radius:6px}
   .stadium{font-size:10.5px;padding:3px 9px;border-radius:6px;border:1px solid var(--line);font-weight:700}
-  .st-Advancing{background:rgba(47,176,141,.18);color:var(--ok)}
-  .st-Accumulation{background:rgba(47,208,198,.15);color:var(--primary2)}
-  .st-Distribution{background:rgba(243,156,18,.18);color:var(--warn)}
-  .st-Declining{background:rgba(231,76,60,.18);color:var(--bad)}
+  .st-Advancing{background:rgba(46,139,87,.12);color:var(--ok)}
+  .st-Accumulation{background:var(--teal-dim);color:var(--primary)}
+  .st-Distribution{background:rgba(192,138,46,.14);color:var(--warn)}
+  .st-Declining{background:rgba(178,58,46,.12);color:var(--bad)}
 
   .srcrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-  .chip{font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
-  .deepbtn{font:inherit;font-size:13px;font-weight:700;color:var(--primary2);background:rgba(47,208,198,.1);
-    border:1px solid rgba(47,208,198,.4);border-radius:10px;padding:9px 16px;cursor:pointer;transition:background .15s}
-  .deepbtn:hover{background:rgba(47,208,198,.2)}
+  .chip{font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--muted);background:var(--card)}
+  .deepbtn{font:inherit;font-size:13px;font-weight:700;color:var(--primary);background:var(--teal-dim);
+    border:1px solid rgba(31,110,102,.35);border-radius:10px;padding:9px 16px;cursor:pointer;transition:background .15s}
+  .deepbtn:hover{background:rgba(31,110,102,.16)}
 
   .extlinks{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .extlinks a{font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);
-              text-decoration:none;color:var(--txt);background:var(--bg2)}
+              text-decoration:none;color:var(--txt);background:var(--card)}
   .extlinks a:hover{border-color:var(--primary)}
 
-  .disclaimer{margin-top:28px;font-size:11.5px;color:var(--muted);line-height:1.5;
+  .disclaimer{margin-top:28px;font-size:11.5px;color:var(--muted2);line-height:1.5;
               border-top:1px solid var(--line);padding-top:14px}
 </style>
 </head>
@@ -188,6 +212,23 @@ const VERIFY_EXPLAIN = 'Unabhängige Gegenprüfung des Stage-2-Trend-Templates: 
 const PIVOT_EXPLAIN = 'Pivot-Armed-Detektor (ergänzt den nachlaufenden Score um die Entstehung des Ausbruchs): BREAKOUT = frischer Ausbruch über die Basis auf hohem Volumen. ARMED = enge, ausgetrocknete Basis knapp unter dem Pivot (Pre-Breakout). WATCH = Trend intakt, Basis noch nicht reif. CHEAT = früher Ausbruch vor vollem Trend-Template, klein positionieren.';
 const PA_EXPLAIN = 'Unabhängige Candlestick-Musteranalyse (Trendbar, Breakout, Gap, Bar-Counting) aus dem Price-Action-Hub - positiver Wert = bullisches Chartbild, kein Ersatz für den Score.';
 const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufwärtsphase, Distribution/Declining = Abwärtsphase - gemessen an Kurs gegen den gleitenden 200-Tage-Durchschnitt und dessen Steigung.';
+// "Code 33" (Mark Minervini, Quelle: aktienmagazin.de "Die Strategie zur ersten
+// Million"): EPS, Umsatz und Nettogewinnmarge steigen drei Quartale in Folge -
+// signalisiert institutionelles Interesse. Die konkreten Schwellenwerte
+// stammen aus Tabelle 4 desselben Artikels ("Screening Parameter" ->
+// "Umsetzung in TraderFox", vom Nutzer als Bild bereitgestellt, im Fliesstext
+// nicht auslesbar): EPS-Wachstum Quartal ggü. Vorjahr > 40 %, Umsatzwachstum
+// Quartal ggü. Vorjahr > 7 %, Nettogewinnmarge um > 2 Prozentpunkte verbessert
+// (2-3 Quartale zurückgerechnet). Wird serverseitig im Worker aus Yahoos
+// fundamentals-timeseries-Endpunkt berechnet (siehe
+// cloudflare-worker/mts-cors-proxy.js::fetchCode33) und kommt als
+// fundamentals.code33 mit der /story-Antwort, daher erst nach ladeStory() da.
+// Die in derselben Tabelle als "optional" markierte "Stabilität
+// Nettogewinnmarge (0,7-1,0; 3 Jahre)" ist bewusst NICHT mitgerechnet - eine
+// proprietäre TraderFox-Kennzahl ohne öffentlich dokumentierte Formel, die
+// zudem 3 Jahre Quartalshistorie bräuchte (die kostenlose Yahoo-Route liefert
+// nur ~5 Quartale).
+const CODE33_EXPLAIN = 'Code 33 (Mark Minervini): Qualitätsmerkmal für Wachstumsaktien nach TraderFox-Screening-Schwellen - EPS-Wachstum Quartal ggü. Vorjahr über 40 %, Umsatzwachstum Quartal ggü. Vorjahr über 7 %, Nettogewinnmarge um mehr als 2 Prozentpunkte verbessert (2-3 Quartale zurückgerechnet). Signalisiert institutionelles Interesse, weil das Gewinnwachstum durch echtes Umsatzwachstum getragen wird statt nur durch Kostensenkungen. Datenquelle: Yahoo Finance.';
 const KENNZ_EXPLAIN = {
   'Pivot': 'Widerstandsniveau - höchster Schlusskurs der Basis. Der Kurs, den ein Ausbruch überwinden muss.',
   'Abstand zum Pivot': 'Wie weit der aktuelle Kurs noch unter dem Pivot liegt (negativ = bereits darüber).',
@@ -262,7 +303,7 @@ function tvWidget(containerId, symbol){
   if(!el) return;
   const config = {
     autosize: true, symbol: symbol, interval: 'D', timezone: 'Europe/Berlin',
-    theme: 'dark', style: '1', locale: 'de_DE', withdateranges: true,
+    theme: 'light', style: '1', locale: 'de_DE', withdateranges: true,
     allow_symbol_change: true, save_image: false, hide_side_toolbar: false,
     studies: [
       { id: 'MASimple@tv-basicstudies', inputs: { length: 50 } },
@@ -310,6 +351,37 @@ function fcard(key, info){
     </div>
     <div class="fcard-detail">${info.detail||''}</div>
     <div class="fcard-gew">Gewicht im Score: ${info.gewicht}</div>
+  </div></div>`;
+}
+
+// Code-33-Ampelkarte: kommt async mit der /story-Antwort (ladeStory), daher
+// zunaechst ein "lädt..."-Platzhalter im fgrid, der per outerHTML ersetzt wird
+// (c=null -> Abruf fehlgeschlagen, c.verfuegbar=false -> kein passendes
+// Vorjahresquartal bei Yahoo gefunden, sonst die Ampel mit den 3 TraderFox-
+// Schwellenwerten, siehe CODE33_EXPLAIN).
+function code33Card(c){
+  if(!c) return `<div class="fcard" id="code33wrap">${dot('na')}<div class="fcard-body">
+    <div class="fcard-head"><span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span></div>
+    <div class="fcard-detail">nicht verfügbar (Fundamentaldaten-Abruf fehlgeschlagen)</div>
+  </div></div>`;
+  if(!c.verfuegbar) return `<div class="fcard" id="code33wrap">${dot('na')}<div class="fcard-body">
+    <div class="fcard-head"><span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span></div>
+    <div class="fcard-detail">kein passendes Vorjahresquartal bei Yahoo gefunden</div>
+  </div></div>`;
+  const pctTxt = v => v==null ? '–' : (v>0?'+':'') + v.toFixed(1).replace('.',',') + '%';
+  const ppTxt = v => v==null ? '–' : (v>0?'+':'') + v.toFixed(1).replace('.',',') + ' Pp.';
+  const teile = [
+    [c.eps_erfuellt, `EPS ${pctTxt(c.eps_yoy_pct)} ggü. Vorjahresquartal (Schwelle &gt;40%)`],
+    [c.umsatz_erfuellt, `Umsatz ${pctTxt(c.umsatz_yoy_pct)} ggü. Vorjahresquartal (Schwelle &gt;7%)`],
+    [c.marge_erfuellt, `Nettomarge ${ppTxt(c.marge_delta_pp)} ggü. 2-3 Quartale zuvor (Schwelle &gt;2 Pp.)`],
+  ].map(([ok,txt])=>`${ok?'✅':'❌'} ${txt}`).join('<br>');
+  return `<div class="fcard" id="code33wrap">${dot(c.ampel)}<div class="fcard-body">
+    <div class="fcard-head">
+      <span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span>
+      <span class="fcard-wert">${c.anzahl_erfuellt}/3</span>
+    </div>
+    <div class="fcard-detail">${teile}</div>
+    <div class="fcard-gew">Quartal ${esc(c.quartal||'')} ggü. ${esc(c.vorjahresquartal||'')} · aktuelle Nettomarge ${pctTxt(c.marge_aktuell_pct)}</div>
   </div></div>`;
 }
 
@@ -398,6 +470,7 @@ function render(sig, piv, pa, regime){
   document.getElementById('content').innerHTML = `
     <div class="hero">
       <div class="hero-id">
+        <div class="eyebrow">Setup-Analyse${t.exchange?' · '+t.exchange:''}</div>
         <div class="hero-tick">${t.ticker} ${flagge(t.markt)}</div>
         <div class="hero-name">${t.name||''} ${t.exchange?'· '+t.exchange:''}</div>
         <div class="hero-px">${t.preis} ${t.currency||''} ${t.sektor?'· '+t.sektor+(t.branche?' / '+t.branche:''):''}</div>
@@ -429,20 +502,22 @@ function render(sig, piv, pa, regime){
     <h2>🔍 Unabhängige Gegenprüfung <span class="sub" title="${VERIFY_EXPLAIN}">Stage-2-Trend-Template, frisch aus eigenen Kursdaten</span></h2>
     <div id="verifywrap"><button class="deepbtn" onclick="ladeVerify('${esc(t.ticker)}','${esc(t.yahoo_symbol||t.ticker)}',${(t.faktoren && t.faktoren.stage2_trend && t.faktoren.stage2_trend.wert!=null) ? t.faktoren.stage2_trend.wert : 'null'})">🔍 Jetzt gegenprüfen</button></div>
 
-    <h2>💵 Fundamentale Treiber <span class="sub">CANSLIM/SEPA-Bestätigung</span></h2>
+    <h2>🕯️ Charttechnik <span class="sub">Pivot-Armed-Detektor + Price-Action-Muster</span></h2>
+    ${pivotBlock}
+    ${paBlock}
+
+    <h2>💵 Fundamentaldaten &amp; Story <span class="sub">CANSLIM/SEPA-Bestätigung, Code 33 + live Yahoo Finance/KI-Zusammenfassung</span></h2>
     <div class="fgrid">${fundCards}
       <div class="fcard"><span class="dot d-na"></span><div class="fcard-body">
         <div class="fcard-head"><span class="fcard-lbl">📅 Nächste Earnings</span></div>
         <div class="fcard-detail">${earnText(t.earnings)}</div>
       </div></div>
+      <div class="fcard" id="code33wrap"><span class="dot d-na"></span><div class="fcard-body">
+        <div class="fcard-head"><span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span></div>
+        <div class="fcard-detail" style="color:var(--muted)">Lädt Quartalsdaten …</div>
+      </div></div>
     </div>
-
-    <h2>🕯️ Charttechnik <span class="sub">Pivot-Armed-Detektor + Price-Action-Muster</span></h2>
-    ${pivotBlock}
-    ${paBlock}
-
-    <h2>📰 Fundamentalanalyse &amp; Story <span class="sub">live, Yahoo Finance + KI-Zusammenfassung</span></h2>
-    <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
+    <div id="storyblock" style="margin-top:12px"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
     <div id="deepwrap" style="margin-top:10px"></div>
 
     <h2>🔗 Quellen &amp; weiterführende Links</h2>
@@ -515,7 +590,7 @@ function renderStory(d){
   return `
     <div class="pivotcard">
       <div class="pdetail"><b>Unternehmen:</b> ${esc(d.profil) || '—'}</div>
-      <div class="pdetail"><b>Aktuelle Story:</b> ${esc(d.story) || '—'}</div>
+      <div class="story-quote">${d.story ? '„'+esc(d.story)+'"' : '—'}</div>
       <div class="kennz">${kennz.map(([l,v])=>`<div><b>${v}</b>${l}</div>`).join('')}</div>
     </div>
     <div class="pivotcard">
@@ -528,6 +603,11 @@ function renderStory(d){
     </div>`;
 }
 
+function setCode33(c){
+  const el = document.getElementById('code33wrap');
+  if(el) el.outerHTML = code33Card(c);
+}
+
 async function ladeStory(ticker, yahooSymbol, name){
   const el = document.getElementById('storyblock');
   if(!el || !ticker) return;
@@ -538,11 +618,13 @@ async function ladeStory(ticker, yahooSymbol, name){
     const d = await r.json();
     if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
     el.innerHTML = renderStory(d);
+    setCode33(d.fundamentals && d.fundamentals.code33);
   }catch(e){
     el.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
       Fundamentalanalyse gerade nicht verfügbar (${esc((e && e.message) || e)}).
       <a href="https://finance.yahoo.com/quote/${encodeURIComponent(yahooSymbol || ticker)}" target="_blank" rel="noopener">Direkt bei Yahoo Finance nachsehen →</a>
     </div></div>`;
+    setCode33(null);
   }
 }
 
@@ -604,7 +686,7 @@ function renderDeep(d){
   return `
     <div class="pivotcard">
       <div class="pdetail"><b>Unternehmen:</b> ${esc(d.profil) || '—'}</div>
-      <div class="pdetail"><b>Story &amp; Katalysatoren:</b> ${esc(d.story) || '—'}</div>
+      <div class="story-quote">${d.story ? '„'+esc(d.story)+'"' : '—'}</div>
       <div class="pdetail"><b>Unternehmensberichte (SEC):</b> ${esc(d.unternehmensberichte) || '—'}</div>
       <div class="pdetail"><b>Marktstimmung/Diskussion:</b> ${esc(d.diskussion) || '—'}</div>
       <div class="pdetail"><b>Risiken:</b> ${esc(d.risiken) || '—'}</div>

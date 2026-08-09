@@ -213,14 +213,23 @@ def nasdaq_fundamental(symbol):
         return None
 
 def yahoo_crumb():
-    """(opener, crumb) oder (None, None) - fuer quoteSummary (EU-Sektor/Earnings)."""
+    """(opener, crumb) oder (None, None) - fuer quoteSummary (EU-Sektor/Earnings)
+    und die fundamentals-timeseries-Route (Code 33, siehe yahoo_code33()).
+    Session-Cookie kommt von fc.yahoo.com, NICHT von finance.yahoo.com (Fix
+    2026-08-09) - Letzteres liefert nur ein "dflow"-Cookie, mit dem getcrumb
+    zuverlaessig 401 Unauthorized meldet (live gegen beide Varianten getestet,
+    nicht nur angenommen). fc.yahoo.com selbst antwortet zwar mit 404 (kein
+    echter Seiteninhalt dort), setzt aber das fuer den Crumb-Handshake noetige
+    Cookie - identisch zum bereits produktiven JS-Pendant
+    cloudflare-worker/mts-cors-proxy.js::yahooCrumb(). Der 404 ist erwartet
+    und wird bewusst verschluckt."""
     try:
         import http.cookiejar
         cj = http.cookiejar.CookieJar()
         op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj),
                                          urllib.request.HTTPSHandler(context=SSL_CTX))
         try:
-            op.open(urllib.request.Request("https://finance.yahoo.com", headers=UA), timeout=12)
+            op.open(urllib.request.Request("https://fc.yahoo.com", headers=UA), timeout=12)
         except Exception:
             pass
         crumb = op.open(urllib.request.Request(
@@ -405,6 +414,170 @@ def f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb):
     print(f"Fundamental: {mit_zahlen} mit Zahlen, {abrufe} Abrufe "
           f"(Yahoo {neu_yahoo}, Nasdaq {neu_nasdaq}; "
           f"Crumb {'ok' if ycrumb else 'fehlt -> Nasdaq-Fallback fuer US'})")
+
+# --- Code 33 (Minervini/TraderFox-Schwellen) --------------------------------
+# Python-Portierung von cloudflare-worker/mts-cors-proxy.js::fetchCode33 (dort
+# fuer die Live-Setup-Analyse gebaut) - hier als Pipeline-Post-Pass, damit
+# Code 33 als filterbares Kriterium im Signal-Hub-Dashboard verfuegbar ist,
+# nicht nur live auf der Detailseite. Schreibt e["code33"] statt eines neuen
+# Score-Faktors - der bestehende "fundamental"-Faktor bewertet Gewinn-/
+# Umsatzwachstum bereits, Code 33 ist ein zusaetzliches, unabhaengiges
+# Filterkriterium (die 3 TraderFox-Schwellen exakt erfuellt oder nicht),
+# keine weitere Score-Einmischung.
+CODE33_CACHE_TAGE = 7      # Quartalsdaten aendern sich quartalsweise -> 7-Tage-TTL
+CODE33_MAX_ABRUFE = 300    # Deckel je Lauf, wie beim Fundamental-Post-Pass
+
+def yahoo_code33(symbol, op, crumb):
+    """{verfuegbar, ampel, eps_erfuellt, umsatz_erfuellt, marge_erfuellt,
+    anzahl_erfuellt, eps_yoy_pct, umsatz_yoy_pct, marge_delta_pp,
+    marge_aktuell_pct, quartal, vorjahresquartal} oder None bei Abruffehler.
+    Holt ueber Yahoos fundamentals-timeseries-Endpunkt (query2, gleicher
+    Crumb/Cookie-Opener wie yahoo_fundamental()) die letzten Quartale Umsatz/
+    EPS/Nettogewinn - liefert trotz angefragtem 3-Jahres-Fenster in der Praxis
+    nur ca. 5 Quartale zurueck (gegen mehrere Ticker verifiziert, siehe
+    Worker-Kommentar), aber genau das reicht fuer EINEN Vorjahresvergleich.
+    Die 3 Kennzahlen-Reihen sind nicht zwingend gleich datiert (bei einem
+    Ticker fehlte ein Quartal in der EPS-Reihe) - deshalb ueberall ueber das
+    Quartalsdatum statt per Listenindex verknuepft, identisch zur JS-Fassung."""
+    if not op or not crumb:
+        return None
+    try:
+        now = int(time.time())
+        drei_jahre = now - 3 * 365 * 24 * 3600
+        types = "quarterlyTotalRevenue,quarterlyDilutedEPS,quarterlyNetIncome"
+        u = (f"https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/"
+             f"{urllib.parse.quote(symbol)}?symbol={urllib.parse.quote(symbol)}&type={types}"
+             f"&period1={drei_jahre}&period2={now}&crumb={urllib.parse.quote(crumb)}")
+        with op.open(urllib.request.Request(u, headers=UA), timeout=12) as r:
+            d = json.load(r)
+        blocks = ((d.get("timeseries") or {}).get("result")) or []
+        by_key = {}
+        for b in blocks:
+            key = next((k for k in (b or {}).keys() if k.startswith("quarterly")), None)
+            if not key:
+                continue
+            rows = []
+            for x in (b.get(key) or []):
+                if not x or not x.get("asOfDate") or not x.get("reportedValue"):
+                    continue
+                val = x["reportedValue"].get("raw")
+                if val is None:
+                    continue
+                rows.append({"date": x["asOfDate"], "val": val})
+            rows.sort(key=lambda row: row["date"])
+            by_key[key] = rows
+        rev = by_key.get("quarterlyTotalRevenue") or []
+        eps = by_key.get("quarterlyDilutedEPS") or []
+        ni = by_key.get("quarterlyNetIncome") or []
+        if len(rev) < 2 or len(ni) < 2:
+            return {"verfuegbar": False}
+
+        ni_by_date = {x["date"]: x["val"] for x in ni}
+        marge = sorted(
+            ({"date": x["date"], "val": ni_by_date[x["date"]] / x["val"]}
+             for x in rev if x["date"] in ni_by_date and x["val"] != 0),
+            key=lambda x: x["date"])
+        if len(marge) < 3:
+            return {"verfuegbar": False}
+
+        letzte_marge = marge[-1]
+        kandidaten = [m for m in (marge[-3] if len(marge) >= 3 else None,
+                                   marge[-4] if len(marge) >= 4 else None) if m]
+        marge_delta_pp, marge_erfuellt = None, False
+        for k in kandidaten:
+            delta = (letzte_marge["val"] - k["val"]) * 100
+            if marge_delta_pp is None or delta > marge_delta_pp:
+                marge_delta_pp = delta
+            if delta > 2:
+                marge_erfuellt = True
+
+        def yoy_paar(arr):
+            if len(arr) < 2:
+                return None
+            latest = arr[-1]
+            latest_dt = datetime.strptime(latest["date"], "%Y-%m-%d")
+            bester, bester_diff = None, None
+            for kand in arr[:-1]:
+                kand_dt = datetime.strptime(kand["date"], "%Y-%m-%d")
+                diff_tage = (latest_dt - kand_dt).days
+                if 330 <= diff_tage <= 400:
+                    diff = abs(diff_tage - 365)
+                    if bester_diff is None or diff < bester_diff:
+                        bester_diff, bester = diff, kand
+            return {"latest": latest, "vorjahr": bester} if bester else None
+
+        rev_paar = yoy_paar(rev)
+        eps_paar = yoy_paar(eps)
+        if not rev_paar:
+            return {"verfuegbar": False}
+
+        rev_yoy = None
+        if rev_paar["vorjahr"]["val"] != 0:
+            rev_yoy = (rev_paar["latest"]["val"] - rev_paar["vorjahr"]["val"]) / abs(rev_paar["vorjahr"]["val"])
+        umsatz_erfuellt = rev_yoy is not None and rev_yoy > 0.07
+
+        eps_yoy, eps_erfuellt = None, False
+        if eps_paar:
+            if eps_paar["vorjahr"]["val"] > 0:
+                eps_yoy = (eps_paar["latest"]["val"] - eps_paar["vorjahr"]["val"]) / eps_paar["vorjahr"]["val"]
+                eps_erfuellt = eps_yoy > 0.40
+            else:
+                eps_erfuellt = eps_paar["latest"]["val"] > 0
+
+        anzahl = sum([eps_erfuellt, umsatz_erfuellt, marge_erfuellt])
+        return {
+            "verfuegbar": True,
+            "ampel": "gruen" if anzahl == 3 else ("rot" if anzahl == 0 else "gelb"),
+            "eps_erfuellt": eps_erfuellt, "umsatz_erfuellt": umsatz_erfuellt, "marge_erfuellt": marge_erfuellt,
+            "anzahl_erfuellt": anzahl,
+            "eps_yoy_pct": round(eps_yoy * 1000) / 10 if eps_yoy is not None else None,
+            "umsatz_yoy_pct": round(rev_yoy * 1000) / 10 if rev_yoy is not None else None,
+            "marge_delta_pp": round(marge_delta_pp * 10) / 10 if marge_delta_pp is not None else None,
+            "marge_aktuell_pct": round(letzte_marge["val"] * 1000) / 10,
+            "quartal": letzte_marge["date"], "vorjahresquartal": rev_paar["vorjahr"]["date"],
+        }
+    except Exception:
+        return None
+
+def f_code33(ergebnisse, yop, ycrumb, schwellen):
+    """Post-Pass: fuellt e['code33'] fuer Treffer ab Beobachten-Schwelle,
+    gecacht/ratenlimitiert wie f_fundamental() (7-Tage-TTL, 300 Abrufe/Lauf -
+    Rest folgt beim naechsten Lauf). Kein Score-Einfluss, siehe Modulkommentar."""
+    cache = {}
+    if os.path.exists(pfade.CODE33_CACHE):
+        try:
+            cache = json.load(open(pfade.CODE33_CACHE, encoding="utf-8"))
+        except Exception:
+            cache = {}
+    heute = datetime.now().date()
+    abrufe = verfuegbar = gruen = 0
+    for e in ergebnisse:
+        sym = e["yahoo_symbol"]
+        c = cache.get(sym)
+        frisch = False
+        if c and c.get("stand"):
+            try:
+                frisch = (heute - datetime.strptime(c["stand"], "%Y-%m-%d").date()).days <= CODE33_CACHE_TAGE
+            except Exception:
+                frisch = False
+        relevant = e["score"] >= schwellen["beobachten"]
+        if relevant and abrufe < CODE33_MAX_ABRUFE and not frisch and ycrumb:
+            d = yahoo_code33(sym, yop, ycrumb)
+            time.sleep(0.15); abrufe += 1
+            if d is not None:
+                c = dict(d); c["stand"] = heute.strftime("%Y-%m-%d")
+                cache[sym] = c
+        if c and c.get("verfuegbar"):
+            verfuegbar += 1
+            if c.get("ampel") == "gruen":
+                gruen += 1
+            e["code33"] = {k: c[k] for k in (
+                "verfuegbar", "ampel", "eps_erfuellt", "umsatz_erfuellt", "marge_erfuellt",
+                "anzahl_erfuellt", "eps_yoy_pct", "umsatz_yoy_pct", "marge_delta_pp",
+                "marge_aktuell_pct", "quartal", "vorjahresquartal") if k in c}
+    with open(pfade.CODE33_CACHE, "w", encoding="utf-8") as fp:
+        json.dump(cache, fp, ensure_ascii=False)
+    print(f"Code 33: {verfuegbar} verfuegbar, {gruen} davon 3/3 grün, {abrufe} Abrufe")
 
 def lade_depot_namen(datei):
     """Namen offener Positionen (status 'Offen'). Lokal aus mts_data.json;
@@ -1324,6 +1497,7 @@ def score_alle(limit=None):
     f_rs_pool_rang(ergebnisse, gew, gew_summe, schwellen)
     f_sektor_staerke(ergebnisse, etf_rang, gew, gew_summe, schwellen)
     f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb)
+    f_code33(ergebnisse, yop, ycrumb, schwellen)
     f_marktampel_dynamik(ergebnisse, regime, cfg.get("marktregime", {}), schwellen)
     ergebnisse.sort(key=lambda e: e["score"], reverse=True)
 

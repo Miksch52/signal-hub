@@ -132,6 +132,7 @@
   .gap80-akut{background:rgba(231,76,60,.18);color:#ff9a8c;border-color:rgba(231,76,60,.45);font-weight:700}
   .klimaxb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(231,76,60,.28);color:#ffb4ab;border:1px solid rgba(231,76,60,.6);font-weight:700}
   .shortb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(155,89,182,.18);color:#c9a4e0;border:1px solid rgba(155,89,182,.4)}
+  .code33b{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(199,145,25,.22);color:#f3c869;border:1px solid rgba(199,145,25,.55);font-weight:700}
   .card.neu{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
 
   .factors{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px}
@@ -292,6 +293,7 @@
       <label class="slabel"><input type="checkbox" id="onlynew"> ⭐ nur neue</label>
       <label class="slabel"><input type="checkbox" id="hidedepot"> 📌 ohne Depot</label>
       <label class="slabel" title="Nur Ticker, die von mindestens zwei unabhängigen Engines bestätigt werden (TraderFox/Mail, Finviz, Markets 360, Trend-Screener)"><input type="checkbox" id="multisrc"> 🔗 Multi-Quellen bestätigt</label>
+      <label class="slabel" title="Nur Ticker mit vollständigem Code 33 (Mark Minervini/TraderFox-Schwellen): EPS-Wachstum Quartal >40% ggü. Vorjahr UND Umsatzwachstum >7% UND Nettogewinnmarge um >2 Prozentpunkte verbessert – alle drei Kriterien gleichzeitig erfüllt. Serverseitig aus Yahoo-Quartalsdaten berechnet (7-Tage-Cache, nur Treffer ab Beobachten-Schwelle)."><input type="checkbox" id="code33only"> 🥇 nur Code 33</label>
       <label class="slabel" title="Begrenzt auf die 5 besten Treffer nach Top-Kombi (Pivot-Qualität + Branchenstärke + Multi-Quellen) — Minervini: konzentriert in wenige echte Marktführer statt breit gestreut"><input type="checkbox" id="toponly"> 🏆 Nur Top 5 (Fokus-Modus)</label>
       <label class="slabel" title="Nur Ticker, die bereits auf deiner Coach-Fokusliste stehen"><input type="checkbox" id="onlyfocus"> ⭐ nur Fokusliste</label>
      </div>
@@ -397,7 +399,7 @@ let CURRENT_LIST=[], RENDER_LIMIT=PAGE_SIZE;
 // (scorer.py::f_sektor_staerke) und zaehlt mit Gewicht 8 in den Score.
 // Bewusst NICHT mit drin: onlyNew/hideDepot/multiSrc (das ist Depot-/Frische-Filterung,
 // nicht Teil der Chart-/Volumen-Fragestellung) - siehe Wiki-Absatz "Standard-Ansicht".
-let state={markt:"alle",minscore:0,sort:"pivot",suche:"",typen:new Set(),hideEarnings:true,onlyNew:false,hideDepot:false,pivotOnly:true,faktoren:new Set(["stage2_trend","volumen_bestaetigung"]),smOn:true,smW:15,cmfW:10,multiSrc:false,hideExtended:true,hideGap80:true,shortOn:false,hideMegaphone:false,cheatInclude:false,topOnly:false,onlyFocus:false,topSetups:false};
+let state={markt:"alle",minscore:0,sort:"pivot",suche:"",typen:new Set(),hideEarnings:true,onlyNew:false,hideDepot:false,pivotOnly:true,faktoren:new Set(["stage2_trend","volumen_bestaetigung"]),smOn:true,smW:15,cmfW:10,multiSrc:false,hideExtended:true,hideGap80:true,shortOn:false,hideMegaphone:false,cheatInclude:false,topOnly:false,onlyFocus:false,topSetups:false,code33Only:false};
 // Anzeige-Label + Icon fuer die Quellen-Typen (rohe quelle_typ-Strings -> lesbar).
 const QUELLE_LABEL={markets360:"📊 Markets 360",trendscreener:"🧭 Trend-Screener"};
 function quelleLabel(typ){
@@ -804,7 +806,7 @@ function updateFilterCount(treffer){
   if(state.markt!=="alle")n++; if(state.minscore>0)n++; if(state.suche)n++;
   if(state.typen.size)n++; if(state.faktoren.size)n++;
   if(state.hideEarnings)n++; if(state.onlyNew)n++; if(state.hideDepot)n++; if(state.smOn)n++; if(state.hideExtended)n++; if(state.hideGap80)n++;
-  if(state.pivotOnly)n++; if(state.multiSrc)n++; if(state.hideMegaphone)n++; if(state.cheatInclude)n++; if(state.topOnly)n++; if(state.onlyFocus)n++; if(state.topSetups)n++;
+  if(state.pivotOnly)n++; if(state.multiSrc)n++; if(state.hideMegaphone)n++; if(state.cheatInclude)n++; if(state.topOnly)n++; if(state.onlyFocus)n++; if(state.topSetups)n++; if(state.code33Only)n++;
   // Treffer-Zahl IMMER sichtbar (auch bei 0 aktiven Filtern), damit man sie beim
   // Zu-/Abwaehlen einzelner Filter direkt neben der Ueberschrift mitverfolgen kann,
   // ohne den Filterbereich aufklappen oder zur Kopfzeile hochscrollen zu muessen.
@@ -828,6 +830,7 @@ function render(){
   if(state.onlyNew) list=list.filter(t=>t.neu);
   if(state.hideDepot) list=list.filter(t=>!t.im_depot);
   if(state.multiSrc) list=list.filter(t=>(t.quellen.unabhaengig||[]).length>=2);
+  if(state.code33Only) list=list.filter(t=>t.code33&&t.code33.ampel==='gruen');
   if(state.onlyFocus) list=list.filter(t=>aufFokusliste(t.ticker));
   if(state.topSetups) list=list.filter(istTopSetup);
   if(state.pivotOnly) list=list.filter(istPivotSetup);
@@ -1013,6 +1016,18 @@ function shortBadge(t){
   if(!t.short_kandidat||!t.minervini_5080) return '';
   return `<span class="shortb" title="Kurs unter SMA50/150/200 nach 50/80-Gap-down – Minervini nutzt dieses Muster auch als Short-Signal">🩳 Short-Setup</span>`;
 }
+function code33Badge(t){
+  // Code 33 (Mark Minervini/TraderFox-Schwellen, siehe scorer.py::f_code33 +
+  // yahoo_code33() fuer die Herleitung - Portierung von cloudflare-worker/
+  // mts-cors-proxy.js::fetchCode33). Badge NUR bei vollem 3/3 (die eigentliche
+  // Auszeichnung "Code 33"), nicht bei 1-2/3 - das waere nur der bestehende
+  // Fundamental-Faktor mit anderen Worten. Filter "🥇 nur Code 33" nutzt
+  // dieselbe Bedingung (ampel==='gruen').
+  const c=t.code33; if(!c||!c.verfuegbar||c.ampel!=='gruen') return '';
+  const pct=v=>v==null?'–':(v>0?'+':'')+v.toFixed(1).replace('.',',')+'%';
+  const pp=v=>v==null?'–':(v>0?'+':'')+v.toFixed(1).replace('.',',')+' Pp.';
+  return `<span class="code33b" title="Code 33 vollständig erfüllt: EPS ${pct(c.eps_yoy_pct)} ggü. Vorjahresquartal (>40%), Umsatz ${pct(c.umsatz_yoy_pct)} (>7%), Nettomarge ${pp(c.marge_delta_pp)} ggü. 2-3 Quartale zuvor (>2 Pp.) – Quartal ${c.quartal||''} ggü. ${c.vorjahresquartal||''}.">🥇 Code 33</span>`;
+}
 function fundamentalBadge(t){
   // Kein neuer Datenabruf: der Finviz-Screener "Minervini SEPA" filtert schon
   // hart auf fa_epsqoq_o20,fa_salesqoq_o20 (EPS-/Umsatzwachstum je >20% QoQ) -
@@ -1087,7 +1102,7 @@ function karte(t,rang){
       ${minichart(t.chart)}
     </details>
     <div class="srcrow"><span>📚 ${t.quellen.ausgaben} Ausgaben</span>${typen}
-      ${konsensBadge}${maBadge}
+      ${konsensBadge}${code33Badge(t)}${maBadge}
       ${pivotBadge(t)}${paBadge(t)}${sparkline(t.ticker)}
       ${t.neu?'<span class="badge-neu">⭐ NEU</span>':''}
       ${(t.faktoren.smart_money&&t.faktoren.smart_money.ampel==='gruen')?`<span class="badge-sm" title="${t.faktoren.smart_money.detail}">💰 Akkumulation</span>`:''}
@@ -1296,6 +1311,7 @@ function initControls(){
   document.getElementById('pivotonly').onchange=e=>{state.pivotOnly=e.target.checked;render();};
   document.getElementById('topsetups').onchange=e=>{state.topSetups=e.target.checked;render();};
   document.getElementById('multisrc').onchange=e=>{state.multiSrc=e.target.checked;render();};
+  document.getElementById('code33only').onchange=e=>{state.code33Only=e.target.checked;render();};
   document.getElementById('toponly').onchange=e=>{
     state.topOnly=e.target.checked;
     if(state.topOnly){ state.sort='top'; const sb=document.getElementById('sortby'); if(sb) sb.value='top'; }
