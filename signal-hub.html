@@ -270,6 +270,7 @@
       <label class="slabel" title="Nur Werte, die der Pivot-Detektor als scharf (ARMED) oder frisch ausgebrochen (BREAKOUT) einstuft – die Entstehung des Ausbruchs statt des nachlaufenden Scores"><input type="checkbox" id="pivotonly" checked> 🎯 nur Pivot-Setups <span id="pivotcount" class="filtercount"></span></label>
       <label class="slabel" title="Die dreifach bestätigte Schnittmenge (wie „Top-Setups heute“ auf der Startseite): Score ≥ 70 UND ARMED/BREAKOUT UND Price-Action bullisch (PA-Score > 0). Bringt die Price-Action-Dimension des Price-Action-Hubs in den Signal-Hub. Umgeht die Faktor-Pflicht (das Set ist schon kuratiert, und „Volumen grün“ widerspräche ARMED); Risiko-Filter (Earnings/Extended/50-80) bleiben aktiv."><input type="checkbox" id="topsetups"> 🏆 nur Top-Setups <span id="topsetcount" class="filtercount"></span></label>
       <label class="slabel"><input type="checkbox" id="hideearn" checked> ⚠︎ Earnings ausblenden</label>
+      <label class="slabel" title="Analysten-Kursziel nah am aktuellen Kurs – Hinweis auf eine laufende, verbindlich vereinbarte Übernahme (z.B. SLAB/Texas Instruments, APGE/AbbVie). Solche Aktien handeln kaum noch volatil und werden vom Pivot-Screener fälschlich als enge Basis/ARMED gelesen. Näherungswert, kein 100% sicherer Fakt."><input type="checkbox" id="hideuebernahme" checked> 🤝 Übernahme ausblenden</label>
       <label class="slabel" title="Minervini: Kurs >25% über der SMA50 = zu weit gelaufen, kein Nachkauf mehr"><input type="checkbox" id="hideextended" checked> 📈 Extended ausblenden</label>
       <label class="slabel" title="Minervini 50/80-Regel: Gap-down auf hohem Volumen -> hohe Wahrscheinlichkeit eines neuen Tiefs in den folgenden ~8 Monaten, nicht nachkaufen"><input type="checkbox" id="hidegap80" checked> ⛔ 50/80 ausblenden</label>
       <label class="slabel" title="Optionaler Zusatz-Layer: zeigt bei 50/80-Gap-down-Werten unter SMA50/150/200 ein Short-Setup-Badge (rein informativ, falls Shortselling Teil deiner Strategie ist)"><input type="checkbox" id="shorton"> 🩳 Short-Kandidaten anzeigen</label>
@@ -399,7 +400,7 @@ let CURRENT_LIST=[], RENDER_LIMIT=PAGE_SIZE;
 // (scorer.py::f_sektor_staerke) und zaehlt mit Gewicht 8 in den Score.
 // Bewusst NICHT mit drin: onlyNew/hideDepot/multiSrc (das ist Depot-/Frische-Filterung,
 // nicht Teil der Chart-/Volumen-Fragestellung) - siehe Wiki-Absatz "Standard-Ansicht".
-let state={markt:"alle",minscore:0,sort:"pivot",suche:"",typen:new Set(),hideEarnings:true,onlyNew:false,hideDepot:false,pivotOnly:true,faktoren:new Set(["stage2_trend","volumen_bestaetigung"]),smOn:true,smW:15,cmfW:10,multiSrc:false,hideExtended:true,hideGap80:true,shortOn:false,hideMegaphone:false,cheatInclude:false,topOnly:false,onlyFocus:false,topSetups:false,code33Only:false};
+let state={markt:"alle",minscore:0,sort:"pivot",suche:"",typen:new Set(),hideEarnings:true,hideUebernahme:true,onlyNew:false,hideDepot:false,pivotOnly:true,faktoren:new Set(["stage2_trend","volumen_bestaetigung"]),smOn:true,smW:15,cmfW:10,multiSrc:false,hideExtended:true,hideGap80:true,shortOn:false,hideMegaphone:false,cheatInclude:false,topOnly:false,onlyFocus:false,topSetups:false,code33Only:false};
 // Anzeige-Label + Icon fuer die Quellen-Typen (rohe quelle_typ-Strings -> lesbar).
 const QUELLE_LABEL={markets360:"📊 Markets 360",trendscreener:"🧭 Trend-Screener"};
 function quelleLabel(typ){
@@ -678,7 +679,8 @@ function tradeParams(t){
   return s;
 }
 function tradeTitle(t){
-  const lock=earnGesperrt(t)?`⚠️ Earnings-Sperre: Zahlen in ${t.earnings.tage} Tagen – Minervini rät vom Kauf kurz vor dem Termin ab. `:'';
+  const lock=earnGesperrt(t)?`⚠️ Earnings-Sperre: Zahlen in ${t.earnings.tage} Tagen – Minervini rät vom Kauf kurz vor dem Termin ab. `
+    :uebernahmeGesperrt(t)?`🤝 Möglicherweise laufende Übernahme (Analysten-Kursziel nah am aktuellen Kurs) – kein normales Setup, prüfen statt handeln. `:'';
   const p=pivotInfo(t);
   if(p&&p.pivot>0){
     const stopTxt=(p.stop>0)?`, Stop = Basis-Tief ${p.stop}`:'';
@@ -805,7 +807,7 @@ function updateFilterCount(treffer){
   let n=0;
   if(state.markt!=="alle")n++; if(state.minscore>0)n++; if(state.suche)n++;
   if(state.typen.size)n++; if(state.faktoren.size)n++;
-  if(state.hideEarnings)n++; if(state.onlyNew)n++; if(state.hideDepot)n++; if(state.smOn)n++; if(state.hideExtended)n++; if(state.hideGap80)n++;
+  if(state.hideEarnings)n++; if(state.hideUebernahme)n++; if(state.onlyNew)n++; if(state.hideDepot)n++; if(state.smOn)n++; if(state.hideExtended)n++; if(state.hideGap80)n++;
   if(state.pivotOnly)n++; if(state.multiSrc)n++; if(state.hideMegaphone)n++; if(state.cheatInclude)n++; if(state.topOnly)n++; if(state.onlyFocus)n++; if(state.topSetups)n++; if(state.code33Only)n++;
   // Treffer-Zahl IMMER sichtbar (auch bei 0 aktiven Filtern), damit man sie beim
   // Zu-/Abwaehlen einzelner Filter direkt neben der Ueberschrift mitverfolgen kann,
@@ -825,6 +827,7 @@ function render(){
     list=list.filter(t=>t.ticker.toLowerCase().includes(q)||(t.name||'').toLowerCase().includes(q));}
   if(state.typen.size) list=list.filter(t=>(t.quellen.typen||[]).some(x=>state.typen.has(x)));
   if(state.hideEarnings) list=list.filter(t=>!(t.earnings&&t.earnings.tage!=null&&t.earnings.tage>=0&&t.earnings.tage<=warnTage()));
+  if(state.hideUebernahme) list=list.filter(t=>!t.moegliche_uebernahme);
   if(state.hideExtended) list=list.filter(t=>!(t.extended_pct!=null&&t.extended_pct>=25));
   if(state.hideGap80) list=list.filter(t=>!t.minervini_5080);
   if(state.onlyNew) list=list.filter(t=>t.neu);
@@ -979,6 +982,18 @@ function earnBadge(t){
     return `<span class="earn" title="Keine Earnings-Quelle erreichbar – NICHT als 'keine Zahlen' werten">📅 Earnings: unbekannt</span>`;
   return ''; // kein_termin: geprüft, nichts im Fenster
 }
+// Uebernahme-Heuristik (Bugfix 2026-08-13, scorer.py::f_fundamental()):
+// Analysten-Kursziel nah am aktuellen Kurs -> vermutlich laufende, verbindlich
+// vereinbarte Uebernahme (z.B. SLAB/Texas Instruments, APGE/AbbVie). Solche
+// Aktien handeln kaum noch volatil und werden vom Pivot-Screener faelschlich
+// als "enge Basis"/ARMED gelesen. Bewusst dasselbe Sperre-Muster wie
+// earnGesperrt() (Warn-Badge + gesperrte Einstufung, kein harter Filter -
+// Naeherungswert, kein 100% sicherer Fakt).
+function uebernahmeGesperrt(t){ return !!t.moegliche_uebernahme; }
+function uebernahmeBadge(t){
+  return t.moegliche_uebernahme
+    ? `<span class="earn earn-warn" title="Analysten-Kursziel nah am aktuellen Kurs – Hinweis auf eine laufende Uebernahme">🤝 Übernahme?</span>` : '';
+}
 function basisBadge(t){
   // Minervini: 1./2. Basis am risikoaermsten, ab der 3. Basis Vorsicht, ab der
   // 5. Basis erhoehte Klimax-Gefahr. Grobe Naeherung (basis_anzahl() in scorer.py) -
@@ -1077,10 +1092,13 @@ function karte(t,rang){
   const maBadge=(ma&&ma.faktor<1)?`<span class="badge-daempfung-${ma.ampel}" title="${ma.hinweis||''} Score gedämpft ×${ma.faktor} wegen Marktampel ${ma.ampel==='rot'?'🔴':'🟡'} (${t.markt}).">${ma.ampel==='rot'?'🔴':'🟡'} Markt ×${ma.faktor}</span>`:'';
   const tvSym=encodeURIComponent(t.ticker);
   const sekt=[t.sektor,t.branche].filter(Boolean).join(' · ');
-  const gesperrt=earnGesperrt(t);
-  const einsDisp=gesperrt?'🔒 Earnings-Sperre':eins;
+  const earnLock=earnGesperrt(t), uebLock=uebernahmeGesperrt(t);
+  const gesperrt=earnLock||uebLock;
+  const einsDisp=earnLock?'🔒 Earnings-Sperre':uebLock?'🤝 Übernahme?':eins;
   const einsCls=gesperrt?'e-locked':einstufKlasse(eins);
-  const einsTitle=gesperrt?`Minervini: nicht kurz vor Quartalszahlen kaufen – Kauf-Kandidat gesperrt bis nach dem Earnings-Termin (in ${t.earnings.tage} Tagen, ${t.earnings.datum||''}). Der Filter „Earnings ausblenden“ nimmt solche Werte ganz aus der Liste.`:'';
+  const einsTitle=earnLock
+    ?`Minervini: nicht kurz vor Quartalszahlen kaufen – Kauf-Kandidat gesperrt bis nach dem Earnings-Termin (in ${t.earnings.tage} Tagen, ${t.earnings.datum||''}). Der Filter „Earnings ausblenden“ nimmt solche Werte ganz aus der Liste.`
+    :uebLock?`Analysten-Kursziel nah am aktuellen Kurs – Hinweis auf eine laufende Übernahme (Näherungswert, kein sicherer Fakt). Kein normales Setup, prüfen statt handeln. Der Filter „Übernahme ausblenden“ nimmt solche Werte ganz aus der Liste.`:'';
   return `<div class="card${t.neu?' neu':''}${gesperrt?' locked':''}">
     <div class="crow">
       <span class="rank">#${rang}</span>
@@ -1115,7 +1133,7 @@ function karte(t,rang){
       ${klimaxBadge(t)}
       ${state.shortOn?shortBadge(t):''}
       ${t.quellen.zuletzt?`<span>· zuletzt ${t.quellen.zuletzt}</span>`:''}
-      ${earnBadge(t)}</div>
+      ${earnBadge(t)}${uebernahmeBadge(t)}</div>
     ${t.quellen.kontext?`<div class="ctx">„${t.quellen.kontext}“</div>`:''}
     <div class="links">
       <a href="setup-detail.html?ticker=${encodeURIComponent(t.ticker)}" target="_blank" title="Setup-Analyse: alle Score-Faktoren, Pivot-Kennzahlen, Price-Action-Muster, TradingView-Chart, Fundamentaldaten &amp; Story für diesen Ticker">🔍 Setup-Analyse</a>
@@ -1301,6 +1319,7 @@ function initControls(){
   document.getElementById('sortby').onchange=e=>{state.sort=e.target.value;render();};
   document.getElementById('suche').oninput=e=>{state.suche=e.target.value;render();};
   document.getElementById('hideearn').onchange=e=>{state.hideEarnings=e.target.checked;render();};
+  document.getElementById('hideuebernahme').onchange=e=>{state.hideUebernahme=e.target.checked;render();};
   document.getElementById('hideextended').onchange=e=>{state.hideExtended=e.target.checked;render();};
   document.getElementById('hidegap80').onchange=e=>{state.hideGap80=e.target.checked;render();};
   document.getElementById('shorton').onchange=e=>{state.shortOn=e.target.checked;render();};
