@@ -262,29 +262,11 @@ def yahoo_profil_earnings(symbol, op, crumb):
 FUND_CACHE_TAGE = 7      # Fundamentals aendern sich quartalsweise -> 7-Tage-TTL
 FUND_MAX_ABRUFE = 300    # Deckel je Lauf (schonend; Rest kommt beim naechsten Lauf)
 
-# Uebernahme-Heuristik (Bugfix 2026-08-13): Aktien in einer laufenden,
-# verbindlich vereinbarten Uebernahme (z.B. SLAB/Texas Instruments,
-# APGE/AbbVie) handeln kaum noch volatil um den Deal-Preis - genau das Muster,
-# das der Pivot-Screener als "Vol-Dry-up"/enge Basis liest und faelschlich als
-# ARMED/BREAKOUT-Setup einstuft. Keine dedizierte "laufende M&A"-Datenquelle
-# vorhanden, aber ein verlaesslicher Naeherungswert kommt aus derselben
-# ohnehin schon abgerufenen financialData-Antwort mit: das Analysten-
-# Konsens-Kursziel (targetMeanPrice) konvergiert nach einer verbindlichen
-# Vereinbarung auf wenige Prozent an den aktuellen Kurs, weil Analysten dann
-# nur noch die Deal-Wahrscheinlichkeit bewerten, nicht mehr Wachstum. Bewusst
-# NUR ein Warn-Badge (kein harter Filter, siehe index.html/signal-hub.html) -
-# ein fair bewerteter Blue-Chip mit engem Konsens waere sonst faelschlich
-# unsichtbar versteckt statt nur markiert.
-UEBERNAHME_SPREAD_SCHWELLE = 0.04   # Kursziel <=4% vom aktuellen Kurs entfernt
-
 def yahoo_fundamental(symbol, op, crumb):
-    """{eps_g, rev_g, target_mean} (juengstes Quartal vs. Vorjahresquartal, als
-    Anteile, z.B. 0.25 = +25%) via Yahoo quoteSummary financialData
-    (earningsGrowth/revenueGrowth - Felder am 2026-07-24 gegen die
-    quoteSummary-Schnittstelle verifiziert). Braucht den Crumb wie
-    yahoo_profil_earnings(). target_mean (targetMeanPrice, Analysten-
-    Konsens-Kursziel) haengt hier mit dran - selbe Anfrage, kein Zusatz-Call -
-    und speist die Uebernahme-Heuristik in f_fundamental()."""
+    """{eps_g, rev_g} (juengstes Quartal vs. Vorjahresquartal, als Anteile,
+    z.B. 0.25 = +25%) via Yahoo quoteSummary financialData (earningsGrowth/
+    revenueGrowth - Felder am 2026-07-24 gegen die quoteSummary-Schnittstelle
+    verifiziert). Braucht den Crumb wie yahoo_profil_earnings()."""
     if not op or not crumb:
         return None
     try:
@@ -294,10 +276,9 @@ def yahoo_fundamental(symbol, op, crumb):
             j = json.load(r)["quoteSummary"]["result"][0].get("financialData") or {}
         eg = (j.get("earningsGrowth") or {}).get("raw")
         rg = (j.get("revenueGrowth") or {}).get("raw")
-        tm = (j.get("targetMeanPrice") or {}).get("raw")
-        if eg is None and rg is None and tm is None:
+        if eg is None and rg is None:
             return None
-        return {"eps_g": eg, "rev_g": rg, "target_mean": tm}
+        return {"eps_g": eg, "rev_g": rg}
     except Exception:
         return None
 
@@ -369,15 +350,10 @@ def f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb):
         # ohne Zahlen und noch nie bei Nasdaq versucht) darf Nasdaq nicht sperren.
         nasdaq_offen = (e.get("markt") == "USA" and not hat_zahlen
                         and (c or {}).get("quelle") != "nasdaq")
-        # Backfill fuer die neue Uebernahme-Heuristik (2026-08-13): alte
-        # Cache-Eintraege ohne "target_mean"-Schluessel einmalig neu abrufen,
-        # auch wenn sie sonst noch als "frisch" gelten wuerden - sonst bliebe
-        # der neue Wert bis zum naechsten 7-Tage-Ablauf ungenutzt.
-        target_backfill = c is not None and "target_mean" not in c
         relevant = e["score"] >= schwellen["beobachten"]
-        if relevant and abrufe < FUND_MAX_ABRUFE and (not frisch or nasdaq_offen or target_backfill):
+        if relevant and abrufe < FUND_MAX_ABRUFE and (not frisch or nasdaq_offen):
             d, quelle, versucht = None, None, False
-            if ycrumb and (not frisch or target_backfill):   # Yahoo bei veraltetem Cache ODER fehlendem target_mean-Backfill
+            if ycrumb and not frisch:            # Yahoo nur bei wirklich veraltetem Cache
                 d = yahoo_fundamental(sym, yop, ycrumb)
                 time.sleep(0.15); abrufe += 1; versucht = True
                 if d:
@@ -395,25 +371,12 @@ def f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb):
                     quelle = "nasdaq" if e.get("markt") == "USA" else "yahoo"
                 c = {"eps_g": (d or {}).get("eps_g"), "rev_g": (d or {}).get("rev_g"),
                      "eps_g_prior": (d or {}).get("eps_g_prior"),
-                     "target_mean": (d or {}).get("target_mean"),
                      "quelle": quelle, "stand": heute.strftime("%Y-%m-%d")}
                 cache[sym] = c
         eps_g = c.get("eps_g") if c else None
         rev_g = c.get("rev_g") if c else None
         eps_g_prior = c.get("eps_g_prior") if c else None
         wert = fundamental_wert(eps_g, rev_g, eps_g_prior)
-        # Uebernahme-Heuristik (siehe UEBERNAHME_SPREAD_SCHWELLE oben): Konsens-
-        # Kursziel vs. aktueller Kurs, nur ein Warn-Badge, kein Filter.
-        target_mean = c.get("target_mean") if c else None
-        kurs_ist = e.get("preis")
-        moegliche_uebernahme = False
-        spread = None
-        if target_mean and kurs_ist:
-            spread = abs(target_mean - kurs_ist) / kurs_ist
-            moegliche_uebernahme = spread < UEBERNAHME_SPREAD_SCHWELLE
-        e["moegliche_uebernahme"] = moegliche_uebernahme
-        if spread is not None:
-            e["uebernahme_spread_pct"] = round(spread, 4)
         if wert is not None:
             mit_zahlen += 1
             beschleunigt = (eps_g is not None and eps_g > 0
@@ -448,11 +411,9 @@ def f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb):
                             else "Beobachten" if score >= schwellen["beobachten"] else "—")
     with open(pfade.FUNDAMENTAL_CACHE, "w", encoding="utf-8") as fp:
         json.dump(cache, fp, ensure_ascii=False)
-    uebernahme_n = sum(1 for e in ergebnisse if e.get("moegliche_uebernahme"))
     print(f"Fundamental: {mit_zahlen} mit Zahlen, {abrufe} Abrufe "
           f"(Yahoo {neu_yahoo}, Nasdaq {neu_nasdaq}; "
-          f"Crumb {'ok' if ycrumb else 'fehlt -> Nasdaq-Fallback fuer US'}); "
-          f"moegliche Uebernahme-Kandidaten: {uebernahme_n}")
+          f"Crumb {'ok' if ycrumb else 'fehlt -> Nasdaq-Fallback fuer US'})")
 
 # --- Code 33 (Minervini/TraderFox-Schwellen) --------------------------------
 # Python-Portierung von cloudflare-worker/mts-cors-proxy.js::fetchCode33 (dort
