@@ -453,9 +453,11 @@ async function triggerCloudWorkflow(owner,repo,workflowFile,btn,label){
     });
     if(r.status===204){
       alert(`${label} gestartet — laeuft in der Cloud (kein Mac mini noetig), dauert je nach Umfang einige Minuten. Ergebnis erscheint automatisch beim naechsten Laden.`);
-    } else if(r.status===401||r.status===403){
+    } else if(r.status===401||r.status===403||r.status===404){
       localStorage.removeItem(GH_ACTIONS_TOKEN_KEY);
-      alert(`Token ungueltig oder ohne Rechte fuer ${owner}/${repo} (Status ${r.status}). Bitte neu einrichten — beim naechsten Klick erneut nach dem Token gefragt.`);
+      alert(`Token ungueltig oder ohne "Actions: Read and write"-Rechte fuer ${owner}/${repo} (Status ${r.status}`
+        +(r.status===404?' — GitHub meldet fehlende Repo-Berechtigung eines Fine-grained-Tokens bewusst als 404, nicht 403':'')
+        +`). Bitte neu einrichten — beim naechsten Klick erneut nach dem Token gefragt.`);
     } else {
       const txt=await r.text().catch(()=>'');
       alert(`Fehler beim Starten (${r.status}): ${txt.slice(0,200)}`);
