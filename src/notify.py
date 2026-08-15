@@ -69,11 +69,18 @@ def _ampel_zeilen(d):
     """Eine Zeile je aktivem Markt mit Ampel-Icon + Klartext-Hinweis - Basis
     fuers Morning Brief, damit der erste Push des Tages immer die Marktlage
     zeigt statt sie (wie die anderen drei Slots) nur bei Unterdrueckung zu
-    erwaehnen."""
+    erwaehnen. Seit 2026-08-15 haengt zusaetzlich der Distribution-Days-/
+    Follow-Through-Day-Sentiment-Hinweis an (scorer.py::markt_regime,
+    sentiment_hinweis) - taucht auch auf, wenn der Trend selbst noch gruen
+    ist (institutioneller Verkaufsdruck kann dem Trendbruch vorauslaufen,
+    siehe Erlaeuterung unten bei baue_nachricht())."""
     zeilen = []
     for markt, r in (d.get("marktregime") or {}).items():
         icon = AMPEL_ICON.get(r.get("ampel"), "⚪")
-        zeilen.append(f"{icon} {markt}: {r.get('hinweis') or r.get('ampel') or '?'}")
+        zeile = f"{icon} {markt}: {r.get('hinweis') or r.get('ampel') or '?'}"
+        if r.get("sentiment_hinweis"):
+            zeile += f" ⚠️ {r['sentiment_hinweis']}"
+        zeilen.append(zeile)
     return zeilen
 
 
@@ -101,14 +108,34 @@ def baue_nachricht(cfg, morgens=False):
     # Treffer aus Maerkten mit roter Ampel fliegen aus dem Push - im Dashboard
     # bleiben sie sichtbar (dort zeigt die Ampel den Kontext).
     rot = set()
-    unterdrueckt = 0
-    if rcfg.get("aktiv", True) and rcfg.get("push_bei_rot_unterdruecken", True):
-        rot = {m for m, r in (d.get("marktregime") or {}).items()
-               if r.get("ampel") == "rot"}
+    unterdrueckt_rot = 0
+    # Sentiment-Gate (seit 2026-08-15, Richard S. Love/O'Neil): zusaetzlich
+    # und UNABHAENGIG von der Trend-Ampel - ein Markt kann noch gruen sein
+    # (Kurs > MA50/MA200), waehrend schon 5+ Distribution Days institutionellen
+    # Verkaufsdruck zeigen (Fruehwarnung VOR dem Trendbruch), oder ein echter
+    # Ruecksetzer (>=3%) noch keinen Follow-Through Day hatte (Bestaetigung
+    # des neuen Aufwaertstrends steht laut Minervini/O'Neil noch aus). Nur der
+    # harte Fall (state 0, sentiment_warnung) unterdrueckt den Push - die
+    # weichere "3-4 Distribution Days, beobachten"-Stufe bleibt reiner
+    # Klartext-Hinweis im Morning Brief (_ampel_zeilen), kein Filter.
+    sentiment_warn = set()
+    unterdrueckt_sentiment = 0
+    if rcfg.get("aktiv", True):
+        if rcfg.get("push_bei_rot_unterdruecken", True):
+            rot = {m for m, r in (d.get("marktregime") or {}).items()
+                   if r.get("ampel") == "rot"}
+        if rcfg.get("push_bei_sentiment_warnung_unterdruecken", True):
+            sentiment_warn = {m for m, r in (d.get("marktregime") or {}).items()
+                              if r.get("sentiment_warnung") and m not in rot}
         if rot:
             vorher = len(qual)
             qual = [t for t in qual if t.get("markt") not in rot]
-            unterdrueckt = vorher - len(qual)
+            unterdrueckt_rot = vorher - len(qual)
+        if sentiment_warn:
+            vorher = len(qual)
+            qual = [t for t in qual if t.get("markt") not in sentiment_warn]
+            unterdrueckt_sentiment = vorher - len(qual)
+    unterdrueckt = unterdrueckt_rot + unterdrueckt_sentiment
 
     nur_neue = bcfg.get("nur_neue", False)
     if nur_neue:
@@ -124,11 +151,21 @@ def baue_nachricht(cfg, morgens=False):
 
     if not liste:
         if unterdrueckt:
-            # Statt stiller Leere einmal ehrlich melden, WARUM nichts kommt.
-            rot_txt = ", ".join(sorted(rot))
-            return ("🔴 Markt rot – Push-Signale unterdrückt",
-                    kopf + f"{unterdrueckt} Kauf-Kandidat(en) zurückgehalten ({rot_txt}: "
-                    f"Index unter MA200). Minervini: in einem schwachen Markt "
+            # Statt stiller Leere einmal ehrlich melden, WARUM nichts kommt -
+            # Trend-Grund (rot) und Sentiment-Grund (Distribution Days/FTD)
+            # getrennt benannt, weil es zwei unabhaengige Ampeln sind.
+            gruende = []
+            if unterdrueckt_rot:
+                gruende.append(f"{unterdrueckt_rot} wegen roter Marktampel "
+                                f"({', '.join(sorted(rot))}: Index unter MA200)")
+            if unterdrueckt_sentiment:
+                gruende.append(f"{unterdrueckt_sentiment} wegen Distribution-Days-/"
+                                f"Follow-Through-Day-Warnung ({', '.join(sorted(sentiment_warn))}: "
+                                f"institutioneller Verkaufsdruck bzw. unbestätigter Rücksetzer)")
+            titel = "🔴 Markt-Warnung – Push-Signale unterdrückt" if rot else "⚠️ Sentiment-Warnung – Push-Signale zurückgehalten"
+            return (titel,
+                    kopf + f"{unterdrueckt} Kauf-Kandidat(en) zurückgehalten: " + "; ".join(gruende)
+                    + ". Minervini/O'Neil: in einem schwachen bzw. unbestätigten Markt "
                     f"keine neuen Positionen eröffnen.")
         if morgens:
             # Morning Brief bleibt nicht stumm wie die anderen drei Slots -
@@ -146,8 +183,11 @@ def baue_nachricht(cfg, morgens=False):
         ew = f" ⚠️{e['tage']}T" if earnings_bald(t) else ""
         zeilen.append(f"{t['ticker']}  {t['score']:.0f}  {t['name'][:22]} ({markt},{t['quellen']['ausgaben']}Q){ew}")
     fuss = f"\n{len(qual)} Kauf-Kandidaten gesamt · {d.get('anzahl',0)} bewertet"
-    if unterdrueckt:
-        fuss += f"\n🔴 {unterdrueckt} Wert(e) aus {', '.join(sorted(rot))} unterdrückt (Markt rot)"
+    if unterdrueckt_rot:
+        fuss += f"\n🔴 {unterdrueckt_rot} Wert(e) aus {', '.join(sorted(rot))} unterdrückt (Markt rot)"
+    if unterdrueckt_sentiment:
+        fuss += (f"\n⚠️ {unterdrueckt_sentiment} Wert(e) aus {', '.join(sorted(sentiment_warn))} "
+                 f"zurückgehalten (Distribution Days/Follow-Through-Day)")
     return titel, kopf + "\n".join(zeilen) + fuss
 
 def main():

@@ -132,7 +132,9 @@
   "marktregime": {
     "_hinweis": "Markt-Regime-Ampel je Markt (Index vs. MA50/MA200 + MA200-Richtung, berechnet im Scorer, steht in signals.json -> marktregime). Bei roter Ampel (Index unter MA200) werden Push-Signale aus diesem Markt unterdrueckt - im Dashboard bleiben sie sichtbar.",
     "aktiv": true,
-    "push_bei_rot_unterdruecken": true
+    "push_bei_rot_unterdruecken": true,
+    "_hinweis_sentiment": "Seit 2026-08-15: zusaetzliches, von der Trend-Ampel UNABHAENGIGES Sentiment-Gate (Distribution Days/Follow-Through Day, Richard S. Love/O'Neil-IBD) - ein Markt kann noch gruen sein (Kurs > MA50/MA200) und trotzdem schon 5+ Distribution Days institutionellen Verkaufsdruck zeigen, oder ein echter Ruecksetzer (>=3%) hat noch keinen Follow-Through Day (Bestaetigung des neuen Aufwaertstrends steht noch aus). Nutzung: bei true werden auch diese Markt-Kandidaten aus dem Push zurueckgehalten (Dashboard zeigt sie weiter); bei false nur als Klartext-Hinweis im Morning Brief, kein Filter.",
+    "push_bei_sentiment_warnung_unterdruecken": true
   },
   "minervini_5080": {
     "_hinweis": "Minervini 50/80-Regel: sucht den juengsten Gap-down (Vortages-Close -> Open) je Ticker in den letzten fenster_handelstage Handelstagen, der mindestens schwelle_pct betraegt UND mit mindestens volumen_faktor x Ø50-Tage-Volumen einherging. Solche Aktien haben laut Minervini hohe Wahrscheinlichkeit, das Gap-Tief nochmal zu unterschreiten - Score-Malus statt Nachkauf-Empfehlung. Malus klingt bis zum Fensterende linear ab.",

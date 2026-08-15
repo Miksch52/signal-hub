@@ -717,7 +717,117 @@ def markt_von_meta(meta):
         return "USA"
     return "Europa"
 
-def markt_regime(idx_closes):
+def politikzyklus_jahr(heute=None):
+    """4-Jahres-Politikzyklus (Richard S. Love, 'Superperformance Stocks',
+    1977) als reiner Kontext-Hinweis - KEIN Score-Faktor, KEIN Ampel-Einfluss.
+    US-Praesidentschaftswahlen liegen in allen durch 4 teilbaren Jahren
+    (2024, 2028, ...). Zyklusjahr 1 = Jahr nach der Wahl (historisch
+    schwaechste Phase), 4 = Wahljahr selbst. Bewusst nur eine grobe,
+    historische Heuristik mit Overfitting-Risiko auf wenige US-Zyklen -
+    darf nie Signale unterdruecken oder Scores daempfen, siehe Diskussion
+    vom 2026-08-15 (Vorschlaege A/C aus derselben Anfrage wurden verworfen,
+    da Distribution-Days/Follow-Through-Day in assets/marktampel.js
+    bereits vollstaendig existieren)."""
+    jahr = (heute or datetime.now()).year
+    zyklusjahr = ((jahr - 1) % 4) + 1
+    LABEL = {
+        1: "Nachwahljahr – historisch schwächste Phase des Zyklus",
+        2: "Zwischenwahljahr – häufig volatil, oft Korrektur vor Jahresmitte",
+        3: "Vorwahljahr – historisch stärkste Phase des Zyklus",
+        4: "Wahljahr – meist zweitstärkste Phase des Zyklus",
+    }
+    return {"jahr": jahr, "zyklusjahr": zyklusjahr, "label": LABEL[zyklusjahr]}
+
+# --- Distribution-Days / Follow-Through-Day (O'Neil/IBD, Richard S. Love) --
+# 1:1-Portierung von assets/marktampel.js::distributionDays()/
+# followThroughDay() - dortige Konstanten DIST_*/FTD_* unveraendert
+# uebernommen, damit Browser-Ampel und Server-/Cron-Ampel (dieser Code)
+# dieselben Schwellen verwenden. Laeuft NUR auf idx_closes/idx_volumes, die
+# markt_regime() ohnehin schon fuer den Trend-Check laedt (^GSPC/^STOXX) -
+# anders als VIX/Small-Caps/10J-Rendite in der vollen Browser-Ampel braucht
+# das KEINE zusaetzlichen Yahoo-Symbole, funktioniert also identisch im
+# Cron-Job/Cloud-Lauf (ohne Browser/Worker) wie im Dashboard.
+DIST_WINDOW = 25
+DIST_DROP = 0.002
+DIST_WARN = 3
+DIST_PRESSURE = 5
+FTD_LOOKBACK = 60
+FTD_PULLBACK_MIN = 0.03
+FTD_MIN_GAIN = 0.0125
+FTD_EARLIEST_DAY = 4
+FTD_WINDOW_DAYS = 25
+
+def distribution_days(closes, volumes, window=DIST_WINDOW, drop=DIST_DROP):
+    """Zaehlt Distribution Days im Fenster: Index faellt >= drop (0,2%) bei
+    hoeherem Volumen als am Vortag - institutioneller Verkaufsdruck (O'Neil/
+    IBD), kann auftreten WAEHREND der Trend (MA50/MA200) noch gruen ist -
+    genau der Fruehwarn-Vorlauf, den Love/O'Neil vor einem Trendbruch
+    beschreiben."""
+    n = min(len(closes), len(volumes))
+    if n < window + 1:
+        return None
+    c, v = closes[-(window + 1):], volumes[-(window + 1):]
+    if all(not x or x <= 0 for x in v):
+        return None
+    return sum(1 for i in range(1, len(c))
+                if (c[i] / c[i - 1] - 1) <= -drop and v[i] > v[i - 1])
+
+def distribution_state(count):
+    if count is None:
+        return None
+    if count < DIST_WARN:
+        return 2
+    if count < DIST_PRESSURE:
+        return 1
+    return 0
+
+def follow_through_day(closes, volumes, lookback=FTD_LOOKBACK):
+    """Follow-Through Day: Bestaetigung eines neuen Aufwaertstrends nach
+    einem Ruecksetzer >= 3% - erst ab Tag 4 nach dem Tief zaehlt ein
+    Tagesgewinn >= 1,25% bei hoeherem Volumen als Vortag. Ohne echten
+    Ruecksetzer (state 2, day None) gilt der Trend als intakt; mit
+    Ruecksetzer aber ohne Bestaetigung (state 0) fehlt laut Minervini/O'Neil
+    die Erlaubnis fuer neue Positionen, auch wenn MA50/MA200 selbst schon
+    wieder gruen zeigen."""
+    n = min(len(closes), len(volumes))
+    if n < lookback:
+        return None
+    c, v = closes[-lookback:], volumes[-lookback:]
+    if all(not x or x <= 0 for x in v):
+        return None
+    trog = 0
+    for i in range(1, len(c)):
+        if c[i] < c[trog]:
+            trog = i
+    hoch_davor = max(c[:trog + 1]) if trog > 0 else c[trog]
+    rueckgang = 1 - c[trog] / hoch_davor if hoch_davor > 0 else 0.0
+    if rueckgang < FTD_PULLBACK_MIN:
+        return {"state": 2, "day": None, "gain_pct": None, "pullback_pct": round(rueckgang * 100, 1)}
+    ftd_tag = ftd_gewinn = None
+    for i in range(trog + 1, len(c)):
+        tag_nr = i - trog + 1
+        if tag_nr < FTD_EARLIEST_DAY:
+            continue
+        if tag_nr - 1 > FTD_WINDOW_DAYS:
+            break
+        vortag = c[i - 1]
+        if vortag <= 0:
+            continue
+        gewinn = c[i] / vortag - 1
+        if gewinn >= FTD_MIN_GAIN and v[i] > v[i - 1]:
+            ftd_tag, ftd_gewinn = tag_nr, gewinn
+            break
+    alter = len(c) - trog
+    if ftd_tag is not None:
+        return {"state": 2, "day": ftd_tag, "gain_pct": round(ftd_gewinn * 100, 2),
+                "pullback_pct": round(rueckgang * 100, 1)}
+    if alter <= FTD_WINDOW_DAYS:
+        return {"state": 0, "day": None, "gain_pct": None, "pullback_pct": round(rueckgang * 100, 1)}
+    # Ruecksetzer liegt laenger zurueck als das Bestaetigungsfenster und wurde
+    # nie bestaetigt -> gilt als veraltet, kein Dauer-Warnsignal.
+    return {"state": 2, "day": None, "gain_pct": None, "pullback_pct": round(rueckgang * 100, 1)}
+
+def markt_regime(idx_closes, idx_volumes=None):
     """Ampel fuer den Gesamtmarkt (Minervini/Weinstein: erst das Umfeld, dann
     die Aktie - in einem schwachen Markt scheitern auch die besten Setups).
     Seit 2026-07-27 dieselbe 4-Kriterien-Schwelle wie die volle Minervini-
@@ -731,9 +841,19 @@ def markt_regime(idx_closes):
     Ampel-Chip auseinanderlaufen (z.B. Kurs knapp unter MA50, sonst ueberall
     bullisch: volle Ampel gruen, alte Pruefung hier faelschlich gelb). Wird
     je Markt berechnet und nach signals.json geschrieben -> funktioniert auch
-    auf der Cloud-Version ohne erreichbaren Mac mini. Die Sentiment-Schicht
-    der vollen Ampel (VIX/Distribution-Days/Small-Caps) bleibt bewusst aussen
-    vor - die noetigen Zusatzdaten holt der Scorer bisher nicht."""
+    auf der Cloud-Version ohne erreichbaren Mac mini.
+
+    Seit 2026-08-15 zusaetzlich Distribution-Days/Follow-Through-Day als
+    Sentiment-Fruehwarnung (idx_volumes optional - ohne Volumendaten bleiben
+    die neuen Felder None, Aufrufer unveraendert). Anders als VIX/Small-Caps/
+    10J-Rendite in der vollen Browser-Ampel (assets/marktampel.js) werden
+    diese beiden Faktoren HIER nachgebaut, weil sie ohne neue Datenquelle
+    auskommen und so auch den automatisierten Cron-/Cloud-Push (notify.py)
+    erreichen, der die volle Browser-Ampel nie sieht (kein Browser/Worker im
+    Cron-Job). sentiment_warnung=True (5+ Distribution Days ODER
+    unbestaetigter Ruecksetzer) haengt UNABHAENGIG von der Trend-Ampel ab -
+    ein Markt kann noch gruen sein und trotzdem schon unter institutionellem
+    Verkaufsdruck stehen, siehe notify.py::baue_nachricht()."""
     if not idx_closes or len(idx_closes) < 221:
         return {"ampel": "unbekannt", "detail": "zu wenig Index-Historie", "hinweis": ""}
     p = idx_closes[-1]
@@ -749,11 +869,34 @@ def markt_regime(idx_closes):
         a, hinweis = "rot", "Index unter MA200 oder MA50 unter MA200 – Minervini: keine neuen Positionen im schwachen Markt."
     else:
         a, hinweis = "gelb", "Markt uneinheitlich – neue Käufe nur mit Vorsicht."
+
+    dist_count = distribution_days(idx_closes, idx_volumes) if idx_volumes else None
+    dist_state = distribution_state(dist_count)
+    ftd = follow_through_day(idx_closes, idx_volumes) if idx_volumes else None
+    sentiment_warnung = bool(dist_state == 0 or (ftd and ftd["state"] == 0))
+    sentiment_teile = []
+    if dist_state == 0:
+        sentiment_teile.append(
+            f"{dist_count} Distribution Days in {DIST_WINDOW} Handelstagen – institutioneller "
+            f"Verkaufsdruck (Love/O'Neil-Warnsignal), auch wenn der Trend hier noch grün steht.")
+    elif dist_state == 1:
+        sentiment_teile.append(
+            f"{dist_count} Distribution Days in {DIST_WINDOW} Handelstagen – erhöhter Verkaufsdruck, beobachten.")
+    if ftd and ftd["state"] == 0:
+        sentiment_teile.append(
+            f"Rücksetzer ({ftd['pullback_pct']} % vom Zwischenhoch) noch ohne Follow-Through Day – "
+            f"Bestätigung des neuen Aufwärtstrends steht laut Minervini/O'Neil noch aus.")
+    elif ftd and ftd["day"] is not None:
+        sentiment_teile.append(f"Follow-Through Day an Tag {ftd['day']} bestätigt (+{ftd['gain_pct']} %).")
+
     return {"ampel": a, "ueber_ma50": ueber50, "ueber_ma200": ueber200,
             "sma50_ueber_sma200": s50_ueber_s200, "ma200_steigt": steigt, "hinweis": hinweis,
             "detail": (f"Index {'>' if ueber200 else '<'}MA200 "
                        f"({'steigend' if steigt else 'fallend'}), "
-                       f"{'>' if ueber50 else '<'}MA50, MA50 {'>' if s50_ueber_s200 else '<'}MA200")}
+                       f"{'>' if ueber50 else '<'}MA50, MA50 {'>' if s50_ueber_s200 else '<'}MA200"),
+            "distribution_days": dist_count, "distribution_state": dist_state,
+            "follow_through": ftd, "sentiment_warnung": sentiment_warnung,
+            "sentiment_hinweis": " ".join(sentiment_teile)}
 
 # --- die 6 Faktoren, jeweils 0..1 + Detailtext -----------------------------
 def f_stage2(closes, hi52, lo52):
@@ -1294,10 +1437,12 @@ def score_alle(limit=None):
         if m.get("aktiv"):
             d = hole_chart_cached(m["index_yahoo"], cache)
             idx_daten[markt] = d["closes"] if d else []
-            regime[markt] = markt_regime(idx_daten[markt])
+            regime[markt] = markt_regime(idx_daten[markt], d["volumes"] if d else None)
     if regime:
         print("Markt-Regime: " + " · ".join(
-            f"{k} {v['ampel']} ({v.get('detail', '')})" for k, v in regime.items()))
+            f"{k} {v['ampel']} ({v.get('detail', '')})"
+            + (f" ⚠️ {v['sentiment_hinweis']}" if v.get("sentiment_warnung") else "")
+            for k, v in regime.items()))
 
     # Earnings-Kalender (Nasdaq, US) einmal laden
     earn_kal = lade_earnings_kalender(earn_cfg.get("warn_tage", 10)) if earn_cfg.get("aktiv") else {}
@@ -1547,6 +1692,7 @@ def score_alle(limit=None):
         "schwellen": schwellen,
         "status": status,
         "marktregime": regime,
+        "politikzyklus": politikzyklus_jahr(),
         "treffer": ergebnisse,
     }
     with open(pfade.SIGNALS_JSON, "w", encoding="utf-8") as fp:

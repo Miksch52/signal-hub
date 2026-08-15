@@ -116,6 +116,7 @@
   .markt-chip.green{background:rgba(47,176,141,.15);color:var(--ok);border-color:rgba(47,176,141,.4)}
   .markt-chip.yellow{background:rgba(243,156,18,.15);color:var(--warn);border-color:rgba(243,156,18,.4)}
   .markt-chip.red{background:rgba(231,76,60,.18);color:var(--bad);border-color:rgba(231,76,60,.4)}
+  .markt-chip.info{background:rgba(255,255,255,.06);color:var(--muted);border-color:var(--line)}
   .fundb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(47,176,141,.15);color:#7fe0c4;border:1px solid rgba(47,176,141,.4)}
   .focusb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(243,156,18,.2);color:#f4b350;border:1px solid rgba(243,156,18,.5);font-weight:700}
   /* Score-Verlaufs-Sparkline (letzte Tage BREAKOUT/ARMED/CHEAT/sonst) */
@@ -229,6 +230,7 @@
   <div class="htop">
     <h1>📈 Daily Signal Hub</h1>
     <a id="marktchip" class="markt-chip" style="display:none" target="_blank"></a>
+    <span id="zyklchip" class="markt-chip info" style="display:none"></span>
     <span class="meta" id="meta">lädt …</span>
     <span class="meta" id="breadth" title="Anzahl Ticker mit aktivem Pivot-Setup (BREAKOUT/ARMED/CHEAT) laut Signal-Hub/data/pivot_history.json – Fruehindikator fuer Marktbreite, unabhaengig von einem offiziellen Follow-Through-Day"></span>
     <span class="spacer"></span>
@@ -612,7 +614,22 @@ function zeigeMarktRegime(vix){
     +'EU = Index vs. MA50/MA200 (aus signals.json):\n'+titel.join('\n')
     +'\nBei 🔴 werden Push-Signale aus diesem Markt unterdrückt (config: marktregime).';
   el.style.display='';
+  zeigePolitikzyklus();
   return true;
+}
+// Politikzyklus-Chip: reiner Kontext-Hinweis nach Richard Loves 4-Jahres-
+// Politikzyklus ("Superperformance Stocks", 1977) - beeinflusst NICHT den
+// Score und NICHT die Marktampel/Push-Unterdrueckung, siehe scorer.py::
+// politikzyklus_jahr(). Bewusst neutral eingefaerbt (.markt-chip.info),
+// damit er nicht mit einer Warnung verwechselt wird.
+function zeigePolitikzyklus(){
+  const el=document.getElementById('zyklchip'); if(!el) return;
+  const pz=DATA&&DATA.politikzyklus; if(!pz) return;
+  el.textContent=`🗳️ Zyklusjahr ${pz.zyklusjahr}/4`;
+  el.title='4-Jahres-Politikzyklus (Richard S. Love, "Superperformance Stocks", 1977): '
+    +pz.label+'. Reine historische Heuristik ueber wenige US-Wahlzyklen, '
+    +'kein Score-Faktor und keine Ampel-Wirkung - nur Kontext.';
+  el.style.display='';
 }
 async function ladeVolleMarktampel(){
   // Fire-and-forget: holt die volle US-Ampel client-seitig ueber den Worker
