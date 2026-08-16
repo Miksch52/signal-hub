@@ -116,7 +116,16 @@ jobs:
           rclone copy r2:signalhub-magazine/ _magazine/ --exclude "_state/**" --exclude "_test/**" --exclude "_deploy/**"
 
       - name: config.json aus Secret schreiben
-        run: printf '%s' '${{ secrets.SIGNALHUB_CONFIG_JSON }}' > config.json
+        # env-Indirektion statt direkter ${{ }}-Interpolation in den Shell-String:
+        # ein Apostroph im Secret-Inhalt (z.B. in einem Hinweistext wie "O'Neil-IBD"
+        # in config.json, seit 2026-08-15) schliesst sonst das umgebende '...' der
+        # Shell vorzeitig und bricht den Lauf mit "syntax error near unexpected
+        # token" - passiert bei jeder direkten String-Interpolation eines Secrets
+        # in einen Shell-Befehl, unabhaengig vom konkreten Sonderzeichen. printf
+        # '%s' "$VAR" ist dagegen unempfindlich gegen jeden Zeicheninhalt.
+        env:
+          SIGNALHUB_CONFIG_JSON: ${{ secrets.SIGNALHUB_CONFIG_JSON }}
+        run: printf '%s' "$SIGNALHUB_CONFIG_JSON" > config.json
 
       - name: "Pipeline laufen lassen (Cron: nur faellige Slots pushen, manueller Trigger: sofort ohne Push)"
         env:
@@ -246,7 +255,11 @@ jobs:
       # dieses Jobs -> bleibt innerhalb des ephemeren Runners, wird nie
       # veroeffentlicht (das Repo hier ist oeffentlich).
       - name: Signal-Hub config.json aus Secret schreiben (ntfy-Zugangsdaten fuer Top-Setups-Push)
-        run: printf '%s' '${{ secrets.SIGNALHUB_CONFIG_JSON }}' > Signal-Hub/config.json
+        # env-Indirektion statt direkter Interpolation - siehe Kommentar beim
+        # ersten Vorkommen dieses Musters weiter oben in dieser Datei.
+        env:
+          SIGNALHUB_CONFIG_JSON: ${{ secrets.SIGNALHUB_CONFIG_JSON }}
+        run: printf '%s' "$SIGNALHUB_CONFIG_JSON" > Signal-Hub/config.json
 
       - name: Price-Action-Hub Pipeline (nur wenn Signal-Hub in diesem Lauf frisch geschrieben hat)
         working-directory: Price-Action-Hub
