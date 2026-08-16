@@ -71,7 +71,27 @@
 
   h2{font-size:15px;margin:30px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);
      display:flex;align-items:center;gap:8px;color:var(--txt)}
-  h2 .sub{font-size:11px;font-weight:400;color:var(--muted2)}
+  .sub{font-size:11px;font-weight:400;color:var(--muted2)}
+
+  /* Aufklappbare Themenblöcke (seit 2026-08-16): Charttechnik/Technische
+     Analyse/Fundamentalanalyse werden je eine eigene <details class="acc">
+     statt fester h2-Abschnitte - eigenes, schlankes Muster statt des
+     wiki.html-Accordions (dessen dunkles Serif-Design passt nicht zu dieser
+     hellen "Tagesordnung"-Optik, siehe CLAUDE.md Anleitungsseiten-Regel:
+     drei Design-Systeme, nicht angleichen). */
+  .acc{background:var(--card);border:1px solid var(--line);border-radius:14px;
+       box-shadow:var(--shadow);margin:20px 0;overflow:hidden}
+  .acc>summary{list-style:none;cursor:pointer;padding:16px 20px;display:flex;
+               align-items:center;gap:10px;font-size:15px;font-weight:700;color:var(--txt)}
+  .acc>summary::-webkit-details-marker{display:none}
+  .acc>summary .acc-sub{font-size:11px;font-weight:400;color:var(--muted2)}
+  .acc>summary .acc-count{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--muted);
+                           background:var(--line2);border-radius:20px;padding:2px 10px;white-space:nowrap}
+  .acc>summary .chev{color:var(--muted2);transition:transform .15s;flex-shrink:0}
+  .acc[open]>summary .chev{transform:rotate(180deg)}
+  .acc-body{padding:0 20px 20px;border-top:1px solid var(--line)}
+  .acc-body>*:first-child{margin-top:16px}
+  .subhead{font-size:13px;margin:22px 0 10px;display:flex;align-items:center;gap:8px;color:var(--txt)}
 
   /* Erläuterungen zu den Kriterien erscheinen als native Tooltips (title-Attribut)
      bei Hover - [title] bekommt einen Hilfe-Cursor als Hinweis, dass dort mehr
@@ -83,6 +103,16 @@
            padding:10px 12px;box-shadow:var(--shadow)}
   .dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex-shrink:0}
   .d-gruen{background:var(--ok)} .d-gelb{background:var(--warn)} .d-rot{background:var(--bad)} .d-na{background:#C9C3B4}
+
+  /* Erfüllt/nicht-erfüllt visuell klarer trennen (seit 2026-08-16): bisher
+     unterschied sich nur der kleine Ampel-Punkt, alle Karten wogen optisch
+     gleich viel. Grün jetzt mit Tint+Rand hervorgehoben, Rot/n.v. bewusst
+     blasser (reduzierte Deckkraft, kein Schatten) - erfüllte Kriterien
+     sollen beim ersten Blick auffallen, nicht erfüllte in den Hintergrund
+     treten, ohne komplett zu verschwinden (weiterhin lesbar). */
+  .qs-item.q-gruen{border-color:rgba(46,139,87,.4);background:rgba(46,139,87,.07)}
+  .qs-item.q-gruen span{color:var(--ok);font-weight:600}
+  .qs-item.q-rot,.qs-item.q-na{opacity:.55;box-shadow:none}
 
   .chart-wrap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;
               margin-top:14px;box-shadow:var(--shadow)}
@@ -105,6 +135,10 @@
   .fcard-wert{font-size:12px;color:var(--muted);white-space:nowrap}
   .fcard-detail{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.4}
   .fcard-gew{font-size:10.5px;color:var(--muted2);margin-top:5px}
+  .fcard-gruen{border-color:rgba(46,139,87,.45);background:rgba(46,139,87,.06)}
+  .fcard-gruen .fcard-lbl{color:var(--ok)}
+  .fcard-gelb{border-color:rgba(192,138,46,.4)}
+  .fcard-rot,.fcard-na{opacity:.55;box-shadow:none}
 
   .klimax-warn{background:rgba(178,58,46,.08);border:1px solid rgba(178,58,46,.35);border-radius:12px;
                padding:10px 14px;font-size:12.5px;color:var(--bad);margin-bottom:12px}
@@ -252,6 +286,20 @@ const TECH_KEYS = ['stage2_trend','relative_staerke','naehe_52w_hoch','basis_kon
 const FUND_KEYS = ['fundamental'];
 const flagge = m => m === 'USA' ? '🇺🇸' : m === 'Europa' ? '🇪🇺' : '🏳️';
 const dot = ampel => `<span class="dot d-${ampel||'na'}"></span>`;
+// Karten nach Erfüllungsgrad sortieren (seit 2026-08-16): grün zuerst, dann
+// gelb, dann rot/n.v. - macht aus der reinen Auflistung eine Priorisierung,
+// ohne die zugrundeliegenden Faktoren-Daten zu ändern.
+const AMPEL_RANG = {gruen:0, gelb:1, rot:2, na:3};
+function sortiereNachAmpel(keys, faktoren){
+  return [...keys].sort((a,b) => {
+    const fa = faktoren && faktoren[a], fb = faktoren && faktoren[b];
+    return (AMPEL_RANG[fa && fa.ampel] ?? 3) - (AMPEL_RANG[fb && fb.ampel] ?? 3);
+  });
+}
+function zaehleGruen(keys, faktoren){
+  return keys.filter(k => { const f = faktoren && faktoren[k]; return f && f.ampel === 'gruen'; }).length;
+}
+const qsClass = ampel => 'qs-item q-' + (ampel || 'na');
 // Yahoo haengt bei Nicht-US-Boersen ein Laender-/Boersen-Kuerzel an (SY1.DE,
 // MC.PA, RIO.L...) - TradingView kennt dieses Suffix nicht und findet dann
 // GAR NICHTS (getestet: "SY1.DE" -> leerer Chart). Der blosse Ticker ohne
@@ -346,10 +394,10 @@ function paBadges(m){
 
 function fcard(key, info){
   const fi = FAKTOR_INFO[key];
-  if(!info) return `<div class="fcard"><span class="dot d-na"></span><div class="fcard-body">
+  if(!info) return `<div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
     <div class="fcard-head"><span class="fcard-lbl" title="${fi.explain}">${fi.icon} ${fi.label}</span></div>
     <div class="fcard-detail">keine Daten</div></div></div>`;
-  return `<div class="fcard">${dot(info.ampel)}<div class="fcard-body">
+  return `<div class="fcard fcard-${info.ampel||'na'}">${dot(info.ampel)}<div class="fcard-body">
     <div class="fcard-head">
       <span class="fcard-lbl" title="${fi.explain}">${fi.icon} ${fi.label}</span>
       <span class="fcard-wert">${Math.round(info.wert*100)}%</span>
@@ -365,11 +413,11 @@ function fcard(key, info){
 // Vorjahresquartal bei Yahoo gefunden, sonst die Ampel mit den 3 TraderFox-
 // Schwellenwerten, siehe CODE33_EXPLAIN).
 function code33Card(c){
-  if(!c) return `<div class="fcard" id="code33wrap">${dot('na')}<div class="fcard-body">
+  if(!c) return `<div class="fcard fcard-na" id="code33wrap">${dot('na')}<div class="fcard-body">
     <div class="fcard-head"><span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span></div>
     <div class="fcard-detail">nicht verfügbar (Fundamentaldaten-Abruf fehlgeschlagen)</div>
   </div></div>`;
-  if(!c.verfuegbar) return `<div class="fcard" id="code33wrap">${dot('na')}<div class="fcard-body">
+  if(!c.verfuegbar) return `<div class="fcard fcard-na" id="code33wrap">${dot('na')}<div class="fcard-body">
     <div class="fcard-head"><span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span></div>
     <div class="fcard-detail">kein passendes Vorjahresquartal bei Yahoo gefunden</div>
   </div></div>`;
@@ -380,7 +428,7 @@ function code33Card(c){
     [c.umsatz_erfuellt, `Umsatz ${pctTxt(c.umsatz_yoy_pct)} ggü. Vorjahresquartal (Schwelle &gt;7%)`],
     [c.marge_erfuellt, `Nettomarge ${ppTxt(c.marge_delta_pp)} ggü. 2-3 Quartale zuvor (Schwelle &gt;2 Pp.)`],
   ].map(([ok,txt])=>`${ok?'✅':'❌'} ${txt}`).join('<br>');
-  return `<div class="fcard" id="code33wrap">${dot(c.ampel)}<div class="fcard-body">
+  return `<div class="fcard fcard-${c.ampel||'na'}" id="code33wrap">${dot(c.ampel)}<div class="fcard-body">
     <div class="fcard-head">
       <span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span>
       <span class="fcard-wert">${c.anzahl_erfuellt}/3</span>
@@ -388,6 +436,140 @@ function code33Card(c){
     <div class="fcard-detail">${teile}</div>
     <div class="fcard-gew">Quartal ${esc(c.quartal||'')} ggü. ${esc(c.vorjahresquartal||'')} · aktuelle Nettomarge ${pctTxt(c.marge_aktuell_pct)}</div>
   </div></div>`;
+}
+
+// ─── Fundamentalanalyse: Dividende + Buffett/Munger/Graham-Kennzahlen ──────
+// Ergänzt (seit 2026-08-16) das bisherige CANSLIM/Code-33-Fundamentalfeld um
+// klassische Qualitäts-/Werthaltigkeitskennzahlen. Bewusst NICHT Teil des
+// Scores (kein Gewicht, keine Score-Rückwirkung) - reine Einordnung nach
+// Buffett/Munger/Graham-Heuristiken, weil dieses System sonst konsequent
+// Wachstums-/Momentum-orientiert (Minervini/CANSLIM) ist. Werte kommen aus
+// denselben Yahoo-quoteSummary-Modulen, die /story ohnehin schon abruft
+// (siehe cloudflare-worker/mts-cors-proxy.js::fetchYahooFundamentalsAndNews).
+const FUND_DEEP_INFO = {
+  returnOnEquity: {icon:'🏆', label:'Eigenkapitalrendite (ROE)', explain:
+    'Nettogewinn im Verhältnis zum Eigenkapital. Buffett bevorzugt Unternehmen mit dauerhaft hoher, stabiler Eigenkapitalrendite (über 15%) als Zeichen eines Burggrabens (Moat) statt reinem Wachstum um jeden Preis.'},
+  profitMargins: {icon:'💹', label:'Nettomarge', explain:
+    'Nettogewinn im Verhältnis zum Umsatz. Buffett/Munger: stabile, hohe Margen sind ein Indiz für Preissetzungsmacht (Pricing Power) gegenüber der Konkurrenz.'},
+  debtToEquity: {icon:'⚖️', label:'Verschuldungsgrad', explain:
+    'Verhältnis von Fremdkapital zu Eigenkapital (in %). Graham/Buffett meiden hoch verschuldete Unternehmen - niedrige Werte zeigen finanzielle Stärke und Krisenfestigkeit.'},
+  currentRatio: {icon:'🛡️', label:'Liquidität (Current Ratio)', explain:
+    'Kurzfristiges Vermögen im Verhältnis zu kurzfristigen Verbindlichkeiten. Graham: über 1,5 zeigt ausreichend Sicherheitsmarge, um kurzfristige Verpflichtungen zu bedienen.'},
+  priceToBook: {icon:'📘', label:'Kurs-Buchwert-Verhältnis', explain:
+    'Kurs im Verhältnis zum bilanziellen Eigenkapital je Aktie. Graham suchte klassisch Werte unter 1,5 (Sicherheitsmarge) - bei Qualitäts-/Wachstumsaktien mit hohem ROE akzeptierten Buffett/Munger bewusst höhere Werte, daher hier nur als Einordnung, kein hartes Ausschlusskriterium.'},
+  dividendYield: {icon:'💧', label:'Dividendenrendite', explain:
+    'Aktuelle Dividendenrendite (Dividende je Aktie / Kurs). Viele Wachstumsaktien in diesem Universum zahlen bewusst keine Dividende - das ist für sich kein negatives Signal, nur ein anderer Kapitalallokations-Ansatz.'},
+  payoutRatio: {icon:'📤', label:'Ausschüttungsquote', explain:
+    'Anteil des Gewinns, der als Dividende ausgeschüttet wird. Graham/Buffett: eine niedrige Quote lässt Spielraum für schlechte Jahre und Reinvestition - eine sehr hohe Quote ist ein Warnsignal für Kürzungsrisiko.'},
+};
+function ampelFundDeep(key, v){
+  if(v==null || isNaN(v)) return 'na';
+  switch(key){
+    case 'returnOnEquity': return v>=0.15?'gruen':v>=0.08?'gelb':'rot';
+    case 'profitMargins':  return v>=0.15?'gruen':v>=0.05?'gelb':'rot';
+    case 'debtToEquity':   return v<50?'gruen':v<150?'gelb':'rot';
+    case 'currentRatio':   return v>=1.5?'gruen':v>=1?'gelb':'rot';
+    case 'priceToBook':    return v<3?'gruen':v<6?'gelb':'rot';
+    case 'dividendYield':  return v>=0.02?'gruen':v>0?'gelb':'rot';
+    case 'payoutRatio':    return v<=0.6?'gruen':v<=0.9?'gelb':'rot';
+    default: return 'na';
+  }
+}
+function fmtFundDeep(key, v){
+  if(v==null || isNaN(v)) return '—';
+  switch(key){
+    case 'returnOnEquity': case 'profitMargins': case 'dividendYield': case 'payoutRatio':
+      return (v*100).toFixed(1)+'%';
+    case 'debtToEquity': return v.toFixed(0)+'%';
+    case 'currentRatio': case 'priceToBook': return v.toFixed(2)+'x';
+    default: return String(v);
+  }
+}
+function fcardDeep(key, v){
+  const fi = FUND_DEEP_INFO[key];
+  const ampel = ampelFundDeep(key, v);
+  return `<div class="fcard fcard-${ampel}">${dot(ampel)}<div class="fcard-body">
+    <div class="fcard-head">
+      <span class="fcard-lbl" title="${fi.explain}">${fi.icon} ${fi.label}</span>
+      <span class="fcard-wert">${fmtFundDeep(key, v)}</span>
+    </div>
+    <div class="fcard-gew">nicht Teil des Scores - Buffett/Munger/Graham-orientierte Einordnung</div>
+  </div></div>`;
+}
+function setFundDeep(fx){
+  const el = document.getElementById('funddeepwrap');
+  if(!el) return;
+  const keys = ['returnOnEquity','profitMargins','debtToEquity','currentRatio','priceToBook','dividendYield','payoutRatio'];
+  el.innerHTML = keys.map(k => fcardDeep(k, fx ? fx[k] : null)).join('');
+}
+
+// ─── Dividendenkontinuität (seit 2026-08-16) ───────────────────────────────
+// Eigener, von /story unabhängiger Abruf über den bereits bestehenden
+// generischen ?url=-CORS-Proxy (query1.finance.yahoo.com steht schon in der
+// ALLOW-Liste des Workers, siehe cloudflare-worker/mts-cors-proxy.js) - kein
+// neuer Worker-Endpunkt nötig. Holt die Dividendenhistorie über den
+// Chart-Endpunkt (events=div) und bewertet Kontinuität (aufeinanderfolgende
+// Jahre mit Zahlung) sowie Trend (steigend/gleichbleibend/gekürzt), ein
+// klassisches Buffett/Graham-Qualitätsmerkmal.
+const DIVIDEND_EXPLAIN = 'Dividendenhistorie aus Yahoo Finance (bis zu 10 Jahre zurück). Zählt aufeinanderfolgende Jahre mit gezahlter Dividende und vergleicht die letzten vollständigen Jahressummen - Kontinuität/Wachstum ist ein klassisches Buffett/Graham-Qualitätsmerkmal, eine Kürzung ein Warnsignal. Rein informativ, kein Score-Bestandteil.';
+function renderDividenden(eintraege){
+  if(!eintraege.length){
+    return `<div class="fcard fcard-rot">${dot('rot')}<div class="fcard-body">
+      <div class="fcard-head"><span class="fcard-lbl" title="${DIVIDEND_EXPLAIN}">📅 Dividendenkontinuität</span></div>
+      <div class="fcard-detail">Keine Dividendenzahlungen in den letzten 10 Jahren gefunden.</div>
+    </div></div>`;
+  }
+  const proJahr = {};
+  eintraege.forEach(e => { const j = e.datum.getFullYear(); proJahr[j] = (proJahr[j]||0) + e.betrag; });
+  const jahre = Object.keys(proJahr).map(Number).sort((a,b)=>a-b);
+  const heuteJahr = new Date().getFullYear();
+  let serie = 0;
+  for(let j = jahre[jahre.length-1]; j >= jahre[0]; j--){
+    if(proJahr[j] > 0) serie++; else break;
+  }
+  // Trend nur über abgeschlossene Jahre vergleichen - das laufende Jahr hat
+  // ggf. noch nicht alle Ausschüttungen erhalten und würde sonst faelschlich
+  // wie eine Kürzung aussehen.
+  const vergleichsJahre = jahre.filter(j => j < heuteJahr);
+  const jLetztes = vergleichsJahre[vergleichsJahre.length-1];
+  const jVorher = vergleichsJahre[vergleichsJahre.length-2];
+  let trend = 'zu wenig Historie';
+  if(jLetztes!=null && jVorher!=null){
+    if(proJahr[jLetztes] > proJahr[jVorher]*1.02) trend = 'steigend';
+    else if(proJahr[jLetztes] < proJahr[jVorher]*0.98) trend = 'gekürzt';
+    else trend = 'gleichbleibend';
+  }
+  const ampel = trend==='gekürzt' ? 'rot' : serie>=5 ? 'gruen' : serie>=2 ? 'gelb' : 'rot';
+  const jahresliste = jahre.slice(-8).map(j => `${j}: ${proJahr[j].toFixed(2)}`).join(' · ');
+  return `<div class="fcard fcard-${ampel}">${dot(ampel)}<div class="fcard-body">
+    <div class="fcard-head">
+      <span class="fcard-lbl" title="${DIVIDEND_EXPLAIN}">📅 Dividendenkontinuität</span>
+      <span class="fcard-wert">${serie} Jahre in Folge</span>
+    </div>
+    <div class="fcard-detail">Trend zuletzt: ${trend} · ${jahresliste}</div>
+    <div class="fcard-gew">nicht Teil des Scores - Buffett/Graham-orientierte Einordnung</div>
+  </div></div>`;
+}
+async function ladeDividenden(ticker, yahooSymbol){
+  const el = document.getElementById('divwrap');
+  if(!el) return;
+  try{
+    const sym = yahooSymbol || ticker;
+    const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=10y&interval=3mo&events=div`;
+    const u = MTS_PROXY + '?url=' + encodeURIComponent(target);
+    const r = await fetch(u, {signal: AbortSignal.timeout(15000)});
+    const d = await r.json();
+    const res = d && d.chart && d.chart.result && d.chart.result[0];
+    const divs = (res && res.events && res.events.dividends) || {};
+    const eintraege = Object.values(divs).map(x => ({datum:new Date(x.date*1000), betrag:x.amount}))
+      .sort((a,b) => a.datum - b.datum);
+    el.innerHTML = renderDividenden(eintraege);
+  }catch(e){
+    el.innerHTML = `<div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
+      <div class="fcard-head"><span class="fcard-lbl" title="${DIVIDEND_EXPLAIN}">📅 Dividendenkontinuität</span></div>
+      <div class="fcard-detail">Dividendenhistorie gerade nicht verfügbar.</div>
+    </div></div>`;
+  }
 }
 
 function earnText(e){
@@ -423,18 +605,32 @@ function render(sig, piv, pa, regime){
   if(t.klimax_warnung) badges += `<span class="badge" style="background:rgba(231,76,60,.18);color:#ffb4ab;border-color:rgba(231,76,60,.4)" title="${FAKTOR_INFO.minervini_5080.explain} Kombiniert mit einer späten Basis (3. oder weiter) - das klassische Minervini-Topmuster.">⚠️ Klimax-Warnung</span>`;
 
   // Quickscan: sofortiger Ampel-Überblick über alle Treiber
+  const alleKeys = TECH_KEYS.concat(FUND_KEYS);
+  const erfuelltCount = zaehleGruen(alleKeys, t.faktoren);
   const qsItems = [];
-  TECH_KEYS.concat(FUND_KEYS).forEach(k=>{
+  alleKeys.forEach(k=>{
     const f = t.faktoren && t.faktoren[k];
-    qsItems.push(`<div class="qs-item" title="${FAKTOR_INFO[k].explain}">${dot(f&&f.ampel)}<span>${FAKTOR_INFO[k].icon} ${FAKTOR_INFO[k].label}</span></div>`);
+    qsItems.push(`<div class="${qsClass(f&&f.ampel)}" title="${FAKTOR_INFO[k].explain}">${dot(f&&f.ampel)}<span>${FAKTOR_INFO[k].icon} ${FAKTOR_INFO[k].label}</span></div>`);
   });
-  if(p) qsItems.push(`<div class="qs-item" title="${PIVOT_EXPLAIN}">${dot(p.pivot_status==='BREAKOUT'||p.pivot_status==='ARMED'?'gruen':p.pivot_status==='WATCH'?'gelb':'rot')}<span>🎯 Pivot: ${p.pivot_status||'—'}</span></div>`);
-  if(m && m.status==='ok') qsItems.push(`<div class="qs-item" title="${PA_EXPLAIN}">${dot(pa.pa_score>0?'gruen':pa.pa_score<0?'rot':'gelb')}<span>🕯️ Price-Action: ${pa.pa_score>0?'bullisch':pa.pa_score<0?'bärisch':'neutral'}</span></div>`);
-  if(m && m.marktstadium && m.marktstadium.stadium) qsItems.push(`<div class="qs-item" title="${STADIUM_EXPLAIN}">${dot(m.marktstadium.stadium==='Advancing'||m.marktstadium.stadium==='Accumulation'?'gruen':m.marktstadium.stadium==='Distribution'?'gelb':'rot')}<span>🏗️ Marktstadium: ${m.marktstadium.stadium}</span></div>`);
+  if(p){
+    const pAmpel = p.pivot_status==='BREAKOUT'||p.pivot_status==='ARMED'?'gruen':p.pivot_status==='WATCH'?'gelb':'rot';
+    qsItems.push(`<div class="${qsClass(pAmpel)}" title="${PIVOT_EXPLAIN}">${dot(pAmpel)}<span>🎯 Pivot: ${p.pivot_status||'—'}</span></div>`);
+  }
+  if(m && m.status==='ok'){
+    const paAmpel = pa.pa_score>0?'gruen':pa.pa_score<0?'rot':'gelb';
+    qsItems.push(`<div class="${qsClass(paAmpel)}" title="${PA_EXPLAIN}">${dot(paAmpel)}<span>🕯️ Price-Action: ${pa.pa_score>0?'bullisch':pa.pa_score<0?'bärisch':'neutral'}</span></div>`);
+  }
+  if(m && m.marktstadium && m.marktstadium.stadium){
+    const stAmpel = m.marktstadium.stadium==='Advancing'||m.marktstadium.stadium==='Accumulation'?'gruen':m.marktstadium.stadium==='Distribution'?'gelb':'rot';
+    qsItems.push(`<div class="${qsClass(stAmpel)}" title="${STADIUM_EXPLAIN}">${dot(stAmpel)}<span>🏗️ Marktstadium: ${m.marktstadium.stadium}</span></div>`);
+  }
 
-  // Technik-Karten
-  const techCards = TECH_KEYS.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
-  const fundCards = FUND_KEYS.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
+  // Technik-/Fundamental-Karten, grün zuerst (siehe sortiereNachAmpel)
+  const techKeysSortiert = sortiereNachAmpel(TECH_KEYS, t.faktoren);
+  const fundKeysSortiert = sortiereNachAmpel(FUND_KEYS, t.faktoren);
+  const techCards = techKeysSortiert.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
+  const fundCards = fundKeysSortiert.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
+  const techErfuellt = zaehleGruen(TECH_KEYS, t.faktoren);
 
   // Pivot-Kennzahlen
   let pivotBlock = '<div class="pivotcard"><div class="pdetail">Kein Pivot-Datensatz für diesen Ticker (noch nicht bewertet oder kein Aufwärtstrend/Stage-2-Gate erfüllt).</div></div>';
@@ -489,41 +685,69 @@ function render(sig, piv, pa, regime){
 
     ${t.klimax_warnung ? `<div class="klimax-warn">⚠️ <b>Minervini 50/80-Klimax-Warnung:</b> ${(t.faktoren.minervini_5080||{}).detail||''} Späte Basis (≥3) + frischer Gap-down auf hohem Volumen ist das klassische Topmuster — nicht als „billig" nachkaufen.</div>` : ''}
 
-    <h2>🔎 Sofort-Überblick <span class="sub">alle Treiber auf einen Blick</span></h2>
+    <h2>🔎 Sofort-Überblick <span class="sub">${erfuelltCount} von ${alleKeys.length} Kriterien grün erfüllt</span></h2>
     <div class="quickscan">${qsItems.join('')}</div>
 
-    <div class="chart-wrap">
-      <div id="tv-chart" class="tv-box"></div>
-      ${t.markt !== 'USA' ? '<div class="chart-cap">Zeigt der Chart keine Kerzen (manche nicht-US-Börsen sind im kostenlosen TradingView-Embed gesperrt, TradingView selbst meldet dann „Symbol nur bei TradingView verfügbar") → „Vollbild auf TradingView" nutzen.</div>' : ''}
-      <div class="chart-links">
-        <a href="https://www.tradingview.com/chart/?symbol=${tvChartSym}" target="_blank" rel="noopener">📊 Vollbild auf TradingView</a>
-        <a href="https://finviz.com/quote.ashx?t=${tvSym}" target="_blank" rel="noopener">🔍 Finviz-Chart öffnen</a>
+    <details class="acc" open>
+      <summary>🕯️ Charttechnik <span class="acc-sub">Live-Chart, Pivot-Armed-Detektor, Price-Action</span><span class="chev">▾</span></summary>
+      <div class="acc-body">
+        <div class="chart-wrap">
+          <div id="tv-chart" class="tv-box"></div>
+          ${t.markt !== 'USA' ? '<div class="chart-cap">Zeigt der Chart keine Kerzen (manche nicht-US-Börsen sind im kostenlosen TradingView-Embed gesperrt, TradingView selbst meldet dann „Symbol nur bei TradingView verfügbar") → „Vollbild auf TradingView" nutzen.</div>' : ''}
+          <div class="chart-links">
+            <a href="https://www.tradingview.com/chart/?symbol=${tvChartSym}" target="_blank" rel="noopener">📊 Vollbild auf TradingView</a>
+            <a href="https://finviz.com/quote.ashx?t=${tvSym}" target="_blank" rel="noopener">🔍 Finviz-Chart öffnen</a>
+          </div>
+        </div>
+        ${pivotBlock}
+        ${paBlock}
       </div>
-    </div>
+    </details>
 
-    <h2>📈 Technische Treiber <span class="sub">Minervini Trend-Template, relative Stärke, Volumen</span></h2>
-    <div class="fgrid">${techCards}</div>
+    <details class="acc" open>
+      <summary>📈 Technische Analyse <span class="acc-sub">Minervini Trend-Template, relative Stärke, Volumen</span><span class="acc-count">${techErfuellt}/${TECH_KEYS.length} grün</span><span class="chev">▾</span></summary>
+      <div class="acc-body">
+        <div class="fgrid">${techCards}</div>
+        <div class="subhead">🔍 Unabhängige Gegenprüfung <span class="sub" title="${VERIFY_EXPLAIN}">Stage-2-Trend-Template, frisch aus eigenen Kursdaten</span></div>
+        <div id="verifywrap"><button class="deepbtn" onclick="ladeVerify('${esc(t.ticker)}','${esc(t.yahoo_symbol||t.ticker)}',${(t.faktoren && t.faktoren.stage2_trend && t.faktoren.stage2_trend.wert!=null) ? t.faktoren.stage2_trend.wert : 'null'})">🔍 Jetzt gegenprüfen</button></div>
+      </div>
+    </details>
 
-    <h2>🔍 Unabhängige Gegenprüfung <span class="sub" title="${VERIFY_EXPLAIN}">Stage-2-Trend-Template, frisch aus eigenen Kursdaten</span></h2>
-    <div id="verifywrap"><button class="deepbtn" onclick="ladeVerify('${esc(t.ticker)}','${esc(t.yahoo_symbol||t.ticker)}',${(t.faktoren && t.faktoren.stage2_trend && t.faktoren.stage2_trend.wert!=null) ? t.faktoren.stage2_trend.wert : 'null'})">🔍 Jetzt gegenprüfen</button></div>
+    <details class="acc" open>
+      <summary>💵 Fundamentalanalyse <span class="acc-sub">CANSLIM/Code 33, Dividende, Buffett/Munger/Graham, Story</span><span class="chev">▾</span></summary>
+      <div class="acc-body">
+        <div class="fgrid">${fundCards}
+          <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl">📅 Nächste Earnings</span></div>
+            <div class="fcard-detail">${earnText(t.earnings)}</div>
+          </div></div>
+          <div class="fcard fcard-na" id="code33wrap"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span></div>
+            <div class="fcard-detail" style="color:var(--muted)">Lädt Quartalsdaten …</div>
+          </div></div>
+        </div>
 
-    <h2>🕯️ Charttechnik <span class="sub">Pivot-Armed-Detektor + Price-Action-Muster</span></h2>
-    ${pivotBlock}
-    ${paBlock}
+        <div class="subhead">💰 Dividendenkontinuität</div>
+        <div class="fgrid" id="divwrap">
+          <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl">📅 Dividendenhistorie</span></div>
+            <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
+          </div></div>
+        </div>
 
-    <h2>💵 Fundamentaldaten &amp; Story <span class="sub">CANSLIM/SEPA-Bestätigung, Code 33 + live Yahoo Finance/KI-Zusammenfassung</span></h2>
-    <div class="fgrid">${fundCards}
-      <div class="fcard"><span class="dot d-na"></span><div class="fcard-body">
-        <div class="fcard-head"><span class="fcard-lbl">📅 Nächste Earnings</span></div>
-        <div class="fcard-detail">${earnText(t.earnings)}</div>
-      </div></div>
-      <div class="fcard" id="code33wrap"><span class="dot d-na"></span><div class="fcard-body">
-        <div class="fcard-head"><span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span></div>
-        <div class="fcard-detail" style="color:var(--muted)">Lädt Quartalsdaten …</div>
-      </div></div>
-    </div>
-    <div id="storyblock" style="margin-top:12px"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
-    <div id="deepwrap" style="margin-top:10px"></div>
+        <div class="subhead">🏛️ Buffett/Munger/Graham-Kennzahlen <span class="sub">Qualität &amp; Sicherheitsmarge, kein Score-Bestandteil</span></div>
+        <div class="fgrid" id="funddeepwrap">
+          <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl">💹 Kennzahlen</span></div>
+            <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
+          </div></div>
+        </div>
+
+        <div class="subhead">📰 Story &amp; News <span class="sub">live Yahoo Finance/KI-Zusammenfassung</span></div>
+        <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
+        <div id="deepwrap" style="margin-top:10px"></div>
+      </div>
+    </details>
 
     <h2>🔗 Quellen &amp; weiterführende Links</h2>
     <div class="srcrow">${srcChips || '<span class="chip">keine Quellen-Info</span>'}</div>
@@ -547,6 +771,7 @@ function render(sig, piv, pa, regime){
   // (dynamisch per innerHTML eingefuegte <script>-Tags fuehren sich sonst nicht aus).
   tvWidget('tv-chart', tvSymbol(t.ticker));
   ladeStory(t.ticker, t.yahoo_symbol, t.name);
+  ladeDividenden(t.ticker, t.yahoo_symbol);
   renderDeepButton(t.ticker, t.yahoo_symbol, t.name);
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
@@ -624,12 +849,14 @@ async function ladeStory(ticker, yahooSymbol, name){
     if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
     el.innerHTML = renderStory(d);
     setCode33(d.fundamentals && d.fundamentals.code33);
+    setFundDeep(d.fundamentals);
   }catch(e){
     el.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
       Fundamentalanalyse gerade nicht verfügbar (${esc((e && e.message) || e)}).
       <a href="https://finance.yahoo.com/quote/${encodeURIComponent(yahooSymbol || ticker)}" target="_blank" rel="noopener">Direkt bei Yahoo Finance nachsehen →</a>
     </div></div>`;
     setCode33(null);
+    setFundDeep(null);
   }
 }
 
