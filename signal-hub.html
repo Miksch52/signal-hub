@@ -914,7 +914,8 @@ async function erstelleWatchlist(){
     if(d.ok) alert(`Watchlist gespeichert: ${d.datei} + ${d.datei_lesbar} + ${d.datei_tf} (${d.anzahl} Titel) in Watchlisten/Signal-Hub/ im MTS-Hauptordner.`);
     else alert("Fehler beim Speichern: "+(d.fehler||d.msg||"unbekannt"));
   }catch(e){
-    alert("Netzwerkfehler beim Speichern: "+e.message);
+    console.error('Watchlist-Export fehlgeschlagen:', e);
+    alert("Nur mit lokalem Server möglich (Mac mini, LAN/Tailscale) — über die reine Cloud-/Pages-Adresse kann nicht gespeichert werden.");
   }finally{
     btn.textContent=orig;
   }
