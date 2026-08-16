@@ -104,11 +104,28 @@ jobs:
       # neuzugaenge) - ohne diese Zeile waere er bei jedem Cloud-Lauf leer
       # (frische VM), jeder aktuell ARMED/BREAKOUT-Ticker wuerde dann bei
       # JEDEM Lauf erneut als "neu" gelten statt nur beim echten Uebergang.
-      - name: Zustand (state.json, pivot_state.json) aus R2 wiederherstellen
+      #
+      # logbuch.json/pivot_logbuch.json/pivot_eval_state.json (seit
+      # 2026-08-16): die Forward-Logbuecher hinter score_backtest.py/
+      # score_faktoren_backtest.py/pivot_backtest.py. Bis dahin wuchsen sie
+      # NUR auf dem Mac mini (siehe src/pfade.py::LOKAL-Docstring) - ein
+      # frischer Runner hatte nie den bisherigen Stand und verwarf seine
+      # taeglichen --log-Eintraege wieder, ohne dass score_backtest.py/
+      # score_faktoren_backtest.py je etwas auswerten konnten (leeres
+      # LOGBUCH -> "if not lb: return", keine Datei geschrieben). R2 (_state/)
+      # ist jetzt die gemeinsame Quelle fuer Cloud UND Mac mini/MacBook
+      # (dort per scripts/sync_logbuch_pull.sh|push.sh, siehe run.py::
+      # sync_logbuch_lokal()) - beide Seiten ziehen vor dem Lauf und schreiben
+      # danach zurueck, damit die unverzerrte Stichprobe geraeteunabhaengig
+      # waechst.
+      - name: Zustand (state.json, pivot_state.json, Forward-Logbuecher) aus R2 wiederherstellen
         run: |
           mkdir -p ~/"Library/Application Support/SignalHub"
           rclone copy r2:signalhub-magazine/_state/state.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/pivot_state.json ~/"Library/Application Support/SignalHub/" || true
+          rclone copy r2:signalhub-magazine/_state/logbuch.json ~/"Library/Application Support/SignalHub/" || true
+          rclone copy r2:signalhub-magazine/_state/pivot_logbuch.json ~/"Library/Application Support/SignalHub/" || true
+          rclone copy r2:signalhub-magazine/_state/pivot_eval_state.json ~/"Library/Application Support/SignalHub/" || true
 
       - name: Magazine aus R2 laden
         run: |
@@ -145,11 +162,14 @@ jobs:
       # "Pipeline laufen lassen"-Schritts selbst) - Price-Action-Hub und
       # Rotation-Dashboard laufen jetzt in eigenen Jobs und koennen diesen
       # Schritt hier gar nicht mehr beeinflussen.
-      - name: Zustand (state.json, pivot_state.json) nach R2 sichern
+      - name: Zustand (state.json, pivot_state.json, Forward-Logbuecher) nach R2 sichern
         if: always()
         run: |
           rclone copy ~/"Library/Application Support/SignalHub/state.json" r2:signalhub-magazine/_state/
           rclone copy ~/"Library/Application Support/SignalHub/pivot_state.json" r2:signalhub-magazine/_state/ || true
+          rclone copy ~/"Library/Application Support/SignalHub/logbuch.json" r2:signalhub-magazine/_state/ || true
+          rclone copy ~/"Library/Application Support/SignalHub/pivot_logbuch.json" r2:signalhub-magazine/_state/ || true
+          rclone copy ~/"Library/Application Support/SignalHub/pivot_eval_state.json" r2:signalhub-magazine/_state/ || true
 
       # Platzhalter, falls kein faelliger Slot lief (data/ existiert dann gar
       # nicht - run.py kehrt vor dem ersten os.makedirs(DATA) zurueck, siehe
@@ -244,10 +264,17 @@ jobs:
           no_check_bucket = true
           CONF
 
-      - name: Zustand (top_setups_state.json) aus R2 wiederherstellen
+      # hebel_logbuch.json (seit 2026-08-16): Forward-Log der Hebel-Ampel
+      # (hebel_backtest.py) - anders als bei top_setups_state.json gibt es
+      # hier KEINEN lokalen Mac-mini-Lauf, der als Ausweichquelle einspringen
+      # koennte (Price-Action-Hub hat keinen eigenen LaunchAgent) - ohne
+      # diese Zeile waere das Logbuch bei JEDEM Cloud-Lauf leer und die
+      # unverzerrte Stichprobe koennte nie ueber Kalenderzeit wachsen.
+      - name: Zustand (top_setups_state.json, hebel_logbuch.json) aus R2 wiederherstellen
         run: |
           mkdir -p ~/"Library/Application Support/PriceActionHub"
           rclone copy r2:signalhub-magazine/_state/top_setups_state.json ~/"Library/Application Support/PriceActionHub/" || true
+          rclone copy r2:signalhub-magazine/_state/hebel_logbuch.json ~/"Library/Application Support/PriceActionHub/" || true
 
       # NUR fuer den ntfy-Kanal (benachrichtigung.ntfy_thema/-server) gebraucht,
       # reiner Datei-Read in top_setups.py (siehe pfade.py::SIGNAL_HUB_CONFIG,
@@ -270,9 +297,11 @@ jobs:
             echo "Signal-Hub hat in diesem Lauf keine neuen Daten geschrieben (kein faelliger Slot) - uebersprungen."
           fi
 
-      - name: Zustand (top_setups_state.json) nach R2 sichern
+      - name: Zustand (top_setups_state.json, hebel_logbuch.json) nach R2 sichern
         if: always()
-        run: rclone copy ~/"Library/Application Support/PriceActionHub/top_setups_state.json" r2:signalhub-magazine/_state/ || true
+        run: |
+          rclone copy ~/"Library/Application Support/PriceActionHub/top_setups_state.json" r2:signalhub-magazine/_state/ || true
+          rclone copy ~/"Library/Application Support/PriceActionHub/hebel_logbuch.json" r2:signalhub-magazine/_state/ || true
 
       - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
         run: mkdir -p Price-Action-Hub/data && touch Price-Action-Hub/data/ARTIFACT_KEEP

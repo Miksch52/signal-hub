@@ -40,7 +40,23 @@ def lauf(script, *args):
         print(f"  ! {script} endete mit Code {r.returncode}")
     return r.returncode == 0
 
+def sync_logbuch_lokal(script):
+    # Nur lokal (Mac mini/MacBook) - der Cloud-Lauf macht denselben
+    # Pull/Push-Schritt per rclone direkt in .github/workflows/pipeline.yml
+    # (kein wrangler-Login auf dem Runner). Fix 2026-08-16: logbuch.json/
+    # pivot_logbuch.json/pivot_eval_state.json wuchsen bisher NUR auf der
+    # Maschine, die sie zuletzt geschrieben hat (siehe pfade.py::LOKAL-
+    # Docstring) - ein Cloud-Runner ist pro Lauf frisch und verwarf seine
+    # taeglichen Eintraege wieder, siehe die Erklaerung weiter unten bei
+    # score_backtest.py/score_faktoren_backtest.py. R2 (_state/) ist jetzt
+    # die gemeinsame Quelle, die beide Seiten vor dem Lauf ziehen und danach
+    # zurueckschreiben.
+    if os.environ.get("GITHUB_ACTIONS"):
+        return
+    subprocess.run([os.path.join(PROJEKT, "scripts", script)])
+
 def pipeline(c, push=False):
+    sync_logbuch_lokal("sync_logbuch_pull.sh")
     q = c["quellen"]
     if q.get("pdf", {}).get("aktiv"):
         lauf("pdf_screener.py")
@@ -79,16 +95,20 @@ def pipeline(c, push=False):
         # ueber Kalenderzeit, meldet bis dahin nur "noch nicht reif" und tut
         # sonst nichts - kein gesondertes Scheduling noetig.
         lauf("score_faktoren_backtest.py")
-        # Beide lesen LOGBUCH (pfade.LOKAL, waechst nur auf DIESER Maschine ueber
-        # Kalenderzeit) - im Cloud-Lauf ist es bei jedem Job leer, beide Skripte
-        # schreiben dort also gar keine Datei (siehe deren main(): "if not lb:
-        # return"). Nur hier lokal gibt es je echte Ausgabedateien zum Hochladen -
-        # Bugfix 2026-08-09, sonst sah der automatisierte Cloud-Deploy (der jetzt
-        # dank der neuen deploy-trigger.yml-Workflows viel haeufiger laeuft) nie
-        # frische Trefferquoten-Daten, weil R2 sie nie bekam.
+        # Beide lesen LOGBUCH (pfade.LOKAL). Bis 2026-08-16 wuchs das nur auf
+        # der Maschine, die zuletzt schrieb - der Cloud-Lauf startete jeden Job
+        # mit leerem LOGBUCH (siehe deren main(): "if not lb: return", schrieb
+        # also nie eine Datei). Seit dem Fix (sync_logbuch_lokal() oben, R2
+        # _state/ per pipeline.yml im Cloud-Lauf) ist LOGBUCH auch dort
+        # gefuellt -> score_backtest.json/score_faktoren_backtest.json
+        # entstehen jetzt auch im Cloud-Lauf und laufen ganz normal ueber den
+        # signal-hub-data-Artifact in den deploy-Job. Der lokale Direkt-Upload
+        # hier bleibt trotzdem (schneller Stand ohne auf den naechsten
+        # Cloud-Zyklus zu warten, Bugfix 2026-08-09).
         if not os.environ.get("GITHUB_ACTIONS"):
             subprocess.run([os.path.join(PROJEKT, "scripts", "upload_to_r2.sh"),
                             "score_backtest.json", "score_faktoren_backtest.json"])
+    sync_logbuch_lokal("sync_logbuch_push.sh")
     return scorer_ok
 
 # --- Zeitplan-Status ------------------------------------------------------
