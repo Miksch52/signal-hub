@@ -827,35 +827,17 @@ def follow_through_day(closes, volumes, lookback=FTD_LOOKBACK):
     # nie bestaetigt -> gilt als veraltet, kein Dauer-Warnsignal.
     return {"state": 2, "day": None, "gain_pct": None, "pullback_pct": round(rueckgang * 100, 1)}
 
-def markt_regime(idx_closes, idx_volumes=None):
-    """Ampel fuer den Gesamtmarkt (Minervini/Weinstein: erst das Umfeld, dann
-    die Aktie - in einem schwachen Markt scheitern auch die besten Setups).
-    Seit 2026-07-27 dieselbe 4-Kriterien-Schwelle wie die volle Minervini-
-    Ampel (assets/marktampel.js::ampelEvaluateIndex, geteilt mit Startseite/
-    Markets 360): kurs_ueber_sma50, kurs_ueber_sma200, sma50_ueber_sma200,
-    sma200_steigt (21-Tage-Lookback, konsistent zu f_stage2) - n = Anzahl
-    erfuellter Kriterien. gruen = ueber MA200 UND MA50>MA200 UND n>=3; rot =
-    NICHT ueber MA200 ODER NICHT MA50>MA200; gelb = dazwischen. Zuvor verlangte
-    "gruen" hier zusaetzlich hart Kurs>MA50 und pruefte MA50>MA200 gar nicht -
-    das liess die Score-Daempfung (f_marktampel_dynamik) vom vollen Header-
-    Ampel-Chip auseinanderlaufen (z.B. Kurs knapp unter MA50, sonst ueberall
-    bullisch: volle Ampel gruen, alte Pruefung hier faelschlich gelb). Wird
-    je Markt berechnet und nach signals.json geschrieben -> funktioniert auch
-    auf der Cloud-Version ohne erreichbaren Mac mini.
-
-    Seit 2026-08-15 zusaetzlich Distribution-Days/Follow-Through-Day als
-    Sentiment-Fruehwarnung (idx_volumes optional - ohne Volumendaten bleiben
-    die neuen Felder None, Aufrufer unveraendert). Anders als VIX/Small-Caps/
-    10J-Rendite in der vollen Browser-Ampel (assets/marktampel.js) werden
-    diese beiden Faktoren HIER nachgebaut, weil sie ohne neue Datenquelle
-    auskommen und so auch den automatisierten Cron-/Cloud-Push (notify.py)
-    erreichen, der die volle Browser-Ampel nie sieht (kein Browser/Worker im
-    Cron-Job). sentiment_warnung=True (5+ Distribution Days ODER
-    unbestaetigter Ruecksetzer) haengt UNABHAENGIG von der Trend-Ampel ab -
-    ein Markt kann noch gruen sein und trotzdem schon unter institutionellem
-    Verkaufsdruck stehen, siehe notify.py::baue_nachricht()."""
+def _index_trend_status(idx_closes):
+    """Trend-Status EINES Index (state 2/1/0 + Einzelkriterien) - Baustein von
+    markt_regime(), 1:1 dieselbe Schwelle wie assets/marktampel.js::
+    ampelEvaluateIndex / minervini360.scoring.market.evaluate_index:
+    kurs_ueber_sma50, kurs_ueber_sma200, sma50_ueber_sma200, sma200_steigt
+    (21-Tage-Lookback, konsistent zu f_stage2) - n = Anzahl erfuellter
+    Kriterien. gruen = ueber MA200 UND MA50>MA200 UND n>=3; rot = NICHT ueber
+    MA200 ODER NICHT MA50>MA200; gelb = dazwischen. None bei zu wenig
+    Historie."""
     if not idx_closes or len(idx_closes) < 221:
-        return {"ampel": "unbekannt", "detail": "zu wenig Index-Historie", "hinweis": ""}
+        return None
     p = idx_closes[-1]
     s50, s200 = sma(idx_closes, 50), sma(idx_closes, 200)
     s200_alt = sma(idx_closes, 200, offset=21)
@@ -864,15 +846,73 @@ def markt_regime(idx_closes, idx_volumes=None):
     steigt = bool(s200 and s200_alt and s200 > s200_alt)
     n = sum([ueber50, ueber200, s50_ueber_s200, steigt])
     if ueber200 and s50_ueber_s200 and n >= 3:
-        a, hinweis = "gruen", "Markt im Aufwärtstrend – gutes Umfeld für neue Käufe."
+        state = 2
     elif not ueber200 or not s50_ueber_s200:
-        a, hinweis = "rot", "Index unter MA200 oder MA50 unter MA200 – Minervini: keine neuen Positionen im schwachen Markt."
+        state = 0
     else:
-        a, hinweis = "gelb", "Markt uneinheitlich – neue Käufe nur mit Vorsicht."
+        state = 1
+    return {"state": state, "ueber_ma50": ueber50, "ueber_ma200": ueber200,
+            "sma50_ueber_sma200": s50_ueber_s200, "ma200_steigt": steigt}
 
-    dist_count = distribution_days(idx_closes, idx_volumes) if idx_volumes else None
+
+def markt_regime(idx_liste):
+    """Ampel fuer den Gesamtmarkt (Minervini/Weinstein: erst das Umfeld, dann
+    die Aktie - in einem schwachen Markt scheitern auch die besten Setups).
+    ``idx_liste``: Liste von (closes, volumes)-Paaren - fuer USA seit
+    2026-08-16 ZWEI Eintraege (^GSPC + ^IXIC, siehe config.json::
+    maerkte.USA.index_yahoo), nicht mehr nur ^GSPC. Grund: Das Markets-360-
+    Dashboard (Minervini/server.py -> /marktampel -> externe
+    minervini360.scoring.market.assess_market()) UND die volle Browser-Ampel
+    (assets/marktampel.js) kombinieren fuer USA schon immer S&P 500 UND
+    Nasdaq - Trend als combineStates() (gruen nur wenn BEIDE gruen), Distribution
+    Days als Maximum, Follow-Through Day als schwaechster Zustand beider
+    Indizes. markt_regime() lief bis 2026-08-16 nur auf dem primaeren Index
+    (^GSPC), wodurch der Push (notify.py) teils andere Distribution-Days-/
+    FTD-Werte zeigte als das Dashboard (User-Meldung 2026-08-16: 4 vs. 5
+    Distribution Days, FTD "bestaetigt" vs. "ausstehend" - Ursache war einzig
+    der Index-Umfang, nicht unterschiedliche Schwellen). Ein einzelnes
+    (closes, volumes)-Paar (z.B. Europa/^STOXX, keine Dashboard-Gegenstelle)
+    funktioniert weiterhin unveraendert als 1-elementige Liste.
+
+    Seit 2026-08-15 zusaetzlich Distribution-Days/Follow-Through-Day als
+    Sentiment-Fruehwarnung (Volumen optional - ohne Volumendaten bleiben die
+    Felder None). Anders als VIX/Small-Caps/10J-Rendite in der vollen
+    Browser-Ampel werden diese beiden Faktoren HIER nachgebaut, weil sie ohne
+    neue Datenquelle auskommen und so auch den automatisierten Cron-/
+    Cloud-Push (notify.py) erreichen, der die volle Browser-Ampel nie sieht
+    (kein Browser/Worker im Cron-Job). sentiment_warnung=True (5+
+    Distribution Days ODER unbestaetigter Ruecksetzer) haengt UNABHAENGIG von
+    der Trend-Ampel ab - ein Markt kann noch gruen sein und trotzdem schon
+    unter institutionellem Verkaufsdruck stehen, siehe
+    notify.py::baue_nachricht()."""
+    zustaende = [z for z in (_index_trend_status(c) for c, _ in idx_liste) if z]
+    if not zustaende:
+        return {"ampel": "unbekannt", "detail": "zu wenig Index-Historie", "hinweis": ""}
+
+    states = [z["state"] for z in zustaende]
+    if min(states) == 2:
+        a = "gruen"
+    elif (sum(states) / len(states)) < 0.5:
+        a = "rot"
+    else:
+        a = "gelb"
+    HINWEIS = {
+        "gruen": "Markt im Aufwärtstrend – gutes Umfeld für neue Käufe.",
+        "rot": "Index unter MA200 oder MA50 unter MA200 – Minervini: keine neuen Positionen im schwachen Markt.",
+        "gelb": "Markt uneinheitlich – neue Käufe nur mit Vorsicht.",
+    }
+    hinweis = HINWEIS[a]
+    leit = zustaende[0]  # Leitindex (erster Eintrag, z.B. ^GSPC) fuer den Detail-Text
+    detail = (f"Index {'>' if leit['ueber_ma200'] else '<'}MA200 "
+              f"({'steigend' if leit['ma200_steigt'] else 'fallend'}), "
+              f"{'>' if leit['ueber_ma50'] else '<'}MA50, MA50 "
+              f"{'>' if leit['sma50_ueber_sma200'] else '<'}MA200")
+
+    dist_counts = [x for x in (distribution_days(c, v) for c, v in idx_liste if v) if x is not None]
+    dist_count = max(dist_counts) if dist_counts else None
     dist_state = distribution_state(dist_count)
-    ftd = follow_through_day(idx_closes, idx_volumes) if idx_volumes else None
+    ftds = [x for x in (follow_through_day(c, v) for c, v in idx_liste if v) if x]
+    ftd = min(ftds, key=lambda r: r["state"]) if ftds else None
     sentiment_warnung = bool(dist_state == 0 or (ftd and ftd["state"] == 0))
     sentiment_teile = []
     if dist_state == 0:
@@ -889,11 +929,7 @@ def markt_regime(idx_closes, idx_volumes=None):
     elif ftd and ftd["day"] is not None:
         sentiment_teile.append(f"Follow-Through Day an Tag {ftd['day']} bestätigt (+{ftd['gain_pct']} %).")
 
-    return {"ampel": a, "ueber_ma50": ueber50, "ueber_ma200": ueber200,
-            "sma50_ueber_sma200": s50_ueber_s200, "ma200_steigt": steigt, "hinweis": hinweis,
-            "detail": (f"Index {'>' if ueber200 else '<'}MA200 "
-                       f"({'steigend' if steigt else 'fallend'}), "
-                       f"{'>' if ueber50 else '<'}MA50, MA50 {'>' if s50_ueber_s200 else '<'}MA200"),
+    return {"ampel": a, "hinweis": hinweis, "detail": detail,
             "distribution_days": dist_count, "distribution_state": dist_state,
             "follow_through": ftd, "sentiment_warnung": sentiment_warnung,
             "sentiment_hinweis": " ".join(sentiment_teile)}
@@ -1435,9 +1471,17 @@ def score_alle(limit=None):
     regime = {}
     for markt, m in maerkte.items():
         if m.get("aktiv"):
-            d = hole_chart_cached(m["index_yahoo"], cache)
-            idx_daten[markt] = d["closes"] if d else []
-            regime[markt] = markt_regime(idx_daten[markt], d["volumes"] if d else None)
+            symbole = m["index_yahoo"]
+            if isinstance(symbole, str):
+                symbole = [symbole]
+            idx_liste = [(d["closes"], d["volumes"]) for d in
+                         (hole_chart_cached(sym, cache) for sym in symbole) if d]
+            # idx_daten[markt] bleibt NUR der primaere/erste Index (fuer
+            # f_relative_staerke() - RS braucht genau EINEN Vergleichsindex,
+            # keine kombinierte Liste), unabhaengig davon, wie viele Indizes
+            # markt_regime() fuer die Ampel/Sentiment-Berechnung kombiniert.
+            idx_daten[markt] = idx_liste[0][0] if idx_liste else []
+            regime[markt] = markt_regime(idx_liste)
     if regime:
         print("Markt-Regime: " + " · ".join(
             f"{k} {v['ampel']} ({v.get('detail', '')})"

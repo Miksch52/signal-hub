@@ -134,6 +134,14 @@
   .klimaxb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(231,76,60,.28);color:#ffb4ab;border:1px solid rgba(231,76,60,.6);font-weight:700}
   .shortb{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(155,89,182,.18);color:#c9a4e0;border:1px solid rgba(155,89,182,.4)}
   .code33b{font-size:10px;padding:2px 7px;border-radius:6px;background:rgba(199,145,25,.22);color:#f3c869;border:1px solid rgba(199,145,25,.55);font-weight:700}
+  /* Hebel-Ampel (2026-08-16): Reife-Ampel fuer Hebelprodukte (Finanzen.net Zero
+     u.ae.) - Markt-Ampel + Trend-Template + enge Basis/VCP + Pivot-Trigger +
+     kein Extended/Earnings/50-80/Klimax-Risiko. Rot wird bewusst NICHT als
+     Badge gerendert (waere auf fast jeder Karte sichtbar, reine Unruhe) -
+     nur gruen/gelb sind ein Hinweis wert, siehe hebelBadge(). */
+  .hebelb{font-size:10px;padding:2px 7px;border-radius:6px;font-weight:700}
+  .hebelb-gruen{background:rgba(47,176,141,.22);color:var(--ok);border:1px solid rgba(47,176,141,.5)}
+  .hebelb-gelb{background:rgba(243,156,18,.18);color:var(--warn);border:1px solid rgba(243,156,18,.45)}
   .card.neu{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok) inset}
 
   .factors{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px}
@@ -271,6 +279,7 @@
      <div class="fgroup-row">
       <label class="slabel" title="Nur Werte, die der Pivot-Detektor als scharf (ARMED) oder frisch ausgebrochen (BREAKOUT) einstuft – die Entstehung des Ausbruchs statt des nachlaufenden Scores"><input type="checkbox" id="pivotonly" checked> 🎯 nur Pivot-Setups <span id="pivotcount" class="filtercount"></span></label>
       <label class="slabel" title="Die dreifach bestätigte Schnittmenge (wie „Top-Setups heute“ auf der Startseite): Score ≥ 70 UND ARMED/BREAKOUT UND Price-Action bullisch (PA-Score > 0). Bringt die Price-Action-Dimension des Price-Action-Hubs in den Signal-Hub. Umgeht die Faktor-Pflicht (das Set ist schon kuratiert, und „Volumen grün“ widerspräche ARMED); Risiko-Filter (Earnings/Extended/50-80) bleiben aktiv."><input type="checkbox" id="topsetups"> 🏆 nur Top-Setups <span id="topsetcount" class="filtercount"></span></label>
+      <label class="slabel" title="Für Hebelprodukte (Knock-Outs/Optionsscheine, z.B. Finanzen.net Zero): Markt-Ampel grün UND Stage-2-Trend grün UND Basis/VCP eng (geringe Volatilität) UND Pivot-Trigger (ARMED/BREAKOUT) UND nicht extended UND keine akute Earnings-Sperre UND kein 50/80-/Klimax-Risiko. Strenger als „nur Top-Setups“ – speziell auf die engere Stop-Distanz und geringere Fehlertoleranz eines gehebelten Einstiegs zugeschnitten."><input type="checkbox" id="hebelonly"> ⚡ nur Hebel-Kandidaten (grün) <span id="hebelcount" class="filtercount"></span></label>
       <label class="slabel"><input type="checkbox" id="hideearn" checked> ⚠︎ Earnings ausblenden</label>
       <label class="slabel" title="Minervini: Kurs >25% über der SMA50 = zu weit gelaufen, kein Nachkauf mehr"><input type="checkbox" id="hideextended" checked> 📈 Extended ausblenden</label>
       <label class="slabel" title="Minervini 50/80-Regel: Gap-down auf hohem Volumen -> hohe Wahrscheinlichkeit eines neuen Tiefs in den folgenden ~8 Monaten, nicht nachkaufen"><input type="checkbox" id="hidegap80" checked> ⛔ 50/80 ausblenden</label>
@@ -318,6 +327,11 @@
     <span>⑨ Branchenstärke</span><span>⑩ 50/80-Regel</span><span>⑪ Fundamental (EPS/Umsatz)</span>
     <span class="spacer"></span>
     <span><span class="dot d-gruen"></span>stark <span class="dot d-gelb"></span>mittel <span class="dot d-rot"></span>schwach</span>
+   </div>
+   <div class="legend" style="margin-top:6px">
+    <span><span class="hebelb hebelb-gruen">🟢 Hebel bereit</span> alle Kriterien erfüllt (Markt-Ampel, Trend-Template, Basis/VCP, Pivot-Trigger, kein Extended/Earnings/50-80/Klimax-Risiko)</span>
+    <span><span class="hebelb hebelb-gelb">🟡 Hebel im Fokus</span> Markt/Trend intakt, aber noch nicht alle Kriterien erfüllt (Details im Badge-Tooltip)</span>
+    <span>kein Badge = Markt-Ampel oder Trend-Template nicht grün, für Hebel ungeeignet</span>
    </div>
    <div class="chleg">
     <span>Chart:</span>
@@ -401,7 +415,7 @@ let CURRENT_LIST=[], RENDER_LIMIT=PAGE_SIZE;
 // (scorer.py::f_sektor_staerke) und zaehlt mit Gewicht 8 in den Score.
 // Bewusst NICHT mit drin: onlyNew/hideDepot/multiSrc (das ist Depot-/Frische-Filterung,
 // nicht Teil der Chart-/Volumen-Fragestellung) - siehe Wiki-Absatz "Standard-Ansicht".
-let state={markt:"alle",minscore:0,sort:"pivot",suche:"",typen:new Set(),hideEarnings:true,onlyNew:false,hideDepot:false,pivotOnly:true,faktoren:new Set(["stage2_trend","volumen_bestaetigung"]),smOn:true,smW:15,cmfW:10,multiSrc:false,hideExtended:true,hideGap80:true,shortOn:false,hideMegaphone:false,cheatInclude:false,topOnly:false,onlyFocus:false,topSetups:false,code33Only:false};
+let state={markt:"alle",minscore:0,sort:"pivot",suche:"",typen:new Set(),hideEarnings:true,onlyNew:false,hideDepot:false,pivotOnly:true,faktoren:new Set(["stage2_trend","volumen_bestaetigung"]),smOn:true,smW:15,cmfW:10,multiSrc:false,hideExtended:true,hideGap80:true,shortOn:false,hideMegaphone:false,cheatInclude:false,topOnly:false,onlyFocus:false,topSetups:false,code33Only:false,hebelOnly:false};
 // Anzeige-Label + Icon fuer die Quellen-Typen (rohe quelle_typ-Strings -> lesbar).
 const QUELLE_LABEL={markets360:"📊 Markets 360",trendscreener:"🧭 Trend-Screener"};
 function quelleLabel(typ){
@@ -825,7 +839,7 @@ function updateFilterCount(treffer){
   if(state.markt!=="alle")n++; if(state.minscore>0)n++; if(state.suche)n++;
   if(state.typen.size)n++; if(state.faktoren.size)n++;
   if(state.hideEarnings)n++; if(state.onlyNew)n++; if(state.hideDepot)n++; if(state.smOn)n++; if(state.hideExtended)n++; if(state.hideGap80)n++;
-  if(state.pivotOnly)n++; if(state.multiSrc)n++; if(state.hideMegaphone)n++; if(state.cheatInclude)n++; if(state.topOnly)n++; if(state.onlyFocus)n++; if(state.topSetups)n++; if(state.code33Only)n++;
+  if(state.pivotOnly)n++; if(state.multiSrc)n++; if(state.hideMegaphone)n++; if(state.cheatInclude)n++; if(state.topOnly)n++; if(state.onlyFocus)n++; if(state.topSetups)n++; if(state.code33Only)n++; if(state.hebelOnly)n++;
   // Treffer-Zahl IMMER sichtbar (auch bei 0 aktiven Filtern), damit man sie beim
   // Zu-/Abwaehlen einzelner Filter direkt neben der Ueberschrift mitverfolgen kann,
   // ohne den Filterbereich aufklappen oder zur Kopfzeile hochscrollen zu muessen.
@@ -835,6 +849,8 @@ function updateFilterCount(treffer){
     pc.textContent=(a+b)?`· ${b}🚀 ${a}🎯`:'';}
   const tc=document.getElementById('topsetcount');
   if(tc){const nS=TOPSET&&TOPSET.setups?TOPSET.setups.length:0;tc.textContent=nS?`· ${nS}`:'';}
+  const hc=document.getElementById('hebelcount');
+  if(hc){const nH=(DATA.treffer||[]).filter(t=>hebelAmpel(t).stufe==='gruen').length;hc.textContent=nH?`· ${nH}`:'';}
 }
 function render(){
   let list=(DATA.treffer||[]).slice();
@@ -852,13 +868,14 @@ function render(){
   if(state.code33Only) list=list.filter(t=>t.code33&&t.code33.ampel==='gruen');
   if(state.onlyFocus) list=list.filter(t=>aufFokusliste(t.ticker));
   if(state.topSetups) list=list.filter(istTopSetup);
+  if(state.hebelOnly) list=list.filter(t=>hebelAmpel(t).stufe==='gruen');
   if(state.pivotOnly) list=list.filter(istPivotSetup);
   if(state.hideMegaphone) list=list.filter(t=>{const p=pivotInfo(t);return !(p&&p.pivot_status==='ARMED'&&p.megaphone);});
-  // "nur Top-Setups" umgeht die Faktor-Pflicht bewusst: das Set ist bereits
-  // dreifach kuratiert (Score≥70 ∧ ARMED/BREAKOUT ∧ PA>0), und der Default
-  // "Volumen muss gruen" widerspraeche ARMED sogar direkt (die brauchen
+  // "nur Top-Setups"/"nur Hebel-Kandidaten" umgehen die Faktor-Pflicht bewusst:
+  // beide Sets erfordern schon einen ARMED/BREAKOUT-Pivot-Trigger, und der
+  // Default "Volumen muss gruen" widerspraeche dem sogar direkt (die brauchen
   // Volumen-AUSTROCKNUNG, keinen -Schub) - sonst waere die Ansicht fast leer.
-  if(state.faktoren.size && !state.topSetups) list=list.filter(t=>{
+  if(state.faktoren.size && !state.topSetups && !state.hebelOnly) list=list.filter(t=>{
     // Cheat-Pivots sind per Definition VOR dem vollen Stage-2-Template (siehe
     // pivot.py::_cheat_pivot) - der Pflicht-"gruen"-Check wuerde sie sonst
     // grundsaetzlich ausschliessen, auch wenn "Cheat-Pivots einschliessen" an ist.
@@ -1063,6 +1080,51 @@ function paBadge(t){
   const s=TOPSETMAP[t.ticker]; if(!s||s.pa_score==null||s.pa_score<=0) return '';
   return `<a class="badge-pa" href="../Price-Action-Hub/price-action-hub.html" target="_blank" title="Price-Action-Hub: bullisches Chartbild (PA-Score ${s.pa_score>0?'+':''}${s.pa_score}) – Trendbar/Bar-Counting/Breakout/Gap bestätigen das Setup. Teil der Top-Setup-Schnittmenge.">📐 PA ${s.pa_score>0?'+':''}${s.pa_score}</a>`;
 }
+// ── Hebel-Ampel (2026-08-16) ──────────────────────────────────────────────
+// Reife-Ampel speziell fuer Hebelprodukte (Knock-Outs/Optionsscheine, z.B.
+// ueber Finanzen.net Zero): kombiniert AUSSCHLIESSLICH bereits vorhandene
+// Signale zu einem einzigen Ampelwert, keine neue Berechnung. Hebel verlangt
+// eine engere Stop-Distanz und weniger Fehlertoleranz als ein Cash-Trade -
+// deshalb strenger als der bestehende "🏆 Top-Setups"-Filter: zusaetzlich
+// Basis/VCP-Pflicht (= geringe Volatilitaet vor dem Einstieg, NICHT waehrend
+// der Haltedauer - das waere ein Widerspruch zum Zweck des Hebels) und alle
+// Risiko-Badges (Extended/Earnings/50-80/Klimax) muessen sauber sein.
+// Identische Kriterien wie Price-Action-Hub/src/scorer.py::hebel_ampel() -
+// bei Aenderungen HIER immer auch DORT nachziehen (kein Cross-App-Import
+// moeglich, siehe Entflechtungsprinzip in CLAUDE.md).
+function hebelAmpel(t){
+  const reg=(DATA.marktregime&&DATA.marktregime[t.markt])||{};
+  const marktOk=reg.ampel==='gruen';
+  const s2=t.faktoren&&t.faktoren.stage2_trend;
+  const trendOk=!!(s2&&s2.ampel==='gruen');
+  if(!marktOk||!trendOk){
+    return {stufe:'rot',gruende:['Markt-Ampel oder Stage-2-Trend-Template nicht grün']};
+  }
+  const ba=t.faktoren&&t.faktoren.basis_konsolidierung;
+  const basisOk=!!(ba&&ba.ampel==='gruen');
+  const p=pivotInfo(t);
+  const triggerOk=!!(p&&(p.pivot_status==='ARMED'||p.pivot_status==='BREAKOUT'));
+  const extOk=!(t.extended_pct!=null&&t.extended_pct>=25);
+  const earnOk=!earnBald(t);
+  const gapOk=!t.minervini_5080;
+  const klimaxOk=!t.klimax_warnung;
+  const gruende=[];
+  if(!basisOk) gruende.push('Basis/VCP noch nicht eng genug (Volatilität zu hoch)');
+  if(!triggerOk) gruende.push('kein Pivot-Trigger (ARMED/BREAKOUT)');
+  if(!extOk) gruende.push('Extended >25% über SMA50');
+  if(!earnOk) gruende.push('Earnings-Fenster');
+  if(!gapOk) gruende.push('50/80-Gap-Risiko');
+  if(!klimaxOk) gruende.push('Klimax-Risiko');
+  return {stufe:gruende.length?'gelb':'gruen',gruende};
+}
+function hebelBadge(t){
+  const h=hebelAmpel(t);
+  if(h.stufe==='rot') return ''; // waere auf fast jeder Karte sichtbar - reine Unruhe, siehe CSS-Kommentar
+  const icon=h.stufe==='gruen'?'🟢':'🟡';
+  const text=h.stufe==='gruen'?'bereit':'im Fokus';
+  const tip=`Hebel-Trade-Reife (Markt-Ampel + Trend-Template + Basis/VCP + Pivot-Trigger + kein Extended/Earnings/50-80/Klimax-Risiko): ${h.gruende.length?'noch offen – '+h.gruende.join(', '):'alle Kriterien erfüllt'}.`;
+  return `<span class="hebelb hebelb-${h.stufe}" title="${tip}">${icon} Hebel ${text}</span>`;
+}
 // ── Fokusliste-Verknuepfung mit der SEPA-Analyse (Hauptapp) ──────────────
 // Bewusst KEIN eigenes Watchlist-Feature (Entflechtung): die SEPA-Analyse
 // lebte bis zur Zusammenführung im Coach (minervini-coach-2.html), jetzt in
@@ -1120,7 +1182,7 @@ function karte(t,rang){
       <summary class="cardchart-sum">📈 Chart</summary>
       ${minichart(t.chart)}
     </details>
-    <div class="srcrow"><span>📚 ${t.quellen.ausgaben} Ausgaben</span>${typen}
+    <div class="srcrow">${hebelBadge(t)}<span>📚 ${t.quellen.ausgaben} Ausgaben</span>${typen}
       ${konsensBadge}${code33Badge(t)}${maBadge}
       ${pivotBadge(t)}${paBadge(t)}${sparkline(t.ticker)}
       ${t.neu?'<span class="badge-neu">⭐ NEU</span>':''}
@@ -1329,6 +1391,7 @@ function initControls(){
   document.getElementById('hidedepot').onchange=e=>{state.hideDepot=e.target.checked;render();};
   document.getElementById('pivotonly').onchange=e=>{state.pivotOnly=e.target.checked;render();};
   document.getElementById('topsetups').onchange=e=>{state.topSetups=e.target.checked;render();};
+  document.getElementById('hebelonly').onchange=e=>{state.hebelOnly=e.target.checked;render();};
   document.getElementById('multisrc').onchange=e=>{state.multiSrc=e.target.checked;render();};
   document.getElementById('code33only').onchange=e=>{state.code33Only=e.target.checked;render();};
   document.getElementById('toponly').onchange=e=>{
