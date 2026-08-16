@@ -243,6 +243,7 @@
     <span class="meta" id="breadth" title="Anzahl Ticker mit aktivem Pivot-Setup (BREAKOUT/ARMED/CHEAT) laut Signal-Hub/data/pivot_history.json – Fruehindikator fuer Marktbreite, unabhaengig von einem offiziellen Follow-Through-Day"></span>
     <span class="spacer"></span>
     <button class="btn ghost" onclick="aktualisieren(this)">🔄 Aktualisieren</button>
+    <button class="btn ghost" id="watchlistBtn" onclick="erstelleWatchlist()" title="Aktuell gefilterte Titel (Markt/Score/Suche/Toggle-Filter) als TradingView-importierbare .txt in Watchlisten/Signal-Hub/ im MTS-Hauptordner speichern">🗒️ Watchlist erstellen</button>
     <a class="btn ghost" href="../Price-Action-Hub/price-action-hub.html" title="Price-Action-Musteranalyse auf denselben Tickern (Candlestick, Bar-Counting, Breakout/Gap)" style="text-decoration:none;display:inline-flex;align-items:center">📐 Price-Action-Hub</a>
     <a class="btn ghost" href="backtest-report.html" title="Wochennotiz: welche Pivot-Setups (ARMED/BREAKOUT/WATCH) unverzerrt tatsaechlich funktioniert haben, mit allen Einzelfaellen und Chart-Links" style="text-decoration:none;display:inline-flex;align-items:center">📊 Backtest-Report</a>
     <a class="btn ghost" href="https://claude.ai/code/artifact/7bfb76af-1899-4ee6-9a78-a57275d616c3" target="_blank" title="Betriebsanleitung: Tagesrhythmus, Sortierungen, Badge-Lexikon, Workflow" style="text-decoration:none;display:inline-flex;align-items:center">📖 Anleitung</a>
@@ -837,6 +838,87 @@ function alleTypen(){
 function flagge(m){return m==="USA"?"🇺🇸":m==="Europa"?"🇪🇺":"🏳️";}
 function einstufKlasse(e){return e==="Kauf-Kandidat"?"e-kauf":e==="Beobachten"?"e-beob":"e-na";}
 function scoreColor(s){return s>=70?"var(--ok)":s>=50?"var(--warn)":"var(--muted)";}
+
+// "🗒️ Watchlist erstellen": Yahoo haengt bei Nicht-US-Boersen ein Laender-/
+// Boersen-Kuerzel an (SY1.DE, MC.PA, RIO.L...), das TradingView nicht kennt -
+// dieselbe einzeln verifizierte Zuordnung wie in setup-detail.html (dort zuerst
+// gebaut, siehe dortiger Kommentar). Unbekannte/neue Suffixe: nur abschneiden,
+// TradingViews Autosuche uebernimmt (Best-Effort statt gar kein Symbol).
+const YAHOO_SUFFIX_TV_EXCHANGE={DE:'XETR',F:'XETR',MU:'XETR',PA:'EURONEXT',AS:'EURONEXT',
+  L:'LSE',SW:'SIX',MI:'MIL',ST:'OMXSTO',OL:'OSL',CO:'OMXCOP'};
+function tvSymbol(ticker){
+  const m=ticker.match(/^(.+)\.([A-Za-z]{1,4})$/);
+  if(!m) return ticker;
+  const [,basis,suf]=m;
+  const exch=YAHOO_SUFFIX_TV_EXCHANGE[suf.toUpperCase()];
+  return exch?`${exch}:${basis}`:basis;
+}
+// Zusammenfassung der aktuell aktiven Filter fuer die lesbare Watchlist-Datei -
+// nur Abweichungen vom Default nennen (die meisten Checkboxen sind standardmaessig
+// an, siehe state oben), sonst waere die Zeile bei jedem Export gleich lang und
+// nichtssagend.
+function filterZusammenfassungSignalHub(){
+  const teile=[];
+  if(state.markt!=="alle") teile.push(state.markt);
+  if(state.minscore>0) teile.push(`Score ≥ ${state.minscore}`);
+  if(state.suche) teile.push(`Suche „${state.suche}"`);
+  if(state.pivotOnly) teile.push("🎯 nur Pivot-Setups");
+  if(state.topSetups) teile.push("🏆 nur Top-Setups");
+  if(state.hebelOnly) teile.push("⚡ nur Hebel-Kandidaten (grün)");
+  if(!state.hideEarnings) teile.push("Earnings NICHT ausgeblendet");
+  if(!state.hideExtended) teile.push("Extended NICHT ausgeblendet");
+  if(!state.hideGap80) teile.push("50/80 NICHT ausgeblendet");
+  if(state.shortOn) teile.push("🩳 Short-Kandidaten");
+  if(state.hideMegaphone) teile.push("Megaphone ausgeblendet");
+  if(state.cheatInclude) teile.push("Cheat-Pivots eingeschlossen");
+  if(state.onlyNew) teile.push("nur neue");
+  if(state.hideDepot) teile.push("Depot ausgeblendet");
+  if(state.multiSrc) teile.push("nur mehrfach bestätigt");
+  if(state.code33Only) teile.push("⚡ Code 33");
+  if(state.onlyFocus) teile.push("nur Fokusliste");
+  if(state.topOnly) teile.push("nur Top 5");
+  if(state.faktoren.size) teile.push("Faktoren grün: "+[...state.faktoren].join(", "));
+  teile.push("Sortierung: "+(document.getElementById('sortby').selectedOptions[0]?.textContent.replace('Sortierung: ','')||state.sort));
+  return teile.join(', ');
+}
+// Schickt CURRENT_LIST (die aktuell gefilterte/sortierte Ansicht, siehe render())
+// an /api/watchlist - schreibt dort ZWEI Dateien in Watchlisten/Signal-Hub/ im
+// MTS-Hauptordner (siehe server.py::_api_watchlist): eine TradingView-importierbare
+// .txt (tvSymbol()) und eine "_lesbar.txt" fuers schnelle Durchlesen. Referenz:
+// Lokaler-Trend-Screener/dashboard.html::erstelleWatchlist() (dort zuerst gebaut).
+async function erstelleWatchlist(){
+  const rows=CURRENT_LIST;
+  if(!rows.length){ alert("Keine Titel in der aktuellen Filteransicht — erst Filter lockern."); return; }
+  const lesbar=rows.map(t=>
+    `${t.ticker.padEnd(9)} ${flagge(t.markt)} Score ${String(effScore(t)).padStart(3)}`
+    + (t.name?`  · ${t.name}`:'')
+  ).join('\n');
+  const payload=JSON.stringify({
+    titel: state.markt!=="alle"?state.markt:"Alle",
+    symbole: rows.map(t=>tvSymbol(t.ticker)),
+    symbole_tf: rows.map(t=>t.ticker),
+    zusammenfassung: filterZusammenfassungSignalHub(),
+    lesbar,
+  });
+  const btn=document.getElementById('watchlistBtn');
+  const orig=btn.textContent;
+  btn.textContent="⏳ speichert …";
+  try{
+    let r=await fetch('api/watchlist',{method:'POST',cache:'no-store',body:payload,
+      headers:apiHeaders({'Content-Type':'application/json'})});
+    if(r.status===403 && promptToken()){
+      r=await fetch('api/watchlist',{method:'POST',cache:'no-store',body:payload,
+        headers:apiHeaders({'Content-Type':'application/json'})});
+    }
+    const d=await r.json();
+    if(d.ok) alert(`Watchlist gespeichert: ${d.datei} + ${d.datei_lesbar} + ${d.datei_tf} (${d.anzahl} Titel) in Watchlisten/Signal-Hub/ im MTS-Hauptordner.`);
+    else alert("Fehler beim Speichern: "+(d.fehler||d.msg||"unbekannt"));
+  }catch(e){
+    alert("Netzwerkfehler beim Speichern: "+e.message);
+  }finally{
+    btn.textContent=orig;
+  }
+}
 
 function updateFilterCount(treffer){
   const el=document.getElementById('filtercount'); if(!el) return;

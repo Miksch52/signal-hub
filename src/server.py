@@ -18,6 +18,7 @@ Start:  python3 src/server.py        (oder Doppelklick auf "Signal-Hub Server st
 import http.server
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -33,6 +34,13 @@ PROJEKT = os.path.dirname(HIER)
 DATA = os.path.join(PROJEKT, "data")
 CONFIG = os.path.join(PROJEKT, "config.json")
 PY = sys.executable
+# "🗒️ Watchlist erstellen" (siehe do_POST /api/watchlist unten): landet zentral im
+# MTS-Hauptordner (ein Verzeichnis ueber Signal-Hub/, das ist bereits der Geschwister-
+# Ordner in iCloud, siehe CLAUDE.md "Nested Git-Repos") statt im eigenen data/ -
+# gleiches Prinzip wie Lokaler-Trend-Screener/config.py::WATCHLISTEN_DIR, dort die
+# Referenzimplementierung. Eigener Unterordner "Signal-Hub", damit der gemeinsame
+# Watchlisten/-Ordner nicht unuebersichtlich wird.
+WATCHLISTEN_DIR = os.path.join(os.path.dirname(PROJEKT), "Watchlisten", "Signal-Hub")
 
 _lauf_lock = threading.Lock()
 _laeuft = {"v": False, "start": None, "ende": None, "log": ""}
@@ -229,7 +237,81 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._json({"ok": gestartet,
                                "info": "Lauf gestartet" if gestartet else "Lauf laeuft bereits"})
 
+        if pfad == "/api/watchlist":
+            return self._api_watchlist(roh)
+
         return self._json({"ok": False, "fehler": "unbekannt"}, 404)
+
+    # "🗒️ Watchlist erstellen" im Signal-Hub-Dashboard: schreibt die aktuell
+    # gefilterten Treffer (CURRENT_LIST im Frontend, siehe render()) als TradingView-
+    # importierbare .txt + lesbare Zusammenfassung nach WATCHLISTEN_DIR. Referenz-
+    # implementierung (zuerst gebaut): Lokaler-Trend-Screener/hub_server.py::
+    # _api_watchlist - dieselbe Validierung/Dateistruktur, hier nur der Zielordner
+    # (Signal-Hub statt Trend-Screener) und der Token-Schutz (POSTs, siehe oben) anders.
+    def _api_watchlist(self, roh):
+        if len(roh) > 200_000:
+            return self._json({"ok": False, "fehler": "Anfrage zu groß"}, 413)
+        try:
+            body = json.loads(roh.decode("utf-8")) if roh else {}
+        except Exception:
+            return self._json({"ok": False, "fehler": "ungültiges JSON"}, 400)
+
+        def _saubere_symbole(feld):
+            out = []
+            for s in (body.get(feld) or []):
+                s = str(s).strip().upper()
+                if s and re.fullmatch(r"[A-Z0-9.\-:]{1,20}", s):
+                    out.append(s)
+            return out
+
+        roh_liste = body.get("symbole") or []
+        if not isinstance(roh_liste, list) or len(roh_liste) > 3000:
+            return self._json({"ok": False, "fehler": "ungültige oder zu lange Symbolliste"}, 400)
+        symbole = _saubere_symbole("symbole")
+        if not symbole:
+            return self._json({"ok": False, "fehler": "keine gültigen Titel in der aktuellen Filteransicht"}, 400)
+        roh_tf = body.get("symbole_tf")
+        symbole_tf = _saubere_symbole("symbole_tf") if isinstance(roh_tf, list) else symbole
+
+        lesbar = body.get("lesbar") or ""
+        if not isinstance(lesbar, str) or len(lesbar) > 100_000:
+            return self._json({"ok": False, "fehler": "ungültiger lesbarer Inhalt"}, 400)
+        zusammenfassung = body.get("zusammenfassung") or "keine Angabe"
+        if not isinstance(zusammenfassung, str) or len(zusammenfassung) > 2000:
+            zusammenfassung = "keine Angabe"
+        titel_roh = str(body.get("titel") or "Signal-Hub")
+        titel = re.sub(r"[^A-Za-z0-9äöüÄÖÜß _-]", "", titel_roh).strip()[:60] or "Signal-Hub"
+
+        os.makedirs(WATCHLISTEN_DIR, exist_ok=True)
+        basisname = f"{datetime.now().strftime('%Y-%m-%d')}_Signal-Hub_{titel}"
+        pfad = os.path.join(WATCHLISTEN_DIR, basisname + ".txt")
+        pfad_lesbar = os.path.join(WATCHLISTEN_DIR, basisname + "_lesbar.txt")
+        n = 2
+        while os.path.exists(pfad) or os.path.exists(pfad_lesbar):
+            pfad = os.path.join(WATCHLISTEN_DIR, f"{basisname}_{n}.txt")
+            pfad_lesbar = os.path.join(WATCHLISTEN_DIR, f"{basisname}_{n}_lesbar.txt")
+            n += 1
+        stand = datetime.now().strftime("%Y-%m-%d %H:%M")
+        header = f"###SIGNAL-HUB {titel} · {stand} · {len(symbole)} Titel"
+        with open(pfad, "w", encoding="utf-8") as f:
+            f.write(header + "\n" + ",".join(symbole))
+        header_lesbar = (f"Signal-Hub – {titel} – {stand} – {len(symbole)} Titel\n"
+                          f"Filter: {zusammenfassung}\n" + "-" * 60)
+        with open(pfad_lesbar, "w", encoding="utf-8") as f:
+            f.write(header_lesbar + "\n" + lesbar)
+
+        tf_basis = f"{datetime.now().strftime('%Y-%m-%d')}_TF"
+        pfad_tf = os.path.join(WATCHLISTEN_DIR, tf_basis + ".txt")
+        n_tf = 2
+        while os.path.exists(pfad_tf):
+            pfad_tf = os.path.join(WATCHLISTEN_DIR, f"{tf_basis}_{n_tf}.txt")
+            n_tf += 1
+        with open(pfad_tf, "w", encoding="utf-8") as f:
+            f.write("\n".join(symbole_tf))
+
+        return self._json({"ok": True, "datei": os.path.basename(pfad),
+                           "datei_lesbar": os.path.basename(pfad_lesbar),
+                           "datei_tf": os.path.basename(pfad_tf), "anzahl": len(symbole)})
 
 
 def main():
