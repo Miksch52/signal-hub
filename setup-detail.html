@@ -512,13 +512,12 @@ function setFundDeep(fx){
 // Jahre mit Zahlung) sowie Trend (steigend/gleichbleibend/gekürzt), ein
 // klassisches Buffett/Graham-Qualitätsmerkmal.
 const DIVIDEND_EXPLAIN = 'Dividendenhistorie aus Yahoo Finance (bis zu 10 Jahre zurück). Zählt aufeinanderfolgende Jahre mit gezahlter Dividende und vergleicht die letzten vollständigen Jahressummen - Kontinuität/Wachstum ist ein klassisches Buffett/Graham-Qualitätsmerkmal, eine Kürzung ein Warnsignal. Rein informativ, kein Score-Bestandteil.';
-function renderDividenden(eintraege){
-  if(!eintraege.length){
-    return `<div class="fcard fcard-rot">${dot('rot')}<div class="fcard-body">
-      <div class="fcard-head"><span class="fcard-lbl" title="${DIVIDEND_EXPLAIN}">📅 Dividendenkontinuität</span></div>
-      <div class="fcard-detail">Keine Dividendenzahlungen in den letzten 10 Jahren gefunden.</div>
-    </div></div>`;
-  }
+// Ausgelagert aus renderDividenden() (seit 2026-08-16), damit dieselbe
+// Berechnung auch fuer das Dividend Discount Model in der "Innerer Wert"-
+// Sektion unten wiederverwendet werden kann, statt die Jahressummen-Logik
+// zweimal zu pflegen.
+function berechneDividendenKennzahlen(eintraege){
+  if(!eintraege.length) return null;
   const proJahr = {};
   eintraege.forEach(e => { const j = e.datum.getFullYear(); proJahr[j] = (proJahr[j]||0) + e.betrag; });
   const jahre = Object.keys(proJahr).map(Number).sort((a,b)=>a-b);
@@ -527,26 +526,56 @@ function renderDividenden(eintraege){
   for(let j = jahre[jahre.length-1]; j >= jahre[0]; j--){
     if(proJahr[j] > 0) serie++; else break;
   }
-  // Trend nur über abgeschlossene Jahre vergleichen - das laufende Jahr hat
-  // ggf. noch nicht alle Ausschüttungen erhalten und würde sonst faelschlich
-  // wie eine Kürzung aussehen.
+  // Trend/Wachstum nur über abgeschlossene Jahre vergleichen - das laufende
+  // Jahr hat ggf. noch nicht alle Ausschüttungen erhalten und würde sonst
+  // faelschlich wie eine Kürzung aussehen.
   const vergleichsJahre = jahre.filter(j => j < heuteJahr);
   const jLetztes = vergleichsJahre[vergleichsJahre.length-1];
   const jVorher = vergleichsJahre[vergleichsJahre.length-2];
-  let trend = 'zu wenig Historie';
+  let trend = 'zu wenig Historie', wachstumsrate = null;
   if(jLetztes!=null && jVorher!=null){
+    if(proJahr[jVorher] > 0) wachstumsrate = (proJahr[jLetztes] - proJahr[jVorher]) / proJahr[jVorher];
     if(proJahr[jLetztes] > proJahr[jVorher]*1.02) trend = 'steigend';
     else if(proJahr[jLetztes] < proJahr[jVorher]*0.98) trend = 'gekürzt';
     else trend = 'gleichbleibend';
   }
+  // Fuer das DDM eine geglaettete Mehrjahres-Wachstumsrate (CAGR) statt nur
+  // des letzten Einzelvergleichs, wenn genug abgeschlossene Jahre vorliegen -
+  // robuster gegen ein einzelnes Ausreisser-Jahr. Das AELTESTE Jahr im
+  // 10-Jahres-Fenster wird dafuer verworfen: range=10y schneidet fast nie
+  // exakt am 1. Januar, das erste Kalenderjahr im Ergebnis ist deshalb fast
+  // immer unvollstaendig (z.B. nur 2 von 4 Quartalsdividenden) und wuerde die
+  // CAGR sonst kraeftig nach oben verzerren (verifiziert gegen JNJ: mit dem
+  // verkuerzten Startjahr 13,8%, ohne 5,6% - die 5,6% passen zur bekannten
+  // langjaehrigen JNJ-Dividendenwachstumsrate).
+  const cagrJahre = vergleichsJahre.slice(1);
+  if(cagrJahre.length >= 4){
+    const erstes = cagrJahre[0], letztes = cagrJahre[cagrJahre.length-1];
+    const n = letztes - erstes;
+    if(n > 0 && proJahr[erstes] > 0 && proJahr[letztes] > 0){
+      wachstumsrate = Math.pow(proJahr[letztes]/proJahr[erstes], 1/n) - 1;
+    }
+  }
   const ampel = trend==='gekürzt' ? 'rot' : serie>=5 ? 'gruen' : serie>=2 ? 'gelb' : 'rot';
   const jahresliste = jahre.slice(-8).map(j => `${j}: ${proJahr[j].toFixed(2)}`).join(' · ');
-  return `<div class="fcard fcard-${ampel}">${dot(ampel)}<div class="fcard-body">
+  return {
+    serie, trend, ampel, jahresliste, wachstumsrate,
+    dividendeLetztesVollstaendigesJahr: jLetztes!=null ? proJahr[jLetztes] : null,
+  };
+}
+function renderDividenden(k){
+  if(!k){
+    return `<div class="fcard fcard-rot">${dot('rot')}<div class="fcard-body">
+      <div class="fcard-head"><span class="fcard-lbl" title="${DIVIDEND_EXPLAIN}">📅 Dividendenkontinuität</span></div>
+      <div class="fcard-detail">Keine Dividendenzahlungen in den letzten 10 Jahren gefunden.</div>
+    </div></div>`;
+  }
+  return `<div class="fcard fcard-${k.ampel}">${dot(k.ampel)}<div class="fcard-body">
     <div class="fcard-head">
       <span class="fcard-lbl" title="${DIVIDEND_EXPLAIN}">📅 Dividendenkontinuität</span>
-      <span class="fcard-wert">${serie} Jahre in Folge</span>
+      <span class="fcard-wert">${k.serie} Jahre in Folge</span>
     </div>
-    <div class="fcard-detail">Trend zuletzt: ${trend} · ${jahresliste}</div>
+    <div class="fcard-detail">Trend zuletzt: ${k.trend} · ${k.jahresliste}</div>
     <div class="fcard-gew">nicht Teil des Scores - Buffett/Graham-orientierte Einordnung</div>
   </div></div>`;
 }
@@ -563,13 +592,119 @@ async function ladeDividenden(ticker, yahooSymbol){
     const divs = (res && res.events && res.events.dividends) || {};
     const eintraege = Object.values(divs).map(x => ({datum:new Date(x.date*1000), betrag:x.amount}))
       .sort((a,b) => a.datum - b.datum);
-    el.innerHTML = renderDividenden(eintraege);
+    WERT_DIVIDENDE = berechneDividendenKennzahlen(eintraege);
+    el.innerHTML = renderDividenden(WERT_DIVIDENDE);
   }catch(e){
+    WERT_DIVIDENDE = null;
     el.innerHTML = `<div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
       <div class="fcard-head"><span class="fcard-lbl" title="${DIVIDEND_EXPLAIN}">📅 Dividendenkontinuität</span></div>
       <div class="fcard-detail">Dividendenhistorie gerade nicht verfügbar.</div>
     </div></div>`;
   }
+  renderInnererWert();
+}
+
+// ─── Innerer Wert: Graham Number, Owner-Earnings-DCF, DDM (seit 2026-08-16) ─
+// Klassische Buffett/Graham-Bewertungsansaetze zur Frage "steht die Aktie
+// unter ihrem inneren Wert" - drei unabhaengige, bewusst einfache Heuristiken
+// statt eines einzelnen "richtigen" Werts (Graham selbst empfahl, mehrere
+// Ansaetze gegenzurechnen statt einem Modell blind zu vertrauen). Graham
+// Number + DCF nutzen ausschliesslich Felder, die /story ohnehin schon
+// liefert (trailingEps, bookValue, freeCashflow, sharesOutstanding, siehe
+// cloudflare-worker/mts-cors-proxy.js::fetchYahooFundamentalsAndNews) - kein
+// zusaetzlicher Datenabruf. Das DDM nutzt die bereits geladene Dividenden-
+// historie (siehe berechneDividendenKennzahlen oben). Bewusst KEIN Score-
+// Einfluss - eine wertorientierte Zweitmeinung neben dem sonst wachstums-
+// orientierten Minervini/CANSLIM-System.
+const WERT_DISKONTSATZ = 0.09;      // fixer Diskontsatz statt WACC/Beta - transparente, grobe Annahme
+const WERT_TERMINALWACHSTUM = 0.025; // langfristig ~BIP-Wachstum als Terminalrate im DCF
+
+function grahamNumber(eps, bvps){
+  if(eps==null || bvps==null || eps<=0 || bvps<=0) return null;
+  return Math.sqrt(22.5 * eps * bvps);
+}
+// Vereinfachtes 2-Phasen-DCF nach Buffetts "Owner Earnings": freier Cashflow
+// je Aktie 5 Jahre mit g1 fortgeschrieben (gedeckelt 0-15%, aus Gewinn-/
+// Umsatzwachstum abgeleitet), danach ein Terminalwert mit WERT_TERMINALWACHSTUM.
+// Nutzt Yahoos financialData.freeCashflow (bereits Operating-Cashflow minus
+// Capex) statt einer eigenen Bilanzrechnung - kein zusaetzliches Modul noetig.
+function dcfFairValue(fcfProAktie, wachstumRoh){
+  if(fcfProAktie==null || fcfProAktie<=0) return null;
+  const g1 = Math.max(0, Math.min(wachstumRoh ?? 0.05, 0.15));
+  const r = WERT_DISKONTSATZ, gT = WERT_TERMINALWACHSTUM;
+  let barwert = 0, fcf = fcfProAktie;
+  for(let jahr=1; jahr<=5; jahr++){
+    fcf = fcf * (1+g1);
+    barwert += fcf / Math.pow(1+r, jahr);
+  }
+  const terminalwert = (fcf*(1+gT)) / (r-gT);
+  barwert += terminalwert / Math.pow(1+r, 5);
+  return barwert;
+}
+function ddmFairValue(dividendeProAktie, wachstum){
+  if(dividendeProAktie==null || dividendeProAktie<=0) return null;
+  if(wachstum==null || wachstum >= WERT_DISKONTSATZ) return null;
+  const d1 = dividendeProAktie * (1+wachstum);
+  return d1 / (WERT_DISKONTSATZ - wachstum);
+}
+function ampelSicherheitsmarge(preis, fairValue){
+  if(fairValue==null || fairValue<=0 || preis==null) return 'na';
+  const marge = (fairValue - preis) / fairValue;
+  if(marge >= 0.20) return 'gruen';
+  if(marge >= 0) return 'gelb';
+  return 'rot';
+}
+function fmtWertZahl(v){ return v==null ? '—' : v.toFixed(2); }
+function sicherheitsmargeText(preis, fairValue, currency){
+  if(fairValue==null) return 'nicht berechenbar (fehlende Kennzahlen)';
+  if(preis==null) return `Schätzwert ${fmtWertZahl(fairValue)} ${currency||''}`;
+  const diffPct = (fairValue - preis) / fairValue * 100;
+  const richtung = diffPct >= 0 ? 'unter' : 'über';
+  return `Kurs ${fmtWertZahl(preis)} ${currency||''} · ${Math.abs(diffPct).toFixed(0)}% ${richtung} dem Schätzwert`;
+}
+const WERT_EXPLAIN = {
+  graham: 'Benjamin Grahams klassische Defensiv-Formel: √(22,5 × Gewinn je Aktie (trailing) × Buchwert je Aktie). Grahams historischer Richtwert für eine konservative Bewertungsobergrenze - deutlich darüber galt ihm als teuer. Ignoriert Wachstum und Qualität, rein heuristisch.',
+  dcf: `Vereinfachtes Discounted-Cashflow-Modell nach Buffetts "Owner Earnings"-Ansatz: freier Cashflow je Aktie wird 5 Jahre mit einer aus Gewinn-/Umsatzwachstum abgeleiteten Rate (gedeckelt 0-15% p.a.) fortgeschrieben, mit ${(WERT_DISKONTSATZ*100).toFixed(0)}% abgezinst, danach ein Terminalwert mit ${(WERT_TERMINALWACHSTUM*100).toFixed(1)}% ewigem Wachstum. Eigene, transparente Annahmen statt Analysten-Konsens - eine grobe Hausnummer, kein Kursziel.`,
+  ddm: `Dividend Discount Model (Gordon-Wachstumsmodell): letzte volle Jahresdividende mit der mehrjährigen Dividenden-Wachstumsrate (siehe Dividendenkontinuität oben) fortgeschrieben, mit ${(WERT_DISKONTSATZ*100).toFixed(0)}% abgezinst. Nur anwendbar, wenn die Dividende wächst und langsamer als der Diskontsatz.`,
+};
+function fcardWert(icon, label, explain, fairValue, preis, currency){
+  const ampel = ampelSicherheitsmarge(preis, fairValue);
+  return `<div class="fcard fcard-${ampel}">${dot(ampel)}<div class="fcard-body">
+    <div class="fcard-head">
+      <span class="fcard-lbl" title="${explain}">${icon} ${label}</span>
+      <span class="fcard-wert">${fairValue==null?'—':fmtWertZahl(fairValue)+' '+(currency||'')}</span>
+    </div>
+    <div class="fcard-detail">${sicherheitsmargeText(preis, fairValue, currency)}</div>
+    <div class="fcard-gew">nicht Teil des Scores - Buffett/Graham-Heuristik, keine Kauf-/Verkaufsempfehlung</div>
+  </div></div>`;
+}
+let WERT_PREIS = null, WERT_CURRENCY = null, WERT_FX = null, WERT_DIVIDENDE = null;
+function renderInnererWert(){
+  const el = document.getElementById('wertwrap');
+  if(!el) return;
+  const fx = WERT_FX || {};
+  const preis = WERT_PREIS, currency = WERT_CURRENCY;
+  const graham = grahamNumber(fx.trailingEps, fx.bookValue);
+  const fcfProAktie = (fx.freeCashflow!=null && fx.sharesOutstanding) ? fx.freeCashflow / fx.sharesOutstanding : null;
+  const dcf = dcfFairValue(fcfProAktie, fx.earningsGrowth ?? fx.revenueGrowth);
+  let ddm = null, ddmHinweis = 'Keine (ausreichende) Dividendenhistorie.';
+  if(WERT_DIVIDENDE && WERT_DIVIDENDE.dividendeLetztesVollstaendigesJahr){
+    ddm = ddmFairValue(WERT_DIVIDENDE.dividendeLetztesVollstaendigesJahr, WERT_DIVIDENDE.wachstumsrate);
+    if(ddm==null) ddmHinweis = (WERT_DIVIDENDE.wachstumsrate!=null && WERT_DIVIDENDE.wachstumsrate>=WERT_DISKONTSATZ)
+      ? `Dividendenwachstum (${(WERT_DIVIDENDE.wachstumsrate*100).toFixed(1)}%) über dem Diskontsatz - Modell nicht anwendbar.`
+      : 'Wachstumsrate nicht ermittelbar.';
+  }
+  el.innerHTML = [
+    fcardWert('📐', 'Graham Number', WERT_EXPLAIN.graham, graham, preis, currency),
+    fcardWert('🧮', 'Owner-Earnings-DCF', WERT_EXPLAIN.dcf, dcf, preis, currency),
+    ddm!=null
+      ? fcardWert('💵', 'Dividend Discount Model', WERT_EXPLAIN.ddm, ddm, preis, currency)
+      : `<div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
+          <div class="fcard-head"><span class="fcard-lbl" title="${WERT_EXPLAIN.ddm}">💵 Dividend Discount Model</span></div>
+          <div class="fcard-detail">${ddmHinweis}</div>
+          <div class="fcard-gew">nicht Teil des Scores - Buffett/Graham-Heuristik</div>
+        </div></div>`,
+  ].join('');
 }
 
 function earnText(e){
@@ -581,6 +716,11 @@ function earnText(e){
 
 function render(sig, piv, pa, regime){
   const t = sig, p = piv, m = (pa && pa.muster) || null;
+  // Zustand der "Innerer Wert"-Sektion pro Ticker zuruecksetzen - sonst
+  // wuerden bei einem Ticker-Wechsel (siehe wechsleTicker) kurzzeitig die
+  // Bewertungsergebnisse des vorherigen Tickers stehen bleiben, bis die neuen
+  // Fundamentaldaten/Dividenden asynchron nachgeladen sind.
+  WERT_PREIS = t.preis; WERT_CURRENCY = t.currency; WERT_FX = null; WERT_DIVIDENDE = null;
   const tvSym = encodeURIComponent(t.ticker);
   const tvChartSym = encodeURIComponent(tvSymbol(t.ticker));
   document.getElementById('headtitle').textContent = `🎯 ${t.ticker} — Setup-Analyse`;
@@ -714,7 +854,7 @@ function render(sig, piv, pa, regime){
     </details>
 
     <details class="acc" open>
-      <summary>💵 Fundamentalanalyse <span class="acc-sub">CANSLIM/Code 33, Dividende, Buffett/Munger/Graham, Story</span><span class="chev">▾</span></summary>
+      <summary>💵 Fundamentalanalyse <span class="acc-sub">CANSLIM/Code 33, Dividende, Innerer Wert, Buffett/Munger/Graham, Story</span><span class="chev">▾</span></summary>
       <div class="acc-body">
         <div class="fgrid">${fundCards}
           <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
@@ -739,6 +879,14 @@ function render(sig, piv, pa, regime){
         <div class="fgrid" id="funddeepwrap">
           <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
             <div class="fcard-head"><span class="fcard-lbl">💹 Kennzahlen</span></div>
+            <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
+          </div></div>
+        </div>
+
+        <div class="subhead">🎯 Innerer Wert <span class="sub">Graham Number, Owner-Earnings-DCF, DDM - Sicherheitsmarge ≥20% grün, 0–20% gelb, Kurs über Schätzwert rot</span></div>
+        <div class="fgrid" id="wertwrap">
+          <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl">📐 Bewertungsmodelle</span></div>
             <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
           </div></div>
         </div>
@@ -850,6 +998,8 @@ async function ladeStory(ticker, yahooSymbol, name){
     el.innerHTML = renderStory(d);
     setCode33(d.fundamentals && d.fundamentals.code33);
     setFundDeep(d.fundamentals);
+    WERT_FX = d.fundamentals;
+    renderInnererWert();
   }catch(e){
     el.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
       Fundamentalanalyse gerade nicht verfügbar (${esc((e && e.message) || e)}).
@@ -857,6 +1007,8 @@ async function ladeStory(ticker, yahooSymbol, name){
     </div></div>`;
     setCode33(null);
     setFundDeep(null);
+    WERT_FX = null;
+    renderInnererWert();
   }
 }
 
