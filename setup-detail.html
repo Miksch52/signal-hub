@@ -29,6 +29,9 @@
   header a.back:hover{color:var(--txt)}
   header h1{font-size:17px;margin:0;font-weight:700;flex:1;min-width:120px}
   header .stand{font-size:11px;color:var(--muted2)}
+  header input[type=search]{background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+    padding:6px 10px;font-size:13px;color:var(--txt);width:150px}
+  header input[type=search]:focus{outline:2px solid var(--primary);outline-offset:1px}
 
   main{padding:18px 20px 60px;max-width:980px;margin:0 auto}
   #loading,#notfound{padding:60px 10px;text-align:center;color:var(--muted)}
@@ -148,6 +151,9 @@
 <header>
   <a class="back" id="backlink" href="signal-hub.html">← Signal Hub</a>
   <h1 id="headtitle">🎯 Setup-Analyse</h1>
+  <input type="search" id="tickerswitch" placeholder="Ticker wechseln …"
+    title="Anderen Ticker direkt in dieser Ansicht öffnen, ohne die Seite zu verlassen"
+    onkeydown="if(event.key==='Enter') wechsleTicker(this.value)">
   <span class="stand" id="stand"></span>
 </header>
 <main>
@@ -172,8 +178,7 @@
 //  Aufruf: setup-detail.html?ticker=NVDA
 // =====================================================================
 const params = new URLSearchParams(location.search);
-const TICKER = (params.get('ticker') || '').toUpperCase();
-document.getElementById('nf-ticker').textContent = TICKER || '(kein Ticker)';
+let TICKER = (params.get('ticker') || '').toUpperCase();
 
 // Fundamentalanalyse/News/Story (seit 2026-08-02): live bei jedem Aufruf ueber
 // denselben Cloudflare-Worker, den Hauptapp/Coach/Markets-360 schon als
@@ -772,29 +777,58 @@ async function ladeVerify(ticker, yahooSymbol, claimedWert){
   }
 }
 
-async function init(){
+// ─── Ticker wechseln, ohne die Seite zu verlassen (seit 2026-08-16) ─────
+// signals.json/pivot.json/priceaction.json sind bis zu ~10 MB gross - werden
+// einmal geladen und fuer jeden weiteren Ticker-Wechsel aus dem Speicher neu
+// gejoint (finde()), statt bei jedem Wechsel neu zu fetchen. history.pushState
+// haelt die URL (und damit Lesezeichen/Teilen-Link sowie den Zurueck-Button)
+// mit dem sichtbaren Ticker synchron.
+let SIGNALS_CACHE = null, PIVOT_CACHE = null, PA_CACHE = null, BASISDATEN_PROMISE = null;
+function ladeBasisdaten(){
+  if(!BASISDATEN_PROMISE){
+    BASISDATEN_PROMISE = Promise.all([
+      ladeJson('data/signals.json'),
+      ladeJson('data/pivot.json'),
+      ladeJson('../Price-Action-Hub/data/priceaction.json'),
+    ]).then(([s,p,pa])=>{ SIGNALS_CACHE=s; PIVOT_CACHE=p; PA_CACHE=pa; });
+  }
+  return BASISDATEN_PROMISE;
+}
+async function zeigeTicker(ticker){
+  TICKER = (ticker||'').toUpperCase();
+  document.getElementById('nf-ticker').textContent = TICKER || '(kein Ticker)';
+  document.getElementById('tickerswitch').value = '';
+  document.getElementById('content').style.display = 'none';
+  document.getElementById('notfound').style.display = 'none';
   if(!TICKER){
     document.getElementById('loading').style.display = 'none';
     document.getElementById('notfound').style.display = '';
     return;
   }
-  const [signals, pivot, pa] = await Promise.all([
-    ladeJson('data/signals.json'),
-    ladeJson('data/pivot.json'),
-    ladeJson('../Price-Action-Hub/data/priceaction.json'),
-  ]);
-  const treffer = finde(signals && signals.treffer, TICKER);
+  document.getElementById('loading').style.display = '';
+  await ladeBasisdaten();
+  const treffer = finde(SIGNALS_CACHE && SIGNALS_CACHE.treffer, TICKER);
   if(!treffer){
     document.getElementById('loading').style.display = 'none';
     document.getElementById('notfound').style.display = '';
     return;
   }
-  treffer.__erstellt = signals.erstellt;
-  const pivTreffer = finde(pivot && pivot.treffer, TICKER);
-  const paTreffer = finde(pa && pa.treffer, TICKER);
-  render(treffer, pivTreffer, paTreffer, signals.marktregime);
+  treffer.__erstellt = SIGNALS_CACHE.erstellt;
+  const pivTreffer = finde(PIVOT_CACHE && PIVOT_CACHE.treffer, TICKER);
+  const paTreffer = finde(PA_CACHE && PA_CACHE.treffer, TICKER);
+  render(treffer, pivTreffer, paTreffer, SIGNALS_CACHE.marktregime);
 }
-init();
+function wechsleTicker(neu){
+  const t = (neu||'').trim().toUpperCase();
+  if(!t || t===TICKER) return;
+  history.pushState({ticker:t}, '', 'setup-detail.html?ticker='+encodeURIComponent(t));
+  zeigeTicker(t);
+}
+window.addEventListener('popstate', ()=>{
+  const p = new URLSearchParams(location.search);
+  zeigeTicker((p.get('ticker')||'').toUpperCase());
+});
+zeigeTicker(TICKER);
 </script>
 </body>
 </html>
