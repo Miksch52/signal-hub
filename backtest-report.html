@@ -165,6 +165,44 @@ function fmtDatum(iso){
 }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
+// Win-Rate-Balken vor jeder Forward-Test-Tabelle (2026-08-17, dataviz-Skill).
+// Anders als bei den anderen vier Backtests (Price-Action-Hub/Rotation-
+// Dashboard/signal-hub.html::btChartHtml, dort EIN Hue je Horizont) sind die
+// Zeilen hier verschiedene KOHORTEN bei fester Horizont-Auswahl (z.B. "ARMED
+// gesamt" vs. "Score >=70" vs. "Score <70", alle 4W) - kein ordinaler
+// Horizont-Vergleich, deshalb bewusst EIN Farbton (nominal, eine Serie ->
+// kein Legendenkasten noetig, siehe dataviz-Skill::color-formula). Zweiter
+// (hellerer) Ramp-Schritt nur fuer explizit als "verzerrt/schwaecher"
+// gekennzeichnete Retro-Baseline-Zeilen (Sekundaercodierung: derselbe Hue,
+// niedrigere Saettigung signalisiert "weniger belastbar" - deckt sich mit
+// dem Fliesstext direkt daneben).
+const MB_RAMP=['#C4B28F','#A4813F'];   // [0]=Retro/schwaecher, [1]=Forward/Standard
+function miniBars(rows){
+  // rows: [{label, win, shade}] shade optional (0=hell/Retro, sonst 1)
+  const sichtbar=rows.filter(r=>r.win!=null);
+  if(!sichtbar.length) return '';
+  const barH=14, gap=6, labelH=15, leftPad=2, rightPad=2, topPad=18;
+  const chartW=520, plotW=chartW-leftPad-rightPad;
+  let y=topPad;
+  const ys=sichtbar.map(r=>{ const y0=y; y+=labelH+barH+gap; return y0; });
+  const H=y+2;
+  let svg=`<svg viewBox="0 0 ${chartW} ${H}" width="100%" style="display:block;overflow:visible;margin:12px 0 4px">`;
+  [0,25,50,75,100].forEach(pct=>{
+    const x=leftPad+plotW*pct/100;
+    svg+=`<line x1="${x}" y1="${topPad-4}" x2="${x}" y2="${H-2}" stroke="var(--rule)" stroke-width="1"/>`;
+    svg+=`<text x="${x}" y="${topPad-8}" font-family="-apple-system,system-ui,sans-serif" font-size="9" fill="var(--ink-muted)" text-anchor="middle">${pct}%</text>`;
+  });
+  sichtbar.forEach((r,i)=>{
+    const y0=ys[i];
+    svg+=`<text x="${leftPad}" y="${y0+10}" font-family="-apple-system,system-ui,sans-serif" font-size="10.5" fill="var(--ink)">${esc(r.label)}</text>`;
+    const w=Math.max(3,plotW*Math.min(100,Math.max(0,r.win))/100);
+    svg+=`<rect x="${leftPad}" y="${y0+labelH}" width="${w}" height="${barH}" rx="4" fill="${MB_RAMP[r.shade===0?0:1]}">`
+      +`<title>${esc(r.label)}: Win ${r.win}%</title></rect>`;
+  });
+  svg+='</svg>';
+  return svg;
+}
+
 // TradingView-Symbol-Mapping 1:1 aus setup-detail.html::tvSymbol uebernommen
 // (einzeln verifizierte Exchange-Codes, nicht geraten - siehe CLAUDE.md).
 const YAHOO_SUFFIX_TV_EXCHANGE = {
@@ -264,6 +302,11 @@ function render(data){
         : `Trefferquote bei ARMED-Setups gesamt auf vier Wochen (n=${armedAll.n||0}).`}</div>
     </div>
 
+    ${miniBars([
+      {label:'ARMED gesamt', win:armedAll.win},
+      {label:'ARMED · Score ≥ 70', win:armedQ70.win},
+      {label:'ARMED · Score < 70', win:armedQlo.win},
+    ])}
     <table class="lg-tbl">
       <caption>Forward-Test, unverzerrt · 4 Wochen</caption>
       <thead><tr><th>Kohorte</th><th>n</th><th>Win-Rate</th><th>Ø-Return</th></tr></thead>
@@ -309,6 +352,10 @@ function render(data){
       <div class="cap">Trefferquote bei BREAKOUT auf vier Wochen (n=${breakoutAll.n||0}).</div>
     </div>
 
+    ${miniBars([
+      {label:'BREAKOUT · Forward 4W', win:breakoutAll.win, shade:1},
+      {label:'BREAKOUT · Retro 12W (verzerrt)', win:breakoutRetro12&&breakoutRetro12.n?breakoutRetro12.win:null, shade:0},
+    ])}
     <table class="lg-tbl">
       <caption>Forward-Test, unverzerrt · 4 Wochen — zum Vergleich: Retro-Baseline 12 Wochen</caption>
       <thead><tr><th>Kohorte</th><th>n</th><th>Win-Rate</th><th>Ø-Return</th></tr></thead>
@@ -339,6 +386,7 @@ function render(data){
     </div>
 
     ${watch8.n ? `
+    ${miniBars([{label:'WATCH · 8 Wochen (Retro)', win:watch8.win, shade:0}])}
     <table class="lg-tbl">
       <caption>Retro-Baseline (kein unverzerrter Forward-Test verfügbar)</caption>
       <thead><tr><th>Kohorte</th><th>n</th><th>Win-Rate</th><th>Edge ggü. Baseline</th></tr></thead>

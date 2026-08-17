@@ -544,6 +544,49 @@ async function ladeTopSetups(){
   if(TOPSET&&TOPSET.setups) TOPSET.setups.forEach(s=>{ if(s.ticker) TOPSETMAP[s.ticker]=s; });
 }
 function istTopSetup(t){ return !!TOPSETMAP[t.ticker]; }
+
+// Win-Rate-Balkendiagramm (2026-08-17, dataviz-Skill: ordinale Ramp, ein
+// Hue/--primary je Horizont, monoton hell->dunkel, validiert per
+// validate_palette.js --ordinal - 1:1 selbes Prinzip wie Price-Action-Hub/
+// price-action-hub.html::btChartHtml).
+const BT_RAMP=['#1B5668','#1D6B7D','#208091'];   // 4W/8W/12W, aus --primary abgeleitet
+const BT_HORIZONTE=['4W','8W','12W'];
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]||c)); }
+function btChartHtml(rows, forwardData){
+  const sichtbar=rows
+    .map(r=>({...r, vorhanden: BT_HORIZONTE.filter(h=>(forwardData[r.key]||{})[h]?.n)}))
+    .filter(r=>r.vorhanden.length);
+  if(!sichtbar.length) return '';
+  const barH=13, gap=2, labelH=16, rowGap=10, leftPad=4, rightPad=4, topPad=22;
+  const chartW=560, plotW=chartW-leftPad-rightPad;
+  let y=topPad;
+  const rowYs=sichtbar.map(r=>{ const y0=y; y+=labelH+r.vorhanden.length*(barH+gap)+rowGap; return y0; });
+  const H=y+2;
+  let svg=`<svg viewBox="0 0 ${chartW} ${H}" width="100%" style="display:block;overflow:visible">`;
+  [0,25,50,75,100].forEach(pct=>{
+    const x=leftPad+plotW*pct/100;
+    svg+=`<line x1="${x}" y1="${topPad-4}" x2="${x}" y2="${H-2}" stroke="var(--line)" stroke-width="1"/>`;
+    svg+=`<text x="${x}" y="${topPad-8}" font-size="9" fill="var(--muted)" text-anchor="middle">${pct}%</text>`;
+  });
+  sichtbar.forEach((r,i)=>{
+    const rowY=rowYs[i];
+    svg+=`<text x="${leftPad}" y="${rowY+9}" font-size="10.5" fill="var(--txt)">${esc(r.label)}</text>`;
+    r.vorhanden.forEach((h,j)=>{
+      const s=(forwardData[r.key]||{})[h];
+      const jRamp=BT_HORIZONTE.indexOf(h);
+      const barY=rowY+labelH+j*(barH+gap);
+      const w=Math.max(3,plotW*Math.min(100,Math.max(0,s.win))/100);
+      const avgTxt=(s.avg>0?'+':'')+s.avg;
+      svg+=`<rect x="${leftPad}" y="${barY}" width="${w}" height="${barH}" rx="4" fill="${BT_RAMP[jRamp]}">`
+        +`<title>${esc(r.label)} · ${h}: n=${s.n}, Win ${s.win}%, Ø ${avgTxt}%</title></rect>`;
+    });
+  });
+  svg+='</svg>';
+  const legend=BT_HORIZONTE.map((h,j)=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:11px;color:var(--muted)">`
+    +`<span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${BT_RAMP[j]}"></span>${h}</span>`).join('');
+  return `<div style="margin:2px 0 12px">${svg}</div><div style="margin-bottom:10px">${legend}</div>`;
+}
+
 let SCOREBT=null;
 async function ladeScoreBacktest(){
   // Trefferquoten des Momentum-Scores (score_backtest.py schreibt sie taeglich
@@ -561,7 +604,8 @@ function renderTrefferquoten(){
   if(!box||!el) return;
   if(!SCOREBT||!SCOREBT.ergebnis){ box.style.display='none'; return; }
   const pm=v=>v==null?'–':`<span class="${v>0?'pos':v<0?'neg':''}">${v>0?'+':''}${v}</span>`;
-  let html='<table class="hittab"><tr><th>Tier</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th><th>Ø vs. Index</th><th>&gt; Index %</th></tr>';
+  let html=btChartHtml([{key:'A',label:'A (Kauf-Kandidat)'},{key:'B',label:'B (Beobachten)'}], SCOREBT.ergebnis);
+  html+='<table class="hittab"><tr><th>Tier</th><th>Horizont</th><th>n</th><th>Win %</th><th>Ø %</th><th>Median %</th><th>Ø vs. Index</th><th>&gt; Index %</th></tr>';
   let zeilen=0;
   for(const tier of ['A','B']){
     for(const hor of ['4W','8W','12W']){
