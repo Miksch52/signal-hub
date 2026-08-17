@@ -82,7 +82,7 @@
   },
   "maerkte": {
     "USA": {
-      "index_yahoo": "^GSPC",
+      "index_yahoo": ["^GSPC", "^IXIC"],
       "waehrung": "USD",
       "aktiv": true
     },
