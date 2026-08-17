@@ -744,26 +744,39 @@ function render(sig, piv, pa, regime){
   if(t.neu) badges += `<span class="badge b-neu" title="Seit dem letzten Lauf neu als Kauf-Kandidat aufgetaucht (vorher nicht in der Liste oder nach Pause zurückgekehrt).">⭐ neu</span>`;
   if(t.klimax_warnung) badges += `<span class="badge" style="background:rgba(231,76,60,.18);color:#ffb4ab;border-color:rgba(231,76,60,.4)" title="${FAKTOR_INFO.minervini_5080.explain} Kombiniert mit einer späten Basis (3. oder weiter) - das klassische Minervini-Topmuster.">⚠️ Klimax-Warnung</span>`;
 
-  // Quickscan: sofortiger Ampel-Überblick über alle Treiber
+  // Quickscan: sofortiger Ampel-Überblick über alle Treiber. qsAmpeln läuft
+  // parallel zu qsItems (Bugfix 2026-08-17: der Zähler oben verwendete bisher
+  // nur alleKeys.length/zaehleGruen(alleKeys,...) als Nenner/Zähler - Pivot,
+  // Price-Action und Marktstadium werden aber als DREI ZUSÄTZLICHE Kacheln
+  // unten mitgerendert, ohne im Zähler mitgezählt zu werden. Sichtbares
+  // Symptom: "6 von 11" in der Überschrift, obwohl 14 Kacheln zu sehen sind
+  // und mehr als 6 davon grün leuchten. qsAmpeln sammelt jetzt die Ampel
+  // JEDES gerenderten Kachel-Eintrags, Zähler/Nenner werden erst danach
+  // daraus berechnet statt vorab aus alleKeys allein.)
   const alleKeys = TECH_KEYS.concat(FUND_KEYS);
-  const erfuelltCount = zaehleGruen(alleKeys, t.faktoren);
   const qsItems = [];
+  const qsAmpeln = [];
   alleKeys.forEach(k=>{
     const f = t.faktoren && t.faktoren[k];
+    qsAmpeln.push(f&&f.ampel);
     qsItems.push(`<div class="${qsClass(f&&f.ampel)}" title="${FAKTOR_INFO[k].explain}">${dot(f&&f.ampel)}<span>${FAKTOR_INFO[k].icon} ${FAKTOR_INFO[k].label}</span></div>`);
   });
   if(p){
     const pAmpel = p.pivot_status==='BREAKOUT'||p.pivot_status==='ARMED'?'gruen':p.pivot_status==='WATCH'?'gelb':'rot';
+    qsAmpeln.push(pAmpel);
     qsItems.push(`<div class="${qsClass(pAmpel)}" title="${PIVOT_EXPLAIN}">${dot(pAmpel)}<span>🎯 Pivot: ${p.pivot_status||'—'}</span></div>`);
   }
   if(m && m.status==='ok'){
     const paAmpel = pa.pa_score>0?'gruen':pa.pa_score<0?'rot':'gelb';
+    qsAmpeln.push(paAmpel);
     qsItems.push(`<div class="${qsClass(paAmpel)}" title="${PA_EXPLAIN}">${dot(paAmpel)}<span>🕯️ Price-Action: ${pa.pa_score>0?'bullisch':pa.pa_score<0?'bärisch':'neutral'}</span></div>`);
   }
   if(m && m.marktstadium && m.marktstadium.stadium){
     const stAmpel = m.marktstadium.stadium==='Advancing'||m.marktstadium.stadium==='Accumulation'?'gruen':m.marktstadium.stadium==='Distribution'?'gelb':'rot';
+    qsAmpeln.push(stAmpel);
     qsItems.push(`<div class="${qsClass(stAmpel)}" title="${STADIUM_EXPLAIN}">${dot(stAmpel)}<span>🏗️ Marktstadium: ${m.marktstadium.stadium}</span></div>`);
   }
+  const erfuelltCount = qsAmpeln.filter(a => a==='gruen').length;
 
   // Technik-/Fundamental-Karten, grün zuerst (siehe sortiereNachAmpel)
   const techKeysSortiert = sortiereNachAmpel(TECH_KEYS, t.faktoren);
@@ -825,7 +838,7 @@ function render(sig, piv, pa, regime){
 
     ${t.klimax_warnung ? `<div class="klimax-warn">⚠️ <b>Minervini 50/80-Klimax-Warnung:</b> ${(t.faktoren.minervini_5080||{}).detail||''} Späte Basis (≥3) + frischer Gap-down auf hohem Volumen ist das klassische Topmuster — nicht als „billig" nachkaufen.</div>` : ''}
 
-    <h2>🔎 Sofort-Überblick <span class="sub">${erfuelltCount} von ${alleKeys.length} Kriterien grün erfüllt</span></h2>
+    <h2>🔎 Sofort-Überblick <span class="sub">${erfuelltCount} von ${qsAmpeln.length} Kriterien grün erfüllt</span></h2>
     <div class="quickscan">${qsItems.join('')}</div>
 
     <details class="acc" open>
