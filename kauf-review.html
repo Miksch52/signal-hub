@@ -296,7 +296,7 @@ function render() {
     ? `<span class="badge b-kern" title="Forward-Backtest ${s.backtest ? s.backtest.win + '% Win-Rate bei ' + s.backtest.n + ' gereiften Picks' : ''}">⭐ Kern-Setup</span>` : '';
   const depot = s.im_depot
     ? '<span class="badge b-depot" title="Bereits offene Position im Depot">📌 im Depot</span>' : '';
-  const distPct = s.pivot > 0 ? ((s.preis - s.pivot) / s.pivot * 100) : null;
+  const distPct = (s.pivot > 0 && s.preis != null) ? ((s.preis - s.pivot) / s.pivot * 100) : null;
 
   document.getElementById('main').innerHTML = `
     ${window.TOP_SETUPS.marktregime ? renderRegimeBanner(window.TOP_SETUPS.marktregime) : ''}
