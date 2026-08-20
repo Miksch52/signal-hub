@@ -109,6 +109,11 @@
     "kauf_kandidat": 70,
     "beobachten": 50
   },
+  "markets360_filter": {
+    "_hinweis": "Nur Zeilen aus markets360_latest.csv, die MIN_FAB5 erreichen ODER TT_Pass=true haben, zaehlen als bestaetigende unabhaengige Quelle (quellen_konsens/Top-Setups-Konfluenz). Ohne diesen Filter zaehlte jede der ueber 600 gescannten Zeilen als 'bestaetigt', unabhaengig von der Qualitaet - siehe trendscreener_screener.py, das schon immer nur auffaellige Treffer durchreicht.",
+    "min_fab5": 70,
+    "tt_pass_zaehlt_auch": true
+  },
   "mail_signal_gewichte": {
     "_hinweis": "aktiv=true -> Mail-Signale zaehlen nach Typ gewichtet in den Quellen-Konsens (0 = ignorieren, 1 = volle Gewichtung). PDF/Finviz zaehlen immer 1.",
     "aktiv": true,
