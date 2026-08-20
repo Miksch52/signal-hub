@@ -22,6 +22,7 @@ import re
 import ssl
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta
 from email.header import decode_header
 
@@ -180,6 +181,45 @@ def passe_ordner_an(ziel, echte):
     return None
 
 # ---------------------------------------------------------------------------
+# Retry/Reconnect: freenet killt die IMAP-Verbindung im Cloud-Lauf (GitHub-
+# Runner, viele UID-FETCHs am Stueck) gelegentlich mitten im Abruf
+# ("socket error: EOF", imaplib.IMAP4.abort) - beobachtet am 2026-08-20 bei
+# ca. 600 Mails, unregelmaessig (mal geht der komplette Lauf durch, mal
+# nicht). Ohne Auffangen war das ein unbehandelter Absturz: screene_mails()
+# brach mitten in der UID-Schleife ab, signals_raw_mail.json wurde gar nicht
+# geschrieben -> Mail-Quelle zeigte 0 Treffer im Dashboard, obwohl die Suche
+# zuvor hunderte passende Mails gefunden hatte.
+IMAP_MAX_VERSUCHE = 3
+IMAP_RETRY_PAUSE = 2  # Sekunden zwischen Reconnect-Versuchen
+
+def _neu_verbinden(ecfg, pw, ordner):
+    M = imaplib.IMAP4_SSL(ecfg["imap_host"], ecfg.get("imap_port", 993), ssl_context=SSL_CTX)
+    M.login(ecfg["benutzer"], pw)
+    M.select(f'"{ordner}"', readonly=True)
+    return M
+
+def _mit_retry(M, ecfg, pw, ordner, aktion, beschreibung):
+    """Fuehrt aktion(M) aus; bricht die IMAP-Verbindung mitten drin ab
+    (IMAP4.abort/OSError), wird neu verbunden + der Ordner neu selektiert und
+    bis zu IMAP_MAX_VERSUCHE erneut versucht. Gibt (M, ergebnis) zurueck -
+    ergebnis ist None, wenn nach allen Versuchen weiterhin kein Erfolg (dann
+    wird nur diese eine UID/Suche uebersprungen, nicht der ganze Lauf)."""
+    for versuch in range(1, IMAP_MAX_VERSUCHE + 1):
+        try:
+            return M, aktion(M)
+        except (imaplib.IMAP4.abort, OSError) as e:
+            if versuch == IMAP_MAX_VERSUCHE:
+                print(f"    ! {beschreibung}: {e} (nach {versuch} Versuchen aufgegeben)")
+                return M, None
+            print(f"    ! {beschreibung}: {e} - Reconnect ({versuch}/{IMAP_MAX_VERSUCHE})")
+            time.sleep(IMAP_RETRY_PAUSE)
+            try:
+                M = _neu_verbinden(ecfg, pw, ordner)
+            except Exception as e2:
+                print(f"    ! Reconnect fehlgeschlagen: {e2}")
+    return M, None
+
+# ---------------------------------------------------------------------------
 def screene_mails():
     cfg = PDF.lade_config()
     ecfg = cfg["quellen"]["email"]
@@ -214,19 +254,33 @@ def screene_mails():
         uids = set()
         if filter_:
             for fr in filter_:
-                typ, d = M.uid("search", None, f'(SINCE "{since}" FROM "{fr}")')
+                M, res = _mit_retry(M, ecfg, pw, ordner,
+                    lambda m, fr=fr: m.uid("search", None, f'(SINCE "{since}" FROM "{fr}")'),
+                    f"Suche ({fr})")
+                if res:
+                    typ, d = res
+                    if d and d[0]:
+                        uids.update(d[0].split())
+        else:
+            M, res = _mit_retry(M, ecfg, pw, ordner,
+                lambda m: m.uid("search", None, f'(SINCE "{since}")'),
+                "Suche")
+            if res:
+                typ, d = res
                 if d and d[0]:
                     uids.update(d[0].split())
-        else:
-            typ, d = M.uid("search", None, f'(SINCE "{since}")')
-            if d and d[0]:
-                uids.update(d[0].split())
         print(f"  {ordner}: {len(uids)} passende Mails (seit {since})")
 
         for uid in uids:
+            uid_txt = uid.decode() if isinstance(uid, bytes) else str(uid)
             # 1) nur Header laden (schnell)
-            typ, fh = M.uid("fetch", uid,
-                            "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])")
+            M, res = _mit_retry(M, ecfg, pw, ordner,
+                lambda m, uid=uid: m.uid("fetch", uid,
+                    "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])"),
+                f"Fetch Header UID {uid_txt}")
+            if not res:
+                continue
+            typ, fh = res
             if not fh or not fh[0]:
                 continue
             kopf = email.message_from_bytes(fh[0][1])
@@ -249,14 +303,20 @@ def screene_mails():
             if ist_tf:
                 text, quelle = subj, "mail:traderfox"
             else:
-                typ, fb = M.uid("fetch", uid, "(RFC822)")
+                M, res = _mit_retry(M, ecfg, pw, ordner,
+                    lambda m, uid=uid: m.uid("fetch", uid, "(RFC822)"),
+                    f"Fetch RFC822 UID {uid_txt}")
+                typ, fb = res if res else (None, None)
                 msg = email.message_from_bytes(fb[0][1]) if fb and fb[0] else kopf
                 text, quelle = mail_text(msg), "mail:aktienmagazin"
             signale.extend(PDF.extrahiere_aus_text(text, quelle_typ=quelle,
                 quelle_datei=mid, datum=datum, seite=None, gesehen=gesehen))
             verarbeitet += 1
         print(f"  -> {verarbeitet} Mails verarbeitet")
-    M.logout()
+    try:
+        M.logout()
+    except (imaplib.IMAP4.abort, OSError):
+        pass
     return signale
 
 # ---------------------------------------------------------------------------

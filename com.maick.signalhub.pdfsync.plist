@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.maick.signalhub.pdfsync</string>
+
+    <!-- Spiegelt neue/aktualisierte Traderfox-PDFs aus dem iCloud-Ordner nach
+         R2, sobald WatchPaths eine Aenderung im Ordner sieht (neues Magazin
+         gespeichert). osascript-Wrapper wie bei den anderen Agents (launchd-
+         Python darf iCloud nicht direkt lesen, TCC). StartInterval als
+         Sicherheitsnetz (WatchPaths kann vereinzelt Events verpassen, z.B.
+         wenn der Mac beim Speichern schlief) + RunAtLoad, damit ein
+         verpasster Sync spaetestens beim naechsten Login/Boot nachgeholt
+         wird. Siehe scripts/upload_magazine_to_r2.py fuer die eigentliche
+         Sync-Logik (nur neue/geaenderte Dateien, veraltete werden aus R2
+         wieder entfernt). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/osascript</string>
+        <string>-e</string>
+        <string>do shell script "cd '/Users/maickschwillo/Library/Mobile Documents/com~apple~CloudDocs/Trading-System/Maick Trading System/Signal-Hub' &amp;&amp; /usr/bin/python3 scripts/upload_magazine_to_r2.py >> /tmp/signalhub-pdfsync.log 2>&amp;1"</string>
+    </array>
+
+    <key>WatchPaths</key>
+    <array>
+        <string>/Users/maickschwillo/Library/Mobile Documents/com~apple~CloudDocs/Traderfox/Magazine </string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>21600</integer>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/maickschwillo</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/com.maick.signalhub.pdfsync.launchagent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.maick.signalhub.pdfsync.launchagent.log</string>
+</dict>
+</plist>
