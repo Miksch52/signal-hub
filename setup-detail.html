@@ -25,12 +25,16 @@
   header{position:sticky;top:0;z-index:20;background:var(--bg2);
          border-bottom:1px solid var(--line);box-shadow:0 1px 3px rgba(27,36,29,.04);
          padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  header a.back{color:var(--muted);text-decoration:none;font-size:14px;white-space:nowrap}
+  /* Touch-Ziele (seit 2026-08-20): min. 44x44px nach Apple-HIG, damit die
+     Seite als mobiler Vor-Kauf-Check unterwegs auf dem iPhone zuverlässig
+     bedienbar ist - vorher war die Tap-Fläche nur so hoch wie die Textzeile. */
+  header a.back{color:var(--muted);text-decoration:none;font-size:14px;white-space:nowrap;
+    display:inline-flex;align-items:center;min-height:44px;padding:0 4px 0 0}
   header a.back:hover{color:var(--txt)}
   header h1{font-size:17px;margin:0;font-weight:700;flex:1;min-width:120px}
   header .stand{font-size:11px;color:var(--muted2)}
   header input[type=search]{background:var(--bg2);border:1px solid var(--line);border-radius:8px;
-    padding:6px 10px;font-size:13px;color:var(--txt);width:150px}
+    padding:6px 10px;font-size:13px;color:var(--txt);width:150px;min-height:44px}
   header input[type=search]:focus{outline:2px solid var(--primary);outline-offset:1px}
 
   main{padding:18px 20px 60px;max-width:980px;margin:0 auto}
@@ -121,8 +125,9 @@
   .tv-box{height:480px;border-radius:10px;overflow:hidden}
   .tv-box .tradingview-widget-container,.tv-box .tradingview-widget-container__widget{height:100%;width:100%}
   .chart-links{display:flex;gap:8px;margin-top:10px}
-  .chart-links a{font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);
-                 text-decoration:none;color:var(--txt);background:var(--card)}
+  .chart-links a{font-size:12px;padding:5px 14px;border-radius:8px;border:1px solid var(--line);
+                 text-decoration:none;color:var(--txt);background:var(--card);
+                 display:inline-flex;align-items:center;min-height:44px}
   .chart-links a:hover{border-color:var(--primary)}
 
   .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
@@ -169,12 +174,14 @@
   .srcrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
   .chip{font-size:11.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--muted);background:var(--card)}
   .deepbtn{font:inherit;font-size:13px;font-weight:700;color:var(--primary);background:var(--teal-dim);
-    border:1px solid rgba(31,110,102,.35);border-radius:10px;padding:9px 16px;cursor:pointer;transition:background .15s}
+    border:1px solid rgba(31,110,102,.35);border-radius:10px;padding:9px 16px;cursor:pointer;transition:background .15s;
+    display:inline-flex;align-items:center;justify-content:center;min-height:44px}
   .deepbtn:hover{background:rgba(31,110,102,.16)}
 
   .extlinks{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-  .extlinks a{font-size:12.5px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);
-              text-decoration:none;color:var(--txt);background:var(--card)}
+  .extlinks a{font-size:12.5px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);
+              text-decoration:none;color:var(--txt);background:var(--card);
+              display:inline-flex;align-items:center;min-height:44px}
   .extlinks a:hover{border-color:var(--primary)}
 
   .disclaimer{margin-top:28px;font-size:11.5px;color:var(--muted2);line-height:1.5;
