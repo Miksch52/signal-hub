@@ -71,6 +71,14 @@ def pipeline(c, push=False):
     lauf("markets360_screener.py")
     lauf("trendscreener_screener.py")
     scorer_ok = lauf("scorer.py")
+    # Taeglicher OHLC-Snapshot (seit 2026-08-20, Top-Setups-Roadmap Punkt 4):
+    # einzige tatsaechlich dauerhafte Kurshistorie im System, siehe
+    # ohlc_history.py-Docstring. Nur bei frischem Scorer-Lauf sinnvoll (sonst
+    # kein neues signals.json zum Ausziehen).
+    if scorer_ok:
+        lauf("ohlc_history.py")
+        if not os.environ.get("GITHUB_ACTIONS"):
+            subprocess.run([os.path.join(PROJEKT, "scripts", "upload_ohlc_to_r2.sh")])
     # Pivot-Armed-Linse setzt auf signals.json auf -> NACH dem Scorer, und nur
     # wenn der Scorer wirklich geschrieben hat (sonst nur ein zweiter, verwirrender
     # FileNotFoundError obendrauf - das eigentliche Problem steht schon oben).

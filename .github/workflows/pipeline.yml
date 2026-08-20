@@ -171,6 +171,17 @@ jobs:
           rclone copy ~/"Library/Application Support/SignalHub/pivot_logbuch.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/SignalHub/pivot_eval_state.json" r2:signalhub-magazine/_state/ || true
 
+      # Taeglicher OHLC-Snapshot (seit 2026-08-20, Top-Setups-Roadmap Punkt 4,
+      # siehe src/ohlc_history.py): anders als der Yahoo-Tages-Cache oben
+      # (LOKAL, wird hier nie gesichert) landet diese Datei dauerhaft in R2 -
+      # jeder Tag eine eigene, kleine Datei statt eines Zustands, der
+      # ueberschrieben wird. "|| true": kein faelliger Slot -> keine Datei ->
+      # kein Fehler.
+      - name: OHLC-Tagessnapshot nach R2 sichern (persistente Kurshistorie)
+        if: always()
+        run: |
+          rclone copy data/ohlc-history/ r2:signalhub-magazine/ohlc-history/ || true
+
       # Platzhalter, falls kein faelliger Slot lief (data/ existiert dann gar
       # nicht - run.py kehrt vor dem ersten os.makedirs(DATA) zurueck, siehe
       # src/run.py::main). Ohne Platzhalter haette upload-artifact nichts zum

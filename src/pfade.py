@@ -33,6 +33,12 @@ PIVOT_HISTORY = os.path.join(DATA, "pivot_history.json")  # Tages-Historie BREAK
 PIVOT_HISTORY_JS = os.path.join(DATA, "pivot_history.js")  # file://-Fallback
 PIVOT_BACKTEST = os.path.join(DATA, "pivot_backtest.json")  # Backtest-Auswertung
 PIVOT_BACKTEST_JS = os.path.join(DATA, "pivot_backtest.js")  # file://-Fallback
+# Taeglicher OHLC-Snapshot (seit 2026-08-20, siehe ohlc_history.py): einzige
+# tatsaechlich dauerhafte Kurshistorie im System - der Yahoo-Tages-Cache
+# (YAHOO_CACHE unten) wird auf dem Cloud-Runner nie gesichert und faengt bei
+# jedem Lauf leer an. Lokal + Cloud schreiben hierher, die Pipeline laedt
+# jede Tagesdatei zusaetzlich nach r2:signalhub-magazine/ohlc-history/ hoch.
+OHLC_HISTORY_DIR = os.path.join(DATA, "ohlc-history")
 SCORE_BACKTEST = os.path.join(DATA, "score_backtest.json")  # Trefferquoten Momentum-Score (Tier A/B)
 SCORE_FAKTOREN_BACKTEST = os.path.join(DATA, "score_faktoren_backtest.json")  # Pro-Faktor-Erfolgsanalyse
 
