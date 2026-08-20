@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>🛒 Kauf-Review</title>
+<style>
+  /* Gleiches Design wie setup-detail.html ("Tagesordnung", seit 2026-08-09) -
+     Signal-Hub-Familie, siehe CLAUDE.md Anleitungsseiten-Regel (drei
+     Design-Systeme, nicht angleichen). Kartenbasiertes Layout statt
+     Fließtext, da diese Seite zum schnellen sequenziellen Durchgehen auf
+     dem iPhone gedacht ist (Top-Setups-Roadmap Punkt 7), nicht zum Lesen. */
+  :root{
+    --primary:#1F6E66; --ok:#2E8B57; --warn:#C08A2E; --bad:#B23A2E;
+    --bg:#F6F3EC; --bg2:#FFFFFF; --card:#FFFFFF; --line:#E2DED2; --line2:#EDEAE0;
+    --txt:#1B241D; --muted:#6B7268; --muted2:#93998C; --teal-dim:rgba(31,110,102,.09);
+    --shadow:0 1px 2px rgba(27,36,29,.05); --shadow-lg:0 8px 28px -8px rgba(27,36,29,.18);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg);color:var(--txt);line-height:1.4;
+       min-height:100dvh;display:flex;flex-direction:column}
+  a{color:var(--primary)}
+
+  header{position:sticky;top:0;z-index:20;background:var(--bg2);
+         border-bottom:1px solid var(--line);box-shadow:0 1px 3px rgba(27,36,29,.04);
+         padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header a.back{color:var(--muted);text-decoration:none;font-size:14px;white-space:nowrap;
+    display:inline-flex;align-items:center;min-height:44px;padding:0 4px 0 0}
+  header a.back:hover{color:var(--txt)}
+  header h1{font-size:16px;margin:0;font-weight:700;flex:1;min-width:100px}
+  header .progress{font-size:12.5px;color:var(--muted2);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  .progressbar{height:3px;background:var(--line2)}
+  .progressbar-fill{height:100%;background:var(--primary);transition:width .2s}
+
+  main{flex:1;display:flex;flex-direction:column;padding:14px 16px 8px;max-width:560px;
+       margin:0 auto;width:100%}
+
+  .regime-banner{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .regime-chip{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px;
+               display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line)}
+  .regime-chip.gruen{background:rgba(46,139,87,.12);color:var(--ok);border-color:rgba(46,139,87,.4)}
+  .regime-chip.gelb{background:rgba(192,138,46,.14);color:var(--warn);border-color:rgba(192,138,46,.4)}
+  .regime-chip.rot{background:rgba(178,58,46,.12);color:var(--bad);border-color:rgba(178,58,46,.4)}
+
+  .krbar{background:var(--card);border:1px solid var(--line);border-radius:12px;
+         padding:10px 14px;margin-bottom:14px;box-shadow:var(--shadow);
+         display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:12.5px}
+  .krbar label{color:var(--muted);display:flex;align-items:center;gap:6px}
+  .krbar input{width:88px;padding:8px 9px;border:1px solid var(--line);border-radius:8px;
+               font-size:13px;color:var(--txt);background:var(--bg2);min-height:36px}
+  .krbar .note{width:100%;font-size:11px;color:var(--muted2);margin-top:2px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+        padding:20px;box-shadow:var(--shadow-lg);flex:1;display:flex;flex-direction:column;
+        gap:14px;margin-bottom:14px}
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .card-tk{font-size:28px;font-weight:800;letter-spacing:.2px}
+  .card-nm{font-size:13px;color:var(--muted);margin-top:2px}
+  .card-px{font-size:22px;font-weight:700;text-align:right;white-space:nowrap}
+  .card-px .sub{font-size:11px;color:var(--muted2);font-weight:400}
+
+  .badges{display:flex;flex-wrap:wrap;gap:6px}
+  .badge{font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap;
+         border:1px solid var(--line);color:var(--muted);background:var(--card)}
+  .b-kern{background:rgba(192,138,46,.16);color:#8a611f;border-color:rgba(192,138,46,.45)}
+  .b-depot{background:var(--teal-dim);color:var(--primary);border-color:rgba(31,110,102,.35)}
+  .b-armed{background:rgba(192,138,46,.12);color:#8a611f;border-color:rgba(192,138,46,.4)}
+  .b-brk{background:rgba(178,58,46,.12);color:var(--bad);border-color:rgba(178,58,46,.4)}
+  .b-konfluenz{background:var(--line2);color:var(--muted)}
+  .b-konfluenz.voll{background:rgba(192,138,46,.16);color:#8a611f;border-color:rgba(192,138,46,.45)}
+  .b-konfluenz.teil{background:var(--teal-dim);color:var(--primary);border-color:rgba(31,110,102,.35)}
+  .b-leader{background:rgba(178,58,46,.1);color:#a3452f;border-color:rgba(178,58,46,.35)}
+
+  .pivotline{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px}
+  .pivotline div{background:var(--line2);border-radius:8px;padding:8px 10px}
+  .pivotline b{display:block;font-size:14.5px;color:var(--txt);margin-top:2px}
+
+  h2.tt-head{font-size:12.5px;margin:2px 0 2px;color:var(--muted);text-transform:uppercase;
+             letter-spacing:.04em;font-weight:700}
+  .quickscan{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:7px}
+  .qs-item{display:flex;align-items:center;gap:7px;font-size:12px;
+           background:var(--card);border:1px solid var(--line);border-radius:8px;
+           padding:8px 10px}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0}
+  .d-gruen{background:var(--ok)} .d-gelb{background:var(--warn)} .d-rot{background:var(--bad)} .d-na{background:#C9C3B4}
+  .qs-item.q-gruen{border-color:rgba(46,139,87,.4);background:rgba(46,139,87,.07)}
+  .qs-item.q-gruen span:last-child{color:var(--ok);font-weight:600}
+  .qs-item.q-rot,.qs-item.q-na{opacity:.55}
+
+  .backtest-note{font-size:11.5px;color:var(--muted2)}
+  .backtest-note b{color:var(--txt)}
+
+  .sizebox{background:var(--teal-dim);border:1px solid rgba(31,110,102,.3);border-radius:10px;
+           padding:10px 12px;font-size:12.5px}
+  .sizebox .row{display:flex;justify-content:space-between;gap:10px;margin-top:3px}
+  .sizebox .row b{font-variant-numeric:tabular-nums}
+  .sizebox .empty{color:var(--muted2);font-style:italic}
+
+  .detail-link{font-size:12px;text-align:center}
+
+  .actionbar{position:sticky;bottom:0;background:var(--bg2);border-top:1px solid var(--line);
+             padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+             display:flex;gap:8px;max-width:560px;margin:0 auto;width:100%}
+  .actionbar button{flex:1;min-height:52px;border-radius:12px;border:1px solid var(--line);
+                    font-size:13.5px;font-weight:700;cursor:pointer;background:var(--card);
+                    color:var(--txt);display:flex;flex-direction:column;align-items:center;
+                    justify-content:center;gap:2px;transition:background .15s}
+  .actionbar button .ic{font-size:18px}
+  .actionbar button.watch:hover{background:var(--line2)}
+  .actionbar button.discard{color:var(--bad);border-color:rgba(178,58,46,.35)}
+  .actionbar button.discard:hover{background:rgba(178,58,46,.08)}
+  .actionbar button.buy{background:var(--primary);color:#fff;border-color:var(--primary)}
+  .actionbar button.buy:hover{background:#195a54}
+
+  #empty,#loading{padding:80px 20px;text-align:center;color:var(--muted)}
+  #empty b{color:var(--txt)}
+  #empty .sub{font-size:13px;margin-top:8px}
+
+  .summary{background:var(--card);border:1px solid var(--line);border-radius:16px;
+           padding:24px 20px;box-shadow:var(--shadow-lg);text-align:center}
+  .summary h2{margin:0 0 6px;font-size:19px}
+  .summary .stats{display:flex;justify-content:center;gap:22px;margin:18px 0}
+  .summary .stat b{display:block;font-size:24px}
+  .summary .stat span{font-size:11px;color:var(--muted2);text-transform:uppercase;letter-spacing:.04em}
+  .summary button{margin-top:6px;padding:11px 20px;border-radius:10px;border:1px solid var(--line);
+                  background:var(--card);font-size:13px;font-weight:700;cursor:pointer;min-height:44px}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="signal-hub.html">← Signal Hub</a>
+  <h1>🛒 Kauf-Review</h1>
+  <span class="progress" id="progress"></span>
+</header>
+<div class="progressbar"><div class="progressbar-fill" id="progressfill" style="width:0%"></div></div>
+
+<main id="main">
+  <div id="loading">Lädt Top-Setups …</div>
+</main>
+
+<div class="actionbar" id="actionbar" style="display:none">
+  <button class="watch" onclick="entscheiden('beobachten')"><span class="ic">👀</span>Beobachten</button>
+  <button class="discard" onclick="entscheiden('verworfen')"><span class="ic">✕</span>Verwerfen</button>
+  <button class="buy" onclick="kaufen()"><span class="ic">🛒</span>Kaufen</button>
+</div>
+
+<script src="data/top_setups.js" onerror="ladeFehlgeschlagen()"></script>
+<script>
+const enc = encodeURIComponent;
+const WARN = 10;   // Earnings-Warnfenster, konsistent zu index.html/Signal-Hub warnTage()
+const IST_STANDALONE_PWA = window.matchMedia('(display-mode: standalone)').matches;
+
+const TT_LABELS = {
+  stage2_trend: 'Stage-2-Trend-Template',
+  relative_staerke: 'Relative Stärke',
+  naehe_52w_hoch: 'Nähe 52W-Hoch',
+  basis_konsolidierung: 'Basis-Konsolidierung',
+  volumen_bestaetigung: 'Volumen-Bestätigung',
+};
+
+let ROTATION_LEADER_MAP = null;
+let QUEUE = [];
+let GATED_COUNT = 0;
+let idx = 0;
+let entscheidungen = {};
+let ladefehler = false;
+
+function ladeFehlgeschlagen() { ladefehler = true; init(); }
+
+function gesperrt(s) { return s.earnings_tage != null && s.earnings_tage >= 0 && s.earnings_tage <= WARN; }
+function aktivBar(s) { return s.regime === 'gruen' && !gesperrt(s); }
+
+// Gleiches Muster wie index.html::ladeRotationLeaderMap() - eigener, kleiner
+// Ladepfad statt top_setups.py serverseitig mit Rotation-Daten anzureichern
+// (price-action-hub/rotation-dashboard laufen als parallele Pipeline-Jobs).
+function ladeRotationLeaderMap() {
+  const s = document.createElement('script');
+  s.src = '../Rotation-Dashboard/data/rotation.js';
+  s.onload = () => {
+    const leaders = (window.ROTATION_DATA && window.ROTATION_DATA.leaders) || [];
+    ROTATION_LEADER_MAP = new Map(leaders.map(l => [l.ticker, l]));
+    render();
+  };
+  s.onerror = () => {};
+  document.head.appendChild(s);
+}
+
+function sessionKey() { return 'kaufReviewSession_' + ((window.TOP_SETUPS && window.TOP_SETUPS.erstellt) || ''); }
+
+function speichereSession() {
+  try { sessionStorage.setItem(sessionKey(), JSON.stringify({ idx, entscheidungen })); } catch (e) {}
+}
+
+function init() {
+  const d = window.TOP_SETUPS;
+  if (ladefehler || !d || !Array.isArray(d.setups) || !d.setups.length) { zeigeLeer(); return; }
+  QUEUE = d.setups.filter(aktivBar);
+  GATED_COUNT = d.setups.length - QUEUE.length;
+  if (!QUEUE.length) { zeigeLeer(true); return; }
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(sessionKey()) || 'null');
+    if (saved) { idx = saved.idx || 0; entscheidungen = saved.entscheidungen || {}; }
+  } catch (e) {}
+  document.getElementById('actionbar').style.display = 'flex';
+  ladeRotationLeaderMap();
+  render();
+}
+
+function zeigeLeer(gatedOnly) {
+  document.getElementById('main').innerHTML = `<div id="empty">
+    <b>${ladefehler ? 'Top-Setups konnten nicht geladen werden.' : gatedOnly
+        ? 'Aktuell kein aktives Top-Setup.' : 'Aktuell keine Top-Setups.'}</b>
+    <div class="sub">${ladefehler
+        ? 'Diese Seite braucht data/top_setups.js - existiert erst nach dem ersten Pipeline-Lauf.'
+        : gatedOnly
+        ? `${GATED_COUNT} Setup(s) sind aktuell wegen Marktregime oder Earnings-Fenster gesperrt - siehe <a href="index.html">Signal Hub</a> für Details.`
+        : 'Schau später nochmal vorbei oder stoß im Signal Hub einen Cloud-Scan an.'}</div>
+  </div>`;
+}
+
+function flagge(m) { return m === 'USA' ? '🇺🇸' : m === 'Europa' ? '🇪🇺' : '🏳️'; }
+
+function renderRegimeBanner(regime) {
+  const chips = Object.entries(regime || {}).map(([markt, r]) => {
+    const icon = r.ampel === 'gruen' ? '🟢' : r.ampel === 'gelb' ? '🟡' : '🔴';
+    return `<span class="regime-chip ${r.ampel}">${icon} ${markt}: ${r.hinweis || r.ampel}</span>`;
+  }).join('');
+  return `<div class="regime-banner">${chips}</div>`;
+}
+
+function konfluenz(s) {
+  const leaderInfo = ROTATION_LEADER_MAP && ROTATION_LEADER_MAP.get(s.ticker);
+  const kriterien = [
+    { ok: (s.quellen_unabhaengig || 0) >= 2, label: `${s.quellen_unabhaengig || 0} unabhängige externe Quellen` },
+    { ok: !!leaderInfo, label: leaderInfo ? `Leader im Thema „${leaderInfo.theme}”` : 'Keine aktuelle Branchenführerschaft' },
+  ];
+  const score = kriterien.filter(k => k.ok).length;
+  const title = kriterien.map(k => (k.ok ? '✓ ' : '– ') + k.label).join('\n');
+  const cls = score >= 2 ? 'voll' : score >= 1 ? 'teil' : '';
+  const leaderBadge = leaderInfo
+    ? `<span class="badge b-leader" title="Leader im Thema „${leaderInfo.theme}” (RS ${leaderInfo.rs})">🔥 Leader</span>` : '';
+  return `<span class="badge b-konfluenz ${cls}" title="${title}">🎯 ${score}/2</span>${leaderBadge}`;
+}
+
+function checklist(tt) {
+  return Object.entries(TT_LABELS).map(([k, label]) => {
+    const ampel = (tt && tt[k]) || 'na';
+    const qCls = ampel === 'gruen' ? 'q-gruen' : ampel === 'rot' || !tt || !tt[k] ? 'q-na' : '';
+    const dCls = ampel === 'gruen' ? 'd-gruen' : ampel === 'gelb' ? 'd-gelb' : ampel === 'rot' ? 'd-rot' : 'd-na';
+    return `<div class="qs-item ${qCls}"><span class="dot ${dCls}"></span><span>${label}</span></div>`;
+  }).join('');
+}
+
+function liesKapitalRisiko() {
+  const kEl = document.getElementById('kr-kapital'), rEl = document.getElementById('kr-risiko');
+  const kapital = kEl ? parseFloat(kEl.value) || 0 : 0;
+  const risiko = rEl ? parseFloat(rEl.value) || 0 : 0;
+  try {
+    localStorage.setItem('kaufReviewKapital', kapital || '');
+    localStorage.setItem('kaufReviewRisiko', risiko || '');
+  } catch (e) {}
+  return { kapital, risiko };
+}
+
+function berechneGroesse(s) {
+  const { kapital, risiko } = liesKapitalRisiko();
+  const entry = s.pivot, stop = s.stop;
+  if (!(kapital > 0) || !(risiko > 0) || !(entry > 0) || !(stop > 0) || stop >= entry) return null;
+  const stopAbstand = entry - stop;
+  const stueck = Math.floor((kapital * risiko / 100) / stopAbstand);
+  if (stueck <= 0) return null;
+  return { stueck, positionswert: stueck * entry, risikoEUR: stueck * stopAbstand };
+}
+
+function renderSizeBox(s) {
+  const g = berechneGroesse(s);
+  if (!g) return `<div class="sizebox"><span class="empty">Kapital + Risiko-% oben eintragen für einen Stückzahl-Vorschlag.</span></div>`;
+  return `<div class="sizebox">
+    <div class="row"><span>Stückzahl (grob)</span><b>${g.stueck}</b></div>
+    <div class="row"><span>Positionswert</span><b>${g.positionswert.toFixed(0)}</b></div>
+    <div class="row"><span>Risiko bis Stop</span><b>${g.risikoEUR.toFixed(0)}</b></div>
+  </div>`;
+}
+
+function render() {
+  if (idx >= QUEUE.length) { renderSummary(); return; }
+  const s = QUEUE[idx];
+  document.getElementById('progress').textContent = `${idx + 1} / ${QUEUE.length}`;
+  document.getElementById('progressfill').style.width = ((idx) / QUEUE.length * 100) + '%';
+
+  const badge = s.pivot_status === 'BREAKOUT'
+    ? '<span class="badge b-brk">🚀 BREAKOUT</span>' : '<span class="badge b-armed">🎯 ARMED</span>';
+  const kern = s.kern_setup
+    ? `<span class="badge b-kern" title="Forward-Backtest ${s.backtest ? s.backtest.win + '% Win-Rate bei ' + s.backtest.n + ' gereiften Picks' : ''}">⭐ Kern-Setup</span>` : '';
+  const depot = s.im_depot
+    ? '<span class="badge b-depot" title="Bereits offene Position im Depot">📌 im Depot</span>' : '';
+  const distPct = s.pivot > 0 ? ((s.preis - s.pivot) / s.pivot * 100) : null;
+
+  document.getElementById('main').innerHTML = `
+    ${window.TOP_SETUPS.marktregime ? renderRegimeBanner(window.TOP_SETUPS.marktregime) : ''}
+    <div class="krbar">
+      <label>Kapital <input type="number" id="kr-kapital" inputmode="decimal" placeholder="z.B. 20000" oninput="render()"></label>
+      <label>Risiko % <input type="number" id="kr-risiko" inputmode="decimal" step="0.25" placeholder="1.25" oninput="render()"></label>
+      <div class="note">Grobe Schätzung ohne Exposure-Deckel/Portfolio-Limits — die Hauptapp rechnet beim Speichern verbindlich nach.</div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-tk">${s.ticker} ${flagge(s.markt)}</div>
+          <div class="card-nm">${s.name || ''}</div>
+        </div>
+        <div class="card-px">${s.preis != null ? s.preis : '—'}<div class="sub">aktueller Kurs</div></div>
+      </div>
+      <div class="badges">${kern}${depot}${badge}${konfluenz(s)}</div>
+      <div class="pivotline">
+        <div>Pivot<b>${s.pivot != null ? s.pivot : '—'}</b></div>
+        <div>Stop<b>${s.stop != null ? s.stop : '—'}</b></div>
+        <div>Abstand<b>${distPct != null ? (distPct >= 0 ? '+' : '') + distPct.toFixed(1) + '%' : '—'}</b></div>
+      </div>
+      <div>
+        <h2 class="tt-head">Trend-Template</h2>
+        <div class="quickscan">${checklist(s.trend_template)}</div>
+      </div>
+      ${s.backtest ? `<div class="backtest-note">Forward-Backtest ${s.pivot_status} (${s.backtest.horizont}): <b>${s.backtest.win}%</b> Win-Rate bei ${s.backtest.n} gereiften Picks</div>` : ''}
+      ${renderSizeBox(s)}
+      <div class="detail-link"><a href="setup-detail.html?ticker=${enc(s.ticker)}"${IST_STANDALONE_PWA ? '' : ' target="_blank" rel="noopener"'}>🔍 Vollständige Analyse ansehen</a></div>
+    </div>
+  `;
+  // Kapital/Risiko aus localStorage wiederherstellen (persistiert über Sessions,
+  // anders als idx/entscheidungen die pro Review-Durchgang neu sind).
+  try {
+    const kEl = document.getElementById('kr-kapital'), rEl = document.getElementById('kr-risiko');
+    if (kEl && !kEl.value) kEl.value = localStorage.getItem('kaufReviewKapital') || '';
+    if (rEl && !rEl.value) rEl.value = localStorage.getItem('kaufReviewRisiko') || '1.25';
+  } catch (e) {}
+  autoFillKapital();
+}
+
+// Best-effort Depotwert-Summe vom lokalen 8090-Server (nur wenn same-origin
+// erreichbar, z.B. Mac mini/Tailscale) - scheitert auf reiner Pages-Version
+// still, dann bleibt Kapital manuell einzutragen. Ueberschreibt nie einen
+// bereits gesetzten Wert.
+async function autoFillKapital() {
+  const el = document.getElementById('kr-kapital');
+  if (!el || el.value) return;
+  try {
+    const r = await fetch('/data', { signal: AbortSignal.timeout(2500) });
+    if (!r.ok) return;
+    const d = await r.json();
+    const summe = (d.depots || []).reduce((sum, dep) => sum + (Number(dep.depotwert) || 0), 0);
+    if (summe > 0 && el && !el.value) { el.value = Math.round(summe); render(); }
+  } catch (e) {}
+}
+
+function entscheiden(status) {
+  const s = QUEUE[idx];
+  entscheidungen[s.ticker] = status;
+  idx++;
+  speichereSession();
+  render();
+}
+
+function kaufen() {
+  const s = QUEUE[idx];
+  entscheidungen[s.ticker] = 'gekauft';
+  speichereSession();
+  const href = `../Maick's Trading System.html?neuerTrade=${enc(s.ticker)}&quelle=Kauf-Review-Queue`
+    + (s.pivot > 0 ? `&entry=${enc(s.pivot)}` : '') + (s.stop > 0 ? `&stop=${enc(s.stop)}` : '');
+  location.href = href;
+}
+
+function renderSummary() {
+  document.getElementById('progress').textContent = `${QUEUE.length} / ${QUEUE.length}`;
+  document.getElementById('progressfill').style.width = '100%';
+  document.getElementById('actionbar').style.display = 'none';
+  const werte = Object.values(entscheidungen);
+  const count = st => werte.filter(v => v === st).length;
+  document.getElementById('main').innerHTML = `
+    <div class="summary">
+      <h2>✅ Durchgesehen</h2>
+      <div>Alle ${QUEUE.length} aktiven Top-Setups sind durch.${GATED_COUNT ? ` (${GATED_COUNT} weitere aktuell gesperrt)` : ''}</div>
+      <div class="stats">
+        <div class="stat"><b>${count('gekauft')}</b><span>Gekauft</span></div>
+        <div class="stat"><b>${count('beobachten')}</b><span>Beobachten</span></div>
+        <div class="stat"><b>${count('verworfen')}</b><span>Verworfen</span></div>
+      </div>
+      <button onclick="neuStarten()">🔄 Von vorn</button>
+    </div>
+  `;
+}
+
+function neuStarten() {
+  idx = 0; entscheidungen = {};
+  speichereSession();
+  document.getElementById('actionbar').style.display = 'flex';
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
