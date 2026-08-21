@@ -22,6 +22,22 @@ Drei Modi:
   python3 src/pivot_backtest.py --evaluate # bewertet die gereiften Logbuch-Picks
         gegen die aktuellen Yahoo-Kurse (echter Forward-Test, reift ueber Wochen).
 
+Earnings-Fenster-Validierung (seit 2026-08-21): prueft, ob Minervinis Regel
+"nicht kurz vor Earnings kaufen" tatsaechlich einen messbaren Unterschied
+macht, statt reine Heuristik zu bleiben - mit derselben unverzerrten
+Forward-Methodik wie der Rest dieser Datei. --log haengt ab jetzt zusaetzlich
+earnings_tage (aus signals.json, dieselbe Extraktion wie top_setups.py) an
+jeden neuen Logbuch-Eintrag; --evaluate splittet ARMED/BREAKOUT je zusaetzlich
+in "_earnings_nah" (0..warn_tage Tage bis zum naechsten Termin, Config
+earnings.warn_tage, Default 10) und "_earnings_fern" (alles andere,
+einschliesslich unbekannt). WICHTIG: bereits vor diesem Umbau geloggte
+Eintraege haben kein earnings_tage und zaehlen bis zu ihrer natuerlichen
+Reife weiterhin als "_earnings_fern" (kein rueckwirkendes Backfill moeglich -
+Yahoo/Earnings-Kalender kennen keine historischen Terminabstaende) - die
+_earnings_nah-Kohorte waechst deshalb NUR aus ab jetzt neu geloggten Picks
+und braucht wie jede neue Kohorte mehrere Wochen, bevor SCHWELLE_PUSH erreicht
+und die Aussage belastbar wird.
+
 Ausgabe: data/pivot_backtest.json (+ Konsolentabelle).
 """
 
@@ -195,11 +211,28 @@ def _logbuch_save(lb):
         json.dump(lb, f, ensure_ascii=False, indent=2)
 
 
+def _earnings_tage_map():
+    """Ticker -> Tage bis zum naechsten Earnings-Termin (None = kein Termin im
+    Pruef-Fenster oder Quelle nicht erreichbar) - dieselbe Extraktion wie
+    top_setups.py, hier separat gehalten (Entflechtung, kein Cross-Import)."""
+    try:
+        signale = json.load(open(pfade.SIGNALS_JSON, encoding="utf-8")).get("treffer", [])
+    except Exception:
+        return {}
+    out = {}
+    for e in signale:
+        earn = e.get("earnings") or {}
+        if earn.get("status") == "termin":
+            out[e.get("ticker")] = earn.get("tage")
+    return out
+
+
 def log_heute():
     if not os.path.exists(pfade.PIVOT_JSON):
         print("Keine pivot.json -> nichts zu loggen.")
         return
     daten = json.load(open(pfade.PIVOT_JSON, encoding="utf-8"))
+    earn_map = _earnings_tage_map()
     heute = datetime.now().strftime("%Y-%m-%d")
     lb = _logbuch_load()
     bekannt = {(e["datum"], e["ticker"], e["status"]) for e in lb}
@@ -215,6 +248,7 @@ def log_heute():
             "yahoo_symbol": e.get("yahoo_symbol"), "markt": e.get("markt"),
             "status": e.get("pivot_status"), "qualitaet": e.get("qualitaet"),
             "preis_signal": e.get("preis"), "pivot": e.get("pivot"),
+            "earnings_tage": earn_map.get(e.get("ticker")),   # seit 2026-08-21, siehe Modul-Docstring
             "realisiert": None,        # wird von --evaluate gefuellt
         })
         neu += 1
@@ -237,6 +271,14 @@ def _bucket(elapsed_tage):
     return None
 
 
+def _warn_tage():
+    try:
+        cfg = json.load(open(pfade.CONFIG, encoding="utf-8"))
+        return (cfg.get("earnings") or {}).get("warn_tage", 10)
+    except Exception:
+        return 10
+
+
 def evaluate():
     try:
         import scorer
@@ -249,12 +291,19 @@ def evaluate():
         return {}, []
     cache = scorer.lade_cache()
     heute = datetime.now().date()
+    warn = _warn_tage()
     # Qualitaets-Split (seit 2026-07-24): Basis fuer die Kalibrierung von
     # config.pivot.armed_schwelle - zeigt, ob hohe qualitaet-Werte forward
     # tatsaechlich besser laufen (erst ab ~8 Picks je Kohorte aussagekraeftig).
     basis_stati = ("BREAKOUT", "ARMED")
     qual_stati = ("ARMED_q70+", "ARMED_q<70")
-    eimer = {s: {h: [] for h, _ in HORIZONTE} for s in basis_stati + qual_stati}
+    # Earnings-Fenster-Split (seit 2026-08-21, siehe Modul-Docstring): prueft
+    # je Pivot-Status getrennt (sonst wuerde der ARMED/BREAKOUT-Unterschied den
+    # Earnings-Effekt ueberdecken), ob ein Kauf nahe an Earnings tatsaechlich
+    # schlechter ausgeht als einer mit sicherem Abstand.
+    earn_stati = ("ARMED_earnings_nah", "ARMED_earnings_fern",
+                  "BREAKOUT_earnings_nah", "BREAKOUT_earnings_fern")
+    eimer = {s: {h: [] for h, _ in HORIZONTE} for s in basis_stati + qual_stati + earn_stati}
     # Einzelfaelle (seit 2026-08): dieselben Belege wie eimer, aber ticker-
     # scharf statt aggregiert - Basis fuer die "Fundstellen"-Ansicht im
     # Backtest-Report (dashboard.html hat sonst keinen Zugriff auf das lokale,
@@ -282,11 +331,15 @@ def evaluate():
         eimer[e["status"]][bk].append(ret)
         if e["status"] == "ARMED" and e.get("qualitaet") is not None:
             eimer["ARMED_q70+" if e["qualitaet"] >= 70 else "ARMED_q<70"][bk].append(ret)
+        et = e.get("earnings_tage")
+        nah = et is not None and 0 <= et <= warn
+        eimer[f"{e['status']}_earnings_{'nah' if nah else 'fern'}"][bk].append(ret)
         einzelfaelle.append({
             "ticker": e["ticker"], "yahoo_symbol": sym, "status": e["status"],
             "qualitaet": e.get("qualitaet"), "datum": e["datum"],
             "preis_signal": e["preis_signal"], "horizont": bk,
             "return_pct": round(ret * 100, 2),
+            "earnings_tage": et,
         })
     scorer.speichere_cache(cache)
     _logbuch_save(lb)
