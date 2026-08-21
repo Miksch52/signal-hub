@@ -44,6 +44,21 @@ STATE_PFAD = os.path.join(
 WRANGLER_CWD = os.path.join(pfade.PROJEKT, "..", "cloudflare-worker")
 NPX = "/usr/local/bin/npx"
 
+# launchd/osascript liefern eine minimale Umgebung ohne /usr/local/bin bzw.
+# /opt/homebrew/bin im PATH - npx selbst wird zwar per absolutem Pfad
+# gefunden, aber dessen Shebang "#!/usr/bin/env node" scheitert dann mit
+# "env: node: No such file or directory" (beobachtet auf dem Mac mini,
+# 2026-08-21: manueller Terminal-Lauf ok, LaunchAgent-Lauf schlug fehl).
+# Im interaktiven Terminal bringt die Login-Shell das richtige PATH schon
+# mit, hier wird es zusaetzlich explizit ergaenzt - schadet dort nicht,
+# behebt es aber unter launchd/osascript.
+def _mit_node_path(env):
+    env = dict(env)
+    zusatz = ["/usr/local/bin", "/usr/local/sbin", "/opt/homebrew/bin", "/opt/homebrew/sbin"]
+    teile = env.get("PATH", "").split(os.pathsep)
+    env["PATH"] = os.pathsep.join(zusatz + [p for p in teile if p not in zusatz])
+    return env
+
 
 def lade_state():
     if os.path.exists(STATE_PFAD):
@@ -62,7 +77,8 @@ def speichere_state(state):
 
 def wrangler(*args):
     r = subprocess.run([NPX, "--yes", "wrangler", *args],
-                        cwd=WRANGLER_CWD, capture_output=True, text=True)
+                        cwd=WRANGLER_CWD, capture_output=True, text=True,
+                        env=_mit_node_path(os.environ))
     return r.returncode == 0, (r.stdout + r.stderr)
 
 
