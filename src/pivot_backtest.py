@@ -38,13 +38,35 @@ _earnings_nah-Kohorte waechst deshalb NUR aus ab jetzt neu geloggten Picks
 und braucht wie jede neue Kohorte mehrere Wochen, bevor SCHWELLE_PUSH erreicht
 und die Aussage belastbar wird.
 
+Exit-Regel-Backtest (seit 2026-08-21): bislang testen alle Backtests im
+System nur den EINSTIEG (welches Setup kaufen) - simuliert jetzt zusaetzlich
+die Minervini-Ausstiegsstaffel aus dem Trade-Planner (Maick's Trading
+System.html: T1 +8%/50%, T2 +20%/25%, T3 +40%/25%, siehe _simulate_exit())
+Tag fuer Tag gegen den ECHTEN historischen Kursverlauf (Hoch/Tief, nicht nur
+Schluss - ein Stop/Target kann intraday ausgeloest werden) und vergleicht das
+Ergebnis mit einfachem Halten bis zum selben 12-Wochen-Zeitpunkt (derselbe
+Schlusskurs, damit beide Zahlen exakt denselben Stichtag meinen statt wie
+sonst im System "jetzt, wann auch immer --evaluate laeuft"). KEINE
+zusaetzliche Yahoo-Anfrage noetig: scorer.py::yahoo_chart() holt bei jedem
+Aufruf ohnehin schon 2 Jahre komplette Tageshistorie (seit 2026-08-21
+zusaetzlich mit Datums-Array) - evaluate() nutzte davon bisher nur den
+letzten Schlusskurs, jetzt zusaetzlich highs/lows/dates fuer dieselben schon
+abgerufenen Ticker. Ergebnis wird pro Logbuch-Eintrag EINMALIG unter
+"exit_sim" berechnet und dauerhaft gecacht (wie "realisiert") - kein erneutes
+Nachrechnen bei spaeteren --evaluate-Laeufen, die Kosten wachsen also nur mit
+der Zahl neu gereifter Picks, nicht kumulativ mit der Zeit. Nur fuer ab
+2026-08-21 neu geloggte Eintraege moeglich (aeltere haben kein "stop"-Feld,
+siehe log_heute()) und erst auswertbar, sobald der Chart tatsaechlich 78
+Kalendertage nach dem Signal erreicht (frueher waere der Hold-Vergleich
+unfair fruehzeitig abgeschnitten).
+
 Ausgabe: data/pivot_backtest.json (+ Konsolentabelle).
 """
 
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pfade
 import pivot
@@ -52,6 +74,13 @@ import pivot
 HORIZONTE = [("4W", 20), ("8W", 40), ("12W", 60)]   # Forward-Fenster in Handelstagen
 RETRO_STEP = 2                                       # jeden 2. Tag (weniger Autokorrelation)
 GATE_GRUENDE = {"kein Aufwaertstrend (Stage 2)", "zu wenig Historie"}
+
+# Exit-Regel-Backtest (seit 2026-08-21, siehe Modul-Docstring): dieselbe
+# Staffel wie Maick's Trading System.html Trade-Planner ("Minervini T1/T2/T3").
+T1_PCT, T1_ANTEIL = 0.08, 0.50
+T2_PCT, T2_ANTEIL = 0.20, 0.25
+T3_PCT, T3_ANTEIL = 0.40, 0.25
+EXIT_HORIZONT_TAGE = 78   # deckt sich mit dem 12W-Bucket oben (Kalendertage)
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +277,7 @@ def log_heute():
             "yahoo_symbol": e.get("yahoo_symbol"), "markt": e.get("markt"),
             "status": e.get("pivot_status"), "qualitaet": e.get("qualitaet"),
             "preis_signal": e.get("preis"), "pivot": e.get("pivot"),
+            "stop": e.get("stop"),   # seit 2026-08-21, Basis fuer den Exit-Regel-Backtest (_simulate_exit)
             "earnings_tage": earn_map.get(e.get("ticker")),   # seit 2026-08-21, siehe Modul-Docstring
             "realisiert": None,        # wird von --evaluate gefuellt
         })
@@ -269,6 +299,80 @@ def _bucket(elapsed_tage):
     if elapsed_tage >= 21:
         return "4W"
     return None
+
+
+def _finde_start_index(dates, entry_datum):
+    """Erster Chart-Index mit dates[i] >= entry_datum - der Entry gilt zum
+    Signalkurs am Signaltag, die Simulation beobachtet ab diesem Tag."""
+    for i, d in enumerate(dates):
+        if d and d >= entry_datum:
+            return i
+    return None
+
+
+def _simulate_exit(chart, entry_datum, entry_preis, stop):
+    """Simuliert die Minervini-Ausstiegsstaffel (T1/T2/T3, siehe Modul-
+    Docstring) Tag fuer Tag gegen den echten Kursverlauf. Nutzt Hoch/Tief je
+    Tag statt nur Schluss - ein Stop/Target kann intraday ausgeloest werden,
+    ohne dass der Schlusskurs das zeigt. Gibt None zurueck, wenn der
+    Signaltag im Chart fehlt, kein plausibler Stop vorliegt, oder der
+    12-Wochen-Horizont (EXIT_HORIZONT_TAGE) im verfuegbaren Chart noch nicht
+    erreicht ist (sonst waere der Hold-Vergleich unfair fruehzeitig
+    abgeschnitten - ein spaeterer Lauf mit mehr Kalenderzeit holt das nach)."""
+    dates = chart.get("dates") or []
+    highs, lows, closes = chart.get("highs") or [], chart.get("lows") or [], chart.get("closes") or []
+    if not dates or entry_preis is None or stop is None or stop >= entry_preis:
+        return None
+    start = _finde_start_index(dates, entry_datum)
+    if start is None:
+        return None
+    try:
+        grenze = (datetime.strptime(entry_datum, "%Y-%m-%d")
+                  + timedelta(days=EXIT_HORIZONT_TAGE)).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+    horizont_idx = None
+    for i in range(start, len(dates)):
+        if dates[i] and dates[i] >= grenze:
+            horizont_idx = i
+            break
+    if horizont_idx is None:
+        return None   # Chart deckt den 78-Tage-Horizont noch nicht ab
+    hold_close = closes[horizont_idx]
+
+    t1_preis = entry_preis * (1 + T1_PCT)
+    t2_preis = entry_preis * (1 + T2_PCT)
+    t3_preis = entry_preis * (1 + T3_PCT)
+    rest, erloese = 1.0, 0.0
+    t1_ok = t2_ok = t3_ok = gestoppt = False
+    for i in range(start, horizont_idx + 1):
+        if rest <= 0:
+            break
+        if lows[i] <= stop:
+            erloese += rest * stop
+            rest = 0.0
+            gestoppt = True
+            break
+        if not t1_ok and highs[i] >= t1_preis:
+            erloese += T1_ANTEIL * t1_preis
+            rest -= T1_ANTEIL
+            t1_ok = True
+        if not t2_ok and highs[i] >= t2_preis:
+            verkauf = min(T2_ANTEIL, rest)
+            erloese += verkauf * t2_preis
+            rest -= verkauf
+            t2_ok = True
+        if not t3_ok and highs[i] >= t3_preis:
+            erloese += rest * t3_preis
+            rest = 0.0
+            t3_ok = True
+    if rest > 0:
+        erloese += rest * hold_close   # zum Horizont noch offene Restposition, mark-to-market
+
+    blended = erloese / entry_preis - 1.0
+    hold = hold_close / entry_preis - 1.0
+    return {"blended_return": round(blended * 100, 2), "hold_return": round(hold * 100, 2),
+            "t1": t1_ok, "t2": t2_ok, "t3": t3_ok, "gestoppt": gestoppt}
 
 
 def _warn_tage():
@@ -303,13 +407,21 @@ def evaluate():
     # schlechter ausgeht als einer mit sicherem Abstand.
     earn_stati = ("ARMED_earnings_nah", "ARMED_earnings_fern",
                   "BREAKOUT_earnings_nah", "BREAKOUT_earnings_fern")
-    eimer = {s: {h: [] for h, _ in HORIZONTE} for s in basis_stati + qual_stati + earn_stati}
+    # Exit-Regel-Backtest (seit 2026-08-21, siehe Modul-Docstring): eigene
+    # Kohorten je Status fuer "Staffel" (simulierter T1/T2/T3-Ausstieg) vs.
+    # "Hold" (einfach bis zum selben 78-Tage-Stichtag halten) - beide nur im
+    # "12W"-Slot befuellt, da die Simulation inhaerent ein fixer 78-Tage-Test
+    # ist (keine 4W/8W-Zwischenstaende).
+    exit_stati = ("ARMED_exit_staffel", "ARMED_exit_hold",
+                  "BREAKOUT_exit_staffel", "BREAKOUT_exit_hold")
+    eimer = {s: {h: [] for h, _ in HORIZONTE} for s in basis_stati + qual_stati + earn_stati + exit_stati}
     # Einzelfaelle (seit 2026-08): dieselben Belege wie eimer, aber ticker-
     # scharf statt aggregiert - Basis fuer die "Fundstellen"-Ansicht im
     # Backtest-Report (dashboard.html hat sonst keinen Zugriff auf das lokale,
     # nie synchronisierte Forward-Logbuch in ~/Library/Application Support).
     einzelfaelle = []
     aktuell = {}
+    charts = {}   # sym -> voller Chart-Dict (closes/highs/lows/dates), fuer _simulate_exit
     for e in lb:
         try:
             tage = (heute - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
@@ -321,6 +433,7 @@ def evaluate():
         sym = e.get("yahoo_symbol") or e.get("ticker")
         if sym not in aktuell:
             d = scorer.hole_chart_cached(sym, cache)
+            charts[sym] = d
             aktuell[sym] = (d.get("closes")[-1] if d and d.get("closes") else None)
         kurs = aktuell[sym]
         if not kurs or not e.get("preis_signal"):
@@ -334,12 +447,26 @@ def evaluate():
         et = e.get("earnings_tage")
         nah = et is not None and 0 <= et <= warn
         eimer[f"{e['status']}_earnings_{'nah' if nah else 'fern'}"][bk].append(ret)
+
+        # Exit-Regel-Backtest: einmalig berechnen und dauerhaft im Logbuch-
+        # Eintrag cachen (wie "realisiert") - kein erneutes Nachrechnen bei
+        # spaeteren Laeufen, siehe Modul-Docstring.
+        if e.get("exit_sim") is None and e.get("stop") is not None:
+            sim = _simulate_exit(charts.get(sym) or {}, e["datum"], e["preis_signal"], e["stop"])
+            if sim is not None:
+                e["exit_sim"] = sim
+        if e.get("exit_sim") is not None:
+            sim = e["exit_sim"]
+            eimer[f"{e['status']}_exit_staffel"]["12W"].append(sim["blended_return"] / 100)
+            eimer[f"{e['status']}_exit_hold"]["12W"].append(sim["hold_return"] / 100)
+
         einzelfaelle.append({
             "ticker": e["ticker"], "yahoo_symbol": sym, "status": e["status"],
             "qualitaet": e.get("qualitaet"), "datum": e["datum"],
             "preis_signal": e["preis_signal"], "horizont": bk,
             "return_pct": round(ret * 100, 2),
             "earnings_tage": et,
+            "exit_sim": e.get("exit_sim"),
         })
     scorer.speichere_cache(cache)
     _logbuch_save(lb)

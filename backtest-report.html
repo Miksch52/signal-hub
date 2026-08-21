@@ -439,6 +439,8 @@ function render(data, regime){
   const armedQlo = fr['ARMED_q<70'] && fr['ARMED_q<70']['4W'] ? fr['ARMED_q<70']['4W'] : {n:0};
   const armedEarnNah = fr['ARMED_earnings_nah'] && fr['ARMED_earnings_nah']['4W'] ? fr['ARMED_earnings_nah']['4W'] : {n:0};
   const armedEarnFern = fr['ARMED_earnings_fern'] && fr['ARMED_earnings_fern']['4W'] ? fr['ARMED_earnings_fern']['4W'] : {n:0};
+  const armedExitStaffel = fr['ARMED_exit_staffel'] && fr['ARMED_exit_staffel']['12W'] ? fr['ARMED_exit_staffel']['12W'] : {n:0};
+  const armedExitHold = fr['ARMED_exit_hold'] && fr['ARMED_exit_hold']['12W'] ? fr['ARMED_exit_hold']['12W'] : {n:0};
   const armedFaelle = ev.filter(e=>e.status==='ARMED').sort((a,b)=>b.return_pct-a.return_pct);
 
   document.getElementById('idx-armed').textContent = armedAll.n
@@ -461,6 +463,10 @@ function render(data, regime){
       ${armedEarnNah.n
         ? `Bislang <strong>${armedEarnNah.n}</strong> gereifte Fälle nah an Earnings mit <strong>${fmtPct(armedEarnNah.win)}</strong> Trefferquote${armedEarnFern.n?`, gegenüber <strong>${fmtPct(armedEarnFern.win)}</strong> mit sicherem Abstand`:''}.`
         : `Diese Kohorte sammelt erst seit dem Umbau neue Fälle — bereits vorher geloggte Picks tragen kein Earnings-Datum und zählen bis zu ihrer Reife als „fern"; belastbare Zahlen brauchen noch mehrere Wochen.`}</p>
+      <p>Testet zusätzlich die Minervini-Ausstiegsstaffel aus dem Trade-Planner (T1 +8&nbsp;%/50&nbsp;%, T2 +20&nbsp;%/25&nbsp;%, T3 +40&nbsp;%/25&nbsp;%) Tag für Tag gegen den echten Kursverlauf — „Staffel" ist die simulierte, gestaffelte Ausstiegsrendite, „Hold" das einfache Halten bis zum selben 12-Wochen-Stichtag, beide am exakt gleichen Zeitpunkt gemessen.
+      ${armedExitStaffel.n
+        ? `Bislang <strong>${armedExitStaffel.n}</strong> vollständig simulierte Fälle: Staffel <strong>${fmtSigned(armedExitStaffel.avg)}</strong> Ø-Return gegenüber <strong>${fmtSigned(armedExitHold.avg)}</strong> beim einfachen Halten.`
+        : `Auch diese Kohorte sammelt erst seit dem Umbau — nur neu geloggte Picks tragen den nötigen Stop-Wert, und die Simulation braucht volle 12 Wochen Kursverlauf, bevor ein Fall zählt.`}</p>
     </div>
 
     <div class="lg-pull">
@@ -476,9 +482,11 @@ function render(data, regime){
       {label:'ARMED · Score < 70', win:armedQlo.win, avg:armedQlo.avg},
       {label:'ARMED · Earnings-nah', win:armedEarnNah.win, avg:armedEarnNah.avg},
       {label:'ARMED · Earnings-fern', win:armedEarnFern.win, avg:armedEarnFern.avg},
+      {label:'ARMED · Exit-Staffel', win:armedExitStaffel.win, avg:armedExitStaffel.avg, shade:1},
+      {label:'ARMED · Exit-Hold', win:armedExitHold.win, avg:armedExitHold.avg, shade:1},
     ])}
     <table class="lg-tbl">
-      <caption>Forward-Test, unverzerrt · 4 Wochen</caption>
+      <caption>Forward-Test, unverzerrt · 4 Wochen (Exit-Simulation: 12 Wochen)</caption>
       <thead><tr><th>Kohorte</th><th>n</th><th>Win-Rate</th><th>Ø-Return</th></tr></thead>
       <tbody>
         <tr><td>ARMED gesamt</td><td>${armedAll.n||0}</td><td class="${armedAll.win>50?'good':''}">${fmtPct(armedAll.win)}</td><td class="${armedAll.avg>0?'good':armedAll.avg<0?'bad':''}">${fmtSigned(armedAll.avg)}</td></tr>
@@ -486,6 +494,8 @@ function render(data, regime){
         <tr><td>ARMED · Score &lt; 70</td><td>${armedQlo.n||0}</td><td class="${armedQlo.win>50?'good':''}">${fmtPct(armedQlo.win)}</td><td class="${armedQlo.avg>0?'good':armedQlo.avg<0?'bad':''}">${fmtSigned(armedQlo.avg)}</td></tr>
         <tr><td>ARMED · Earnings-nah (≤10T)</td><td>${armedEarnNah.n||0}</td><td class="${armedEarnNah.win>50?'good':armedEarnNah.n&&armedEarnNah.win<50?'bad':''}">${fmtPct(armedEarnNah.win)}</td><td class="${armedEarnNah.avg>0?'good':armedEarnNah.avg<0?'bad':''}">${fmtSigned(armedEarnNah.avg)}</td></tr>
         <tr><td>ARMED · Earnings-fern</td><td>${armedEarnFern.n||0}</td><td class="${armedEarnFern.win>50?'good':''}">${fmtPct(armedEarnFern.win)}</td><td class="${armedEarnFern.avg>0?'good':armedEarnFern.avg<0?'bad':''}">${fmtSigned(armedEarnFern.avg)}</td></tr>
+        <tr><td>ARMED · Exit-Staffel (T1/T2/T3, 12W)</td><td>${armedExitStaffel.n||0}</td><td class="${armedExitStaffel.win>50?'good':armedExitStaffel.n&&armedExitStaffel.win<50?'bad':''}">${fmtPct(armedExitStaffel.win)}</td><td class="${armedExitStaffel.avg>0?'good':armedExitStaffel.avg<0?'bad':''}">${fmtSigned(armedExitStaffel.avg)}</td></tr>
+        <tr><td>ARMED · Exit-Hold (12W, gleicher Stichtag)</td><td>${armedExitHold.n||0}</td><td class="${armedExitHold.win>50?'good':''}">${fmtPct(armedExitHold.win)}</td><td class="${armedExitHold.avg>0?'good':armedExitHold.avg<0?'bad':''}">${fmtSigned(armedExitHold.avg)}</td></tr>
       </tbody>
     </table>
 
@@ -499,6 +509,8 @@ function render(data, regime){
   const breakoutRetro12 = retro.BREAKOUT && retro.BREAKOUT['12W'] ? retro.BREAKOUT['12W'] : null;
   const breakoutEarnNah = fr['BREAKOUT_earnings_nah'] && fr['BREAKOUT_earnings_nah']['4W'] ? fr['BREAKOUT_earnings_nah']['4W'] : {n:0};
   const breakoutEarnFern = fr['BREAKOUT_earnings_fern'] && fr['BREAKOUT_earnings_fern']['4W'] ? fr['BREAKOUT_earnings_fern']['4W'] : {n:0};
+  const breakoutExitStaffel = fr['BREAKOUT_exit_staffel'] && fr['BREAKOUT_exit_staffel']['12W'] ? fr['BREAKOUT_exit_staffel']['12W'] : {n:0};
+  const breakoutExitHold = fr['BREAKOUT_exit_hold'] && fr['BREAKOUT_exit_hold']['12W'] ? fr['BREAKOUT_exit_hold']['12W'] : {n:0};
   const breakoutFaelle = ev.filter(e=>e.status==='BREAKOUT').sort((a,b)=>b.return_pct-a.return_pct);
 
   document.getElementById('idx-breakout').textContent = breakoutAll.n
@@ -522,6 +534,10 @@ function render(data, regime){
       ${breakoutEarnNah.n
         ? `Bislang <strong>${breakoutEarnNah.n}</strong> gereifte Fälle nah an Earnings mit <strong>${fmtPct(breakoutEarnNah.win)}</strong> Trefferquote${breakoutEarnFern.n?`, gegenüber <strong>${fmtPct(breakoutEarnFern.win)}</strong> mit sicherem Abstand`:''}.`
         : `Noch keine gereiften Fälle — die Kohorte wächst erst ab jetzt.`}</p>
+      <p>Ebenso wird die Exit-Staffel (T1/T2/T3, siehe ARMED-Panel für die Methodik) bei BREAKOUT gegen einfaches Halten getestet.
+      ${breakoutExitStaffel.n
+        ? `Bislang <strong>${breakoutExitStaffel.n}</strong> simulierte Fälle: Staffel <strong>${fmtSigned(breakoutExitStaffel.avg)}</strong> Ø-Return gegenüber <strong>${fmtSigned(breakoutExitHold.avg)}</strong> beim Halten.`
+        : `Noch keine gereiften Fälle — braucht neu geloggte Picks mit Stop-Wert plus vollen 12-Wochen-Kursverlauf.`}</p>
     </div>
 
     <div class="lg-pull">
@@ -534,15 +550,19 @@ function render(data, regime){
       {label:'BREAKOUT · Retro 12W (verzerrt)', win:breakoutRetro12&&breakoutRetro12.n?breakoutRetro12.win:null, avg:breakoutRetro12&&breakoutRetro12.n?breakoutRetro12.avg:null, shade:0},
       {label:'BREAKOUT · Earnings-nah', win:breakoutEarnNah.win, avg:breakoutEarnNah.avg, shade:1},
       {label:'BREAKOUT · Earnings-fern', win:breakoutEarnFern.win, avg:breakoutEarnFern.avg, shade:1},
+      {label:'BREAKOUT · Exit-Staffel', win:breakoutExitStaffel.win, avg:breakoutExitStaffel.avg, shade:1},
+      {label:'BREAKOUT · Exit-Hold', win:breakoutExitHold.win, avg:breakoutExitHold.avg, shade:1},
     ])}
     <table class="lg-tbl">
-      <caption>Forward-Test, unverzerrt · 4 Wochen — zum Vergleich: Retro-Baseline 12 Wochen</caption>
+      <caption>Forward-Test, unverzerrt · 4 Wochen — zum Vergleich: Retro-Baseline 12 Wochen, Exit-Simulation 12 Wochen</caption>
       <thead><tr><th>Kohorte</th><th>n</th><th>Win-Rate</th><th>Ø-Return</th></tr></thead>
       <tbody>
         <tr><td>BREAKOUT · Forward 4W</td><td>${breakoutAll.n||0}</td><td class="${breakoutAll.win>50?'good':breakoutAll.win<50?'bad':''}">${fmtPct(breakoutAll.win)}</td><td class="${breakoutAll.avg>0?'good':breakoutAll.avg<0?'bad':''}">${fmtSigned(breakoutAll.avg)}</td></tr>
         ${breakoutRetro12 && breakoutRetro12.n ? `<tr><td>BREAKOUT · Retro 12W (Baseline-Vergleich)</td><td>${breakoutRetro12.n}</td><td class="good">${fmtPct(breakoutRetro12.win)}</td><td class="good">${fmtSigned(breakoutRetro12.avg)}</td></tr>` : ''}
         <tr><td>BREAKOUT · Earnings-nah (≤10T)</td><td>${breakoutEarnNah.n||0}</td><td class="${breakoutEarnNah.win>50?'good':breakoutEarnNah.n&&breakoutEarnNah.win<50?'bad':''}">${fmtPct(breakoutEarnNah.win)}</td><td class="${breakoutEarnNah.avg>0?'good':breakoutEarnNah.avg<0?'bad':''}">${fmtSigned(breakoutEarnNah.avg)}</td></tr>
         <tr><td>BREAKOUT · Earnings-fern</td><td>${breakoutEarnFern.n||0}</td><td class="${breakoutEarnFern.win>50?'good':''}">${fmtPct(breakoutEarnFern.win)}</td><td class="${breakoutEarnFern.avg>0?'good':breakoutEarnFern.avg<0?'bad':''}">${fmtSigned(breakoutEarnFern.avg)}</td></tr>
+        <tr><td>BREAKOUT · Exit-Staffel (T1/T2/T3, 12W)</td><td>${breakoutExitStaffel.n||0}</td><td class="${breakoutExitStaffel.win>50?'good':breakoutExitStaffel.n&&breakoutExitStaffel.win<50?'bad':''}">${fmtPct(breakoutExitStaffel.win)}</td><td class="${breakoutExitStaffel.avg>0?'good':breakoutExitStaffel.avg<0?'bad':''}">${fmtSigned(breakoutExitStaffel.avg)}</td></tr>
+        <tr><td>BREAKOUT · Exit-Hold (12W, gleicher Stichtag)</td><td>${breakoutExitHold.n||0}</td><td class="${breakoutExitHold.win>50?'good':''}">${fmtPct(breakoutExitHold.win)}</td><td class="${breakoutExitHold.avg>0?'good':breakoutExitHold.avg<0?'bad':''}">${fmtSigned(breakoutExitHold.avg)}</td></tr>
       </tbody>
     </table>
 

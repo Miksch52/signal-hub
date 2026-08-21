@@ -72,11 +72,12 @@ def yahoo_chart(symbol):
         return None
     r = res[0]
     meta = r.get("meta", {})
+    ts = r.get("timestamp") or []
     q = r.get("indicators", {}).get("quote", [{}])[0]
     co, vo = q.get("close") or [], q.get("volume") or []
     hi, lo, op = q.get("high") or [], q.get("low") or [], q.get("open") or []
     # AUSGERICHTET: nur Indizes nehmen, an denen close+volume vorhanden sind
-    closes, volumes, highs, lows, opens = [], [], [], [], []
+    closes, volumes, highs, lows, opens, dates = [], [], [], [], [], []
     for i in range(len(co)):
         c = co[i]
         v = vo[i] if i < len(vo) else None
@@ -88,10 +89,16 @@ def yahoo_chart(symbol):
         lows.append(lo[i] if i < len(lo) and lo[i] is not None else c)
         # Fallback auf Close, falls Open fehlt -> Gap=0, loest f_gap80 nie faelschlich aus
         opens.append(op[i] if i < len(op) and op[i] is not None else c)
+        # Datum je Handelstag (seit 2026-08-21, exit_backtest.py-Vorbereitung):
+        # bisher wurde das rohe timestamp-Array nie mit rausgereicht - jede
+        # Tages-Zuordnung musste bislang ueber die Positions-Reihenfolge
+        # geraten werden. Rein additiv (neuer Dict-Key), aendert nichts an
+        # bestehenden Aufrufern, die nur closes/highs/lows/... lesen.
+        dates.append(datetime.fromtimestamp(ts[i]).strftime("%Y-%m-%d") if i < len(ts) and ts[i] else None)
     if len(closes) < 60:
         return None
     return {"meta": meta, "closes": closes, "volumes": volumes,
-            "highs": highs, "lows": lows, "opens": opens}
+            "highs": highs, "lows": lows, "opens": opens, "dates": dates}
 
 def lade_earnings_kalender(tage):
     """Nasdaq-Earnings-Kalender fuer die naechsten `tage` Tage -> {SYMBOL: 'YYYY-MM-DD'}.
