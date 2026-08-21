@@ -103,6 +103,11 @@ def pipeline(c, push=False):
         # ueber Kalenderzeit, meldet bis dahin nur "noch nicht reif" und tut
         # sonst nichts - kein gesondertes Scheduling noetig.
         lauf("score_faktoren_backtest.py")
+        # Markt-Regime-Forward-Test (seit 2026-08-21): pro Lauf nur zwei neue
+        # Eintraege (ein Regime-Wert je Markt) -> billig genug, um wie
+        # hebel_backtest.py bei jedem Lauf komplett durchzulaufen (--evaluate
+        # ruft log_und_evaluate() auf, kein separates Scheduling noetig).
+        lauf("regime_backtest.py", "--evaluate")
         # Beide lesen LOGBUCH (pfade.LOKAL). Bis 2026-08-16 wuchs das nur auf
         # der Maschine, die zuletzt schrieb - der Cloud-Lauf startete jeden Job
         # mit leerem LOGBUCH (siehe deren main(): "if not lb: return", schrieb
@@ -115,7 +120,8 @@ def pipeline(c, push=False):
         # Cloud-Zyklus zu warten, Bugfix 2026-08-09).
         if not os.environ.get("GITHUB_ACTIONS"):
             subprocess.run([os.path.join(PROJEKT, "scripts", "upload_to_r2.sh"),
-                            "score_backtest.json", "score_faktoren_backtest.json"])
+                            "score_backtest.json", "score_faktoren_backtest.json",
+                            "regime_backtest.json", "regime_backtest.js"])
     sync_logbuch_lokal("sync_logbuch_push.sh")
     return scorer_ok
 

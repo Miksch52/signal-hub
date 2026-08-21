@@ -16,7 +16,7 @@ PROJ="$(cd "$HIER/../.." && pwd)"
 QUELLE="$HOME/Library/Application Support/SignalHub"
 
 cd "$PROJ/cloudflare-worker"
-for f in logbuch.json pivot_logbuch.json pivot_eval_state.json; do
+for f in logbuch.json pivot_logbuch.json pivot_eval_state.json regime_logbuch.json; do
   if [ -f "$QUELLE/$f" ]; then
     if /usr/local/bin/npx --yes wrangler r2 object put \
         "signalhub-magazine/_state/$f" --file="$QUELLE/$f" --remote -y >/dev/null 2>&1; then

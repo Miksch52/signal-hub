@@ -26,7 +26,7 @@ ZIEL="$HOME/Library/Application Support/SignalHub"
 mkdir -p "$ZIEL"
 
 cd "$PROJ/cloudflare-worker"
-for f in logbuch.json pivot_logbuch.json pivot_eval_state.json; do
+for f in logbuch.json pivot_logbuch.json pivot_eval_state.json regime_logbuch.json; do
   if /usr/local/bin/npx --yes wrangler r2 object get \
       "signalhub-magazine/_state/$f" --file="$ZIEL/$f" --remote >/dev/null 2>&1; then
     echo "Geladen: $f"

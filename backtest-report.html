@@ -77,22 +77,26 @@
 
   #s-armed:checked ~ .lg-split .lg-index label[for="s-armed"],
   #s-breakout:checked ~ .lg-split .lg-index label[for="s-breakout"],
-  #s-watch:checked ~ .lg-split .lg-index label[for="s-watch"]{border-left-color:var(--gold);background:var(--paper2);}
+  #s-watch:checked ~ .lg-split .lg-index label[for="s-watch"],
+  #s-regime:checked ~ .lg-split .lg-index label[for="s-regime"]{border-left-color:var(--gold);background:var(--paper2);}
   #s-armed:checked ~ .lg-split .lg-index label[for="s-armed"] .chev,
   #s-breakout:checked ~ .lg-split .lg-index label[for="s-breakout"] .chev,
-  #s-watch:checked ~ .lg-split .lg-index label[for="s-watch"] .chev{color:var(--gold);transform:translateX(2px);}
+  #s-watch:checked ~ .lg-split .lg-index label[for="s-watch"] .chev,
+  #s-regime:checked ~ .lg-split .lg-index label[for="s-regime"] .chev{color:var(--gold);transform:translateX(2px);}
   #s-armed:checked ~ .lg-split .lg-detail #d-armed,
   #s-breakout:checked ~ .lg-split .lg-detail #d-breakout,
-  #s-watch:checked ~ .lg-split .lg-detail #d-watch{display:block;}
+  #s-watch:checked ~ .lg-split .lg-detail #d-watch,
+  #s-regime:checked ~ .lg-split .lg-detail #d-regime{display:block;}
 
   /* Kennzahlen-Leiste (2026-08-17): alle drei Status auf einen Blick, bevor
      man in ein Detail eintaucht - vorher musste man einzeln durchklicken,
      um die Win-Raten zu vergleichen. Dieselben Radio-Inputs steuern sowohl
      diese Kacheln als auch die Detail-Auswahl darunter (ein Klick hier
      wirkt wie ein Klick auf den passenden Eintrag im Index). */
-  .lg-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);
+  .lg-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
     border:1px solid var(--rule);margin:0;}
-  @media (max-width:640px){ .lg-stats{grid-template-columns:1fr;} }
+  @media (max-width:760px){ .lg-stats{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:420px){ .lg-stats{grid-template-columns:1fr;} }
   .lg-stat{display:block;background:var(--paper);padding:1.1rem 1.4rem;cursor:pointer;
     border-bottom:3px solid transparent;transition:background .1s,border-color .1s;}
   .lg-stat:hover{background:var(--paper2);}
@@ -104,7 +108,8 @@
     display:block;margin-top:.35rem;}
   #s-armed:checked ~ .lg-stats label[for="s-armed"],
   #s-breakout:checked ~ .lg-stats label[for="s-breakout"],
-  #s-watch:checked ~ .lg-stats label[for="s-watch"]{border-bottom-color:var(--gold);background:var(--paper2);}
+  #s-watch:checked ~ .lg-stats label[for="s-watch"],
+  #s-regime:checked ~ .lg-stats label[for="s-regime"]{border-bottom-color:var(--gold);background:var(--paper2);}
 
   .lg-panel{display:none;padding:1.75rem clamp(1.25rem,4vw,3rem) 2.5rem;}
 
@@ -184,6 +189,7 @@
     <input type="radio" name="lgsel" id="s-armed" checked>
     <input type="radio" name="lgsel" id="s-breakout">
     <input type="radio" name="lgsel" id="s-watch">
+    <input type="radio" name="lgsel" id="s-regime">
 
     <div class="lg-stats" id="lg-stats">
       <label class="lg-stat" for="s-armed">
@@ -200,6 +206,11 @@
         <span class="lg-stat-lbl">WATCH</span>
         <span class="lg-stat-num" id="stat-watch">–</span>
         <span class="lg-stat-sub" id="stat-watch-sub">–</span>
+      </label>
+      <label class="lg-stat" for="s-regime">
+        <span class="lg-stat-lbl">MARKT-REGIME</span>
+        <span class="lg-stat-num" id="stat-regime">–</span>
+        <span class="lg-stat-sub" id="stat-regime-sub">–</span>
       </label>
     </div>
 
@@ -220,12 +231,18 @@
           <span class="su" id="idx-watch">–</span></span>
           <span class="chev" aria-hidden="true">›</span>
         </label>
+        <label class="lg-idx-row" for="s-regime">
+          <span class="txt"><span class="no">Eintrag 4</span><span class="ti">Markt-Regime</span>
+          <span class="su" id="idx-regime">–</span></span>
+          <span class="chev" aria-hidden="true">›</span>
+        </label>
       </div>
 
       <div class="lg-detail">
         <div class="lg-panel" id="d-armed"></div>
         <div class="lg-panel" id="d-breakout"></div>
         <div class="lg-panel" id="d-watch"></div>
+        <div class="lg-panel" id="d-regime"></div>
       </div>
     </div>
   </div>
@@ -405,7 +422,7 @@ function bestWorstSatz(faelle){
   return satz;
 }
 
-function render(data){
+function render(data, regime){
   document.getElementById('status-msg').style.display='none';
   document.getElementById('ledger').style.display='block';
 
@@ -558,6 +575,52 @@ function render(data){
 
     <div class="lg-body"><p class="lg-empty">Keine Fundstellen — sobald WATCH-Fälle im Forward-Logbuch reifen, erscheinen sie hier in derselben Form wie bei ARMED und BREAKOUT.</p></div>
   `;
+
+  // Markt-Regime (seit 2026-08-21, src/regime_backtest.py): die groesste
+  // Einzelentscheidung im System - grün/gelb/rot steuert 25/50/100 %
+  // Exposure - war bislang die einzige Ampel ohne eigenen Forward-Test.
+  // Gepoolt ueber USA+Europa (nur zwei neue Eintraege pro Tag, eine Trennung
+  // nach Markt wuerde die ohnehin kleine Stichprobe nochmal halbieren).
+  const rfr = (regime && regime.forward_realisiert) || {};
+  const rGruen = rfr.gruen && rfr.gruen['4W'] ? rfr.gruen['4W'] : {n:0};
+  const rGelb  = rfr.gelb  && rfr.gelb['4W']  ? rfr.gelb['4W']  : {n:0};
+  const rRot   = rfr.rot   && rfr.rot['4W']   ? rfr.rot['4W']   : {n:0};
+  const rReif  = (rGruen.n||0) + (rGelb.n||0) + (rRot.n||0);
+
+  document.getElementById('idx-regime').textContent = rReif ? `${fmtPct(rGruen.win)} Win bei Grün` : 'noch keine gereiften Fälle';
+  document.getElementById('stat-regime').innerHTML = rGruen.n ? fmtPct(rGruen.win) : '–';
+  document.getElementById('stat-regime-sub').textContent = rGruen.n ? `${rGruen.n} Fälle · Ø ${fmtSigned(rGruen.avg)}` : (rReif ? `${rReif} Fälle (andere Ampeln)` : 'noch keine gereiften Fälle');
+
+  document.getElementById('d-regime').innerHTML = `
+    <div class="lg-body">
+      <p>Die Grün/Gelb/Rot-Ampel entscheidet über 25/50/100&nbsp;% Exposure — der größte Einzelhebel im ganzen System, bislang aber nie gegen echte Index-Folgerenditen geprüft. Seit dem 21.08.2026 läuft derselbe unverzerrte Forward-Test wie bei den übrigen Signalen: der Leitindex-Kurs (S&amp;P&nbsp;500 für USA, Stoxx für Europa) am Tag der jeweiligen Einstufung gegen den Kurs vier/acht/zwölf Wochen später, gepoolt über beide Märkte.</p>
+      <p>${rReif
+        ? `Bislang <strong>${rGruen.n||0}</strong> gereifte „grüne" Fälle${rGruen.n?` (<strong>${fmtPct(rGruen.win)}</strong> Win, Ø ${fmtSigned(rGruen.avg)})`:''}${rGelb.n?`, <strong>${rGelb.n}</strong> „gelbe" (${fmtPct(rGelb.win)} Win)`:''}${rRot.n?`, <strong>${rRot.n}</strong> „rote" (${fmtPct(rRot.win)} Win)`:''}.`
+        : `Die Stichprobe wächst nur um zwei Einträge pro Tag (ein Regime-Wert je Markt) — belastbare Zahlen brauchen deutlich länger als bei den ticker-basierten Backtests, die täglich Dutzende Einträge sammeln.`}</p>
+    </div>
+
+    <div class="lg-pull">
+      <div class="num">${rGruen.n ? fmtPct(rGruen.win) : '–'}</div>
+      <div class="cap">Trefferquote des Leitindex auf vier Wochen nach „grünem" Regime (n=${rGruen.n||0}, USA+Europa gepoolt).</div>
+    </div>
+
+    ${miniBars([
+      {label:'Regime grün', win:rGruen.win, avg:rGruen.avg},
+      {label:'Regime gelb', win:rGelb.win, avg:rGelb.avg},
+      {label:'Regime rot', win:rRot.win, avg:rRot.avg, shade:1},
+    ])}
+    <table class="lg-tbl">
+      <caption>Forward-Test, unverzerrt · 4 Wochen · Leitindex USA+Europa gepoolt</caption>
+      <thead><tr><th>Regime</th><th>n</th><th>Win-Rate</th><th>Ø-Return</th></tr></thead>
+      <tbody>
+        <tr><td>Grün</td><td>${rGruen.n||0}</td><td class="${rGruen.n&&rGruen.win>50?'good':''}">${fmtPct(rGruen.win)}</td><td class="${rGruen.avg>0?'good':rGruen.avg<0?'bad':''}">${fmtSigned(rGruen.avg)}</td></tr>
+        <tr><td>Gelb</td><td>${rGelb.n||0}</td><td>${fmtPct(rGelb.win)}</td><td>${fmtSigned(rGelb.avg)}</td></tr>
+        <tr><td>Rot</td><td>${rRot.n||0}</td><td class="${rRot.n&&rRot.win<50?'bad':''}">${fmtPct(rRot.win)}</td><td class="${rRot.avg<0?'bad':''}">${fmtSigned(rRot.avg)}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="lg-body"><p class="lg-empty">Kein ticker-basiertes Fundstellen-Verzeichnis — hier zählt der Leitindex, nicht die Einzelaktie.</p></div>
+  `;
 }
 
 async function init(){
@@ -571,7 +634,17 @@ async function init(){
     document.getElementById('status-msg').textContent = 'Backtest-Daten nicht erreichbar. Läuft der Server, und existiert data/pivot_backtest.json?';
     return;
   }
-  render(data);
+  // Markt-Regime-Backtest (seit 2026-08-21) ist eine separate, optionale
+  // Datei - fehlt sie (z.B. vor dem ersten Lauf), rendert render() das
+  // Regime-Panel einfach im "noch keine Daten"-Zustand statt die ganze
+  // Seite zu blockieren.
+  let regime=null;
+  try{
+    const r2=await fetch('data/regime_backtest.json',{cache:'no-store'});
+    if(r2.ok) regime=await r2.json();
+  }catch(e){}
+  if(!regime){ await _ladeFallbackSkript('data/regime_backtest.js'); regime = window.REGIME_BACKTEST_DATA || null; }
+  render(data, regime);
 }
 init();
 </script>

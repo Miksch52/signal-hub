@@ -33,6 +33,8 @@ PIVOT_HISTORY = os.path.join(DATA, "pivot_history.json")  # Tages-Historie BREAK
 PIVOT_HISTORY_JS = os.path.join(DATA, "pivot_history.js")  # file://-Fallback
 PIVOT_BACKTEST = os.path.join(DATA, "pivot_backtest.json")  # Backtest-Auswertung
 PIVOT_BACKTEST_JS = os.path.join(DATA, "pivot_backtest.js")  # file://-Fallback
+REGIME_BACKTEST = os.path.join(DATA, "regime_backtest.json")  # Markt-Regime-Forward-Test
+REGIME_BACKTEST_JS = os.path.join(DATA, "regime_backtest.js")  # file://-Fallback
 # Taeglicher OHLC-Snapshot (seit 2026-08-20, siehe ohlc_history.py): einzige
 # tatsaechlich dauerhafte Kurshistorie im System - der Yahoo-Tages-Cache
 # (YAHOO_CACHE unten) wird auf dem Cloud-Runner nie gesichert und faengt bei
@@ -84,3 +86,4 @@ LOGBUCH = os.path.join(LOKAL, "logbuch.json")
 PIVOT_STATE = os.path.join(LOKAL, "pivot_state.json")   # Zustands-Uebergaenge fuer Push
 PIVOT_LOGBUCH = os.path.join(LOKAL, "pivot_logbuch.json")  # Forward-Log der ARMED/BREAKOUT-Picks
 PIVOT_EVAL_STATE = os.path.join(LOKAL, "pivot_eval_state.json")  # Reife-Meilensteine fuer Push
+REGIME_LOGBUCH = os.path.join(LOKAL, "regime_logbuch.json")  # Forward-Log des Markt-Regimes je Markt

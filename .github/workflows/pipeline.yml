@@ -117,7 +117,9 @@ jobs:
       # (dort per scripts/sync_logbuch_pull.sh|push.sh, siehe run.py::
       # sync_logbuch_lokal()) - beide Seiten ziehen vor dem Lauf und schreiben
       # danach zurueck, damit die unverzerrte Stichprobe geraeteunabhaengig
-      # waechst.
+      # waechst. regime_logbuch.json (seit 2026-08-21, regime_backtest.py)
+      # bekommt von Anfang an dieselbe R2-Sicherung statt erst nachtraeglich
+      # retrofittet zu werden wie die drei Dateien oben.
       - name: Zustand (state.json, pivot_state.json, Forward-Logbuecher) aus R2 wiederherstellen
         run: |
           mkdir -p ~/"Library/Application Support/SignalHub"
@@ -126,6 +128,7 @@ jobs:
           rclone copy r2:signalhub-magazine/_state/logbuch.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/pivot_logbuch.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/pivot_eval_state.json ~/"Library/Application Support/SignalHub/" || true
+          rclone copy r2:signalhub-magazine/_state/regime_logbuch.json ~/"Library/Application Support/SignalHub/" || true
 
       - name: Magazine aus R2 laden
         run: |
@@ -170,6 +173,7 @@ jobs:
           rclone copy ~/"Library/Application Support/SignalHub/logbuch.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/SignalHub/pivot_logbuch.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/SignalHub/pivot_eval_state.json" r2:signalhub-magazine/_state/ || true
+          rclone copy ~/"Library/Application Support/SignalHub/regime_logbuch.json" r2:signalhub-magazine/_state/ || true
 
       # Taeglicher OHLC-Snapshot (seit 2026-08-20, Top-Setups-Roadmap Punkt 4,
       # siehe src/ohlc_history.py): anders als der Yahoo-Tages-Cache oben
