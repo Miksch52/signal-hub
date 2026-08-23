@@ -553,17 +553,113 @@ jobs:
           [ -d data/price-action-hub ] && rclone copy data/price-action-hub/ r2:signalhub-magazine/_deploy/price-action-hub/ --include "*.js" --include "*.json" || true
           [ -d data/rotation-dashboard ] && rclone copy data/rotation-dashboard/ r2:signalhub-magazine/_deploy/rotation-dashboard/ --include "*.js" --include "*.json" || true
 
+      # Anti-Spam-Zustand fuer die Token-Ueberwachung (seit 2026-08-23) - gleiches
+      # Muster wie pivot_eval_state.json/top_setups_state.json: ohne diesen
+      # Zustand wuerde ein toter Token 4x taeglich pushen und die Warnung vor
+      # einem bald ablaufenden Token 14 Tage lang ~56 Pushes erzeugen.
+      - name: Token-Warnzustand aus R2 holen
+        run: rclone copy r2:signalhub-magazine/_state/deploy_token_state.json ./ || true
+
       - name: Deploy im Hauptrepo (Miksch52/maick-trading-system) anstossen
-        # -f: Exit-Code != 0 bei HTTP-Fehlerstatus (4xx/5xx), statt wie zuvor
-        # stillschweigend "erfolgreich" zu melden, obwohl z. B. ein falscher/
-        # abgelaufener DEPLOY_TRIGGER_TOKEN nur eine Fehler-JSON zurueckgibt.
-        # Ersetzt NICHT die inhaltliche Pruefung, ob der eigentliche Deploy-Lauf
-        # im Hauptrepo dann auch durchlief (das Repo bleibt privat und kann am
-        # eigenen, kontoweiten Actions-Minuten-Kontingent scheitern - separat
-        # ueberwachen, z. B. per gh run list --repo Miksch52/maick-trading-system).
+        # Warum hier eine Ueberwachung haengt (seit 2026-08-23): am 2026-08-23
+        # ist der DEPLOY_TRIGGER_TOKEN zwischen 14:11 und 15:19 abgelaufen. Alle
+        # Datenjobs liefen weiter sauber durch, nur dieser letzte Schritt bekam
+        # 401 - die Pipeline war rot, aber die Live-Seite wurde einfach nicht
+        # mehr aktualisiert. Aufgefallen ist das rein zufaellig beim Nachsehen,
+        # nicht durch eine Meldung. Genau das soll hier nicht wieder passieren:
+        # der Fehler geht jetzt ueber denselben ntfy-Kanal raus wie die uebrigen
+        # Push-Quellen, und ein bald ablaufender Token meldet sich VOR dem Ende.
+        #
+        # Deckt alle drei Repos ab: price-action-hub und rotation-dashboard
+        # nutzen in ihren deploy-trigger.yml denselben Token-WERT, ein Ablauf
+        # trifft also immer alle drei gleichzeitig.
+        #
+        # 404 wird wie 401/403 behandelt: ein fine-grained PAT ohne (noch)
+        # gueltigen Zugriff auf das PRIVATE Hauptrepo bekommt von GitHub 404
+        # statt 403 - dieselbe Sonderbehandlung wie in triggerCloudWorkflow()
+        # im Frontend (siehe Wiki, Fix 2026-08-16).
+        env:
+          DEPLOY_TRIGGER_TOKEN: ${{ secrets.DEPLOY_TRIGGER_TOKEN }}
+          SIGNALHUB_CONFIG_JSON: ${{ secrets.SIGNALHUB_CONFIG_JSON }}
         run: |
-          curl -sS -f -X POST \
-            -H "Authorization: Bearer ${{ secrets.DEPLOY_TRIGGER_TOKEN }}" \
+          set -uo pipefail
+          STATE=deploy_token_state.json
+          [ -f "$STATE" ] || echo '{}' > "$STATE"
+          HEUTE=$(date -u +%F)
+
+          # ntfy-Ziel aus derselben config.json wie alle anderen Push-Quellen -
+          # reiner Datei-Read, kein Import (gleiches Muster wie top_setups.py).
+          NTFY_THEMA=$(printf '%s' "$SIGNALHUB_CONFIG_JSON" | jq -r '.benachrichtigung.ntfy_thema // ""')
+          NTFY_SERVER=$(printf '%s' "$SIGNALHUB_CONFIG_JSON" | jq -r '.benachrichtigung.ntfy_server // "https://ntfy.sh"')
+
+          # alarm <schluessel> <titel> <text> <prio> - hoechstens einmal pro Tag
+          # je Schluessel, damit ein Dauerzustand nicht zum Push-Dauerfeuer wird.
+          alarm() {
+            schluessel="$1"; titel="$2"; text="$3"; prio="${4:-default}"
+            if [ -z "$NTFY_THEMA" ] || printf '%s' "$NTFY_THEMA" | grep -qi NOCH; then
+              echo "  (kein ntfy-Thema konfiguriert -> kein Push)"; return 0
+            fi
+            letzter=$(jq -r --arg k "$schluessel" '.[$k] // ""' "$STATE")
+            if [ "$letzter" = "$HEUTE" ]; then
+              echo "  (heute schon gemeldet: $schluessel -> kein weiterer Push)"; return 0
+            fi
+            curl -sS -X POST "${NTFY_SERVER%/}/$NTFY_THEMA" \
+              -H "Title: $titel" -H "Tags: key" -H "Priority: $prio" \
+              -d "$text" >/dev/null && echo "  Push gesendet: $titel" \
+              || echo "  ! ntfy-Versand fehlgeschlagen"
+            jq --arg k "$schluessel" --arg d "$HEUTE" '.[$k]=$d' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+          }
+
+          CODE=$(curl -sS -o antwort.json -D kopfzeilen.txt -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $DEPLOY_TRIGGER_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/Miksch52/maick-trading-system/actions/workflows/deploy.yml/dispatches \
-            -d '{"ref":"main"}'
+            -d '{"ref":"main"}')
+          echo "HTTP $CODE"
+
+          case "$CODE" in
+            401|403|404)
+              alarm token_abgelehnt \
+                "🔑 Deploy-Trigger-Token abgelehnt (HTTP $CODE)" \
+                "Die Cloud-Pipeline laeuft, aber die Live-Seite wird NICHT mehr aktualisiert.
+          Betrifft alle drei Repos (signal-hub, price-action-hub, rotation-dashboard) - gleicher Token-Wert.
+          Fix: neuen fine-grained PAT anlegen (Actions: Read and write auf maick-trading-system) und als Secret DEPLOY_TRIGGER_TOKEN in allen drei Repos setzen.
+          Bis dahin: Deploy von Hand anstossen mit
+          gh workflow run deploy.yml --repo Miksch52/maick-trading-system --ref main" \
+                urgent
+              rclone copy "$STATE" r2:signalhub-magazine/_state/ || true
+              exit 1 ;;
+            2*) : ;;
+            *)
+              alarm token_fehler \
+                "⚠️ Deploy-Trigger fehlgeschlagen (HTTP $CODE)" \
+                "Kein Token-Problem, aber der Deploy im Hauptrepo wurde nicht angestossen. Antwort: $(head -c 300 antwort.json)" \
+                high
+              rclone copy "$STATE" r2:signalhub-magazine/_state/ || true
+              exit 1 ;;
+          esac
+
+          # Vorwarnung: GitHub liefert bei PATs MIT Ablaufdatum den Header
+          # "GitHub-Authentication-Token-Expiration". Fehlt er (OAuth-/App-Token
+          # oder PAT ohne Ablauf), wird die Pruefung still uebersprungen - kein
+          # Fehler, nur keine Vorwarnung moeglich.
+          ABLAUF=$(grep -i '^github-authentication-token-expiration:' kopfzeilen.txt | sed 's/^[^:]*: *//' | tr -d '\r')
+          if [ -n "$ABLAUF" ]; then
+            ENDE=$(date -u -d "$ABLAUF" +%s 2>/dev/null || echo "")
+            if [ -n "$ENDE" ]; then
+              TAGE=$(( (ENDE - $(date -u +%s)) / 86400 ))
+              echo "Token laeuft ab am $ABLAUF (noch $TAGE Tage)"
+              if [ "$TAGE" -le 14 ]; then
+                alarm token_laeuft_ab \
+                  "🔑 Deploy-Token laeuft in $TAGE Tagen ab" \
+                  "Ablauf: $ABLAUF
+          Danach wird die Live-Seite nicht mehr automatisch aktualisiert (betrifft alle drei Repos).
+          Rechtzeitig neuen fine-grained PAT anlegen und DEPLOY_TRIGGER_TOKEN in signal-hub, price-action-hub und rotation-dashboard neu setzen." \
+                  high
+              fi
+            fi
+          else
+            echo "Kein Ablaufdatum im Antwort-Header -> keine Vorwarnung moeglich (OAuth-/App-Token oder PAT ohne Ablauf)."
+          fi
+
+          rclone copy "$STATE" r2:signalhub-magazine/_state/ || true
