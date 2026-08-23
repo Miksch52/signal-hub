@@ -130,6 +130,29 @@ jobs:
           rclone copy r2:signalhub-magazine/_state/pivot_eval_state.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/regime_logbuch.json ~/"Library/Application Support/SignalHub/" || true
 
+      # pivot_backtest.json (seit 2026-08-23): den ZULETZT deployten Stand als
+      # Basis in data/ zurueckholen, bevor run.py laeuft.
+      #
+      # Warum: pivot_backtest.py --evaluate merged seine frischen Forward-Zahlen
+      # in die bestehende Datei (siehe main(): "bestand" wird geladen und nur um
+      # forward_realisiert/-einzelfaelle/-stand ergaenzt). Auf einem frischen
+      # Runner gibt es diese Datei nicht -> ohne diesen Restore wuerde --evaluate
+      # eine Datei OHNE den RETRO-Block (ergebnis/n_charts/bias_hinweis)
+      # schreiben und damit den Backtest-Report auf der Live-Seite kaputtmachen.
+      # Der RETRO-Lauf selbst bleibt bewusst woechentlich und lokal
+      # (scripts/weekly_backtest_upload.sh) - er ist der teure, ohnehin
+      # Bias-behaftete Teil; der Forward-Test ist der, der taeglich reifen muss.
+      #
+      # Quelle ist _deploy/signal-hub/ (dorthin laedt der deploy-Job dieses
+      # Workflows die Ausgaben, und dorthin laedt auch der woechentliche lokale
+      # Lauf per scripts/upload_to_r2.sh) - also derselbe Stand, den die
+      # Live-Seite gerade zeigt. "|| true": fehlt die Datei (ganz frisches
+      # Setup), laeuft die Pipeline normal weiter.
+      - name: Letzten pivot_backtest-Stand aus R2 holen (Basis fuer --evaluate)
+        run: |
+          mkdir -p data
+          rclone copy r2:signalhub-magazine/_deploy/signal-hub/pivot_backtest.json data/ || true
+
       - name: Magazine aus R2 laden
         run: |
           mkdir -p _magazine

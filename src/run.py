@@ -92,9 +92,39 @@ def pipeline(c, push=False):
         # Heutige ARMED/BREAKOUT ins Forward-Logbuch (unverzerrte Stichprobe,
         # reift ueber Kalenderzeit -> Basis fuer pivot_backtest.py --evaluate).
         lauf("pivot_backtest.py", "--log")
-        # --evaluate laeuft NICHT hier (4x/Tag waere unnoetig haeufig), sondern
-        # wöchentlich per com.maick.pivot-backtest.plist (So 08:15) - pusht per
-        # ntfy automatisch, sobald eine Kohorte die Reife-Schwelle erreicht.
+        # --evaluate laeuft seit 2026-08-23 bei JEDEM Lauf mit (vorher nur
+        # woechentlich per com.maick.pivot-backtest.plist, So 08:15).
+        #
+        # Grund: die alte Regelung machte den Forward-Test faktisch
+        # Mac-mini-abhaengig und damit im Cloud-Betrieb wirkungslos. Die
+        # Cloud-Pipeline rief nur --log auf, also existierte
+        # data/pivot_backtest.json auf dem Runner nie - top_setups.py fand
+        # nichts, lieferte fuer JEDEN Eintrag backtest=None, und die
+        # Kern-Setup-Auszeichnung auf der Startseite konnte in der Cloud nie
+        # greifen. Sichtbar wurde das erst, als die Startseite die gemessene
+        # Zahl statt nur eines Sterns anzeigt ("kein Beleg" ueberall).
+        # Nebenwirkung derselben Ursache: die live ausgelieferte
+        # pivot_backtest.json war am 2026-08-23 vom 09.08. - der woechentliche
+        # Upload laeuft nur bei eingeschaltetem Mac mini. Verstoesst gegen
+        # "Geraeteunabhaengigkeit hat Vorrang" (CLAUDE.md).
+        #
+        # Kosten: vernachlaessigbar. evaluate() zieht KEINE zusaetzlichen
+        # Yahoo-Daten, sondern liest den Tages-Cache, den scorer.py im selben
+        # Lauf ohnehin schon gefuellt hat (scorer.hole_chart_cached, siehe
+        # Modul-Docstring in pivot_backtest.py).
+        #
+        # Kein Push-Spam trotz 4x/Tag: push_reife() hat eigenen Anti-Spam ueber
+        # pivot_eval_state.json (nur beim ERSTEN Erreichen der Reife-Schwelle
+        # bzw. wenn n um ~50% waechst), und dieser Zustand wird in der Pipeline
+        # aus R2 wiederhergestellt und danach zurueckgesichert - der Runner
+        # startet also nicht bei null.
+        #
+        # Der RETRO-Lauf (Default ohne Argument) bleibt bewusst woechentlich
+        # und lokal: teuer (Walk-Forward ueber ~560 Charts) und ohnehin durch
+        # die Universums-Vorauswahl verzerrt (siehe bias_hinweis). --evaluate
+        # ueberschreibt dessen Block nicht, sondern ergaenzt nur die
+        # forward_*-Felder in der bestehenden Datei.
+        lauf("pivot_backtest.py", "--evaluate")
     if scorer_ok:
         # Trefferquoten des Momentum-Scores (Tier A/B, Forward-Test gegen das
         # Score-Logbuch). Teilt den Tages-Yahoo-Cache mit dem Scorer -> billig.
@@ -119,9 +149,18 @@ def pipeline(c, push=False):
         # hier bleibt trotzdem (schneller Stand ohne auf den naechsten
         # Cloud-Zyklus zu warten, Bugfix 2026-08-09).
         if not os.environ.get("GITHUB_ACTIONS"):
+            # pivot_backtest.* seit 2026-08-23 mit dabei: --evaluate laeuft
+            # jetzt bei jedem Lauf (siehe oben), also darf auch der lokale
+            # Stand sofort nach R2 - sonst haette ein Mac-mini-Lauf frischere
+            # Forward-Zahlen als die Live-Seite, bis der naechste Cloud-Zyklus
+            # sie ueberschreibt. Der woechentliche
+            # scripts/weekly_backtest_upload.sh laedt dieselben zwei Dateien
+            # weiterhin hoch (dort nach dem teuren RETRO-Lauf) - doppelt
+            # hochladen schadet nicht, upload_to_r2.sh ist idempotent.
             subprocess.run([os.path.join(PROJEKT, "scripts", "upload_to_r2.sh"),
                             "score_backtest.json", "score_faktoren_backtest.json",
-                            "regime_backtest.json", "regime_backtest.js"])
+                            "regime_backtest.json", "regime_backtest.js",
+                            "pivot_backtest.json", "pivot_backtest.js"])
     sync_logbuch_lokal("sync_logbuch_push.sh")
     return scorer_ok
 
