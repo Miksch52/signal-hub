@@ -87,3 +87,11 @@ PIVOT_STATE = os.path.join(LOKAL, "pivot_state.json")   # Zustands-Uebergaenge f
 PIVOT_LOGBUCH = os.path.join(LOKAL, "pivot_logbuch.json")  # Forward-Log der ARMED/BREAKOUT-Picks
 PIVOT_EVAL_STATE = os.path.join(LOKAL, "pivot_eval_state.json")  # Reife-Meilensteine fuer Push
 REGIME_LOGBUCH = os.path.join(LOKAL, "regime_logbuch.json")  # Forward-Log des Markt-Regimes je Markt
+# Plausibilitaetswaechter (seit 2026-08-23, siehe quellen_watchdog.py): Tages-
+# Historie der Trefferzahlen je Rohsignal-Quelle + Anti-Spam-Zustand fuer den
+# "0 Treffer trotz verlaesslicher Historie"-Push. Wie die uebrigen State-
+# Dateien lokal (nicht iCloud) und per pipeline.yml aus/nach R2 gesichert -
+# ein frischer Cloud-Runner haette sonst nie eine Historie, gegen die sich
+# "heute ploetzlich 0" ueberhaupt erkennen liesse.
+QUELLEN_HISTORIE = os.path.join(LOKAL, "quellen_historie.json")
+QUELLEN_WATCHDOG_STATE = os.path.join(LOKAL, "quellen_watchdog_state.json")

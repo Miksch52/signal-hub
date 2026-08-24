@@ -70,6 +70,16 @@ def pipeline(c, push=False):
     # ueberspringen sauber, wenn die Datei (noch) fehlt.
     lauf("markets360_screener.py")
     lauf("trendscreener_screener.py")
+    # Plausibilitaetswaechter (seit 2026-08-23, Systempruefung): keins der fuenf
+    # obigen Skripte wirft einen Fehler, wenn seine Quelle leer laeuft (IMAP-
+    # Passwort abgelaufen, R2-Sync kaputt, Finviz-Screener liefert nichts) -
+    # jedes schreibt einfach eine leere Liste und beendet sich mit Code 0. Der
+    # Waechter vergleicht die heutige Trefferzahl je Quelle gegen deren eigene
+    # Historie und pusht, wenn eine bisher verlaessliche Quelle ploetzlich auf
+    # 0 faellt (siehe quellen_watchdog.py-Docstring). Laeuft VOR scorer.py,
+    # unabhaengig von dessen Erfolg - absichtlich nicht in scorer_ok verrechnet,
+    # der Push ist der eigentliche Meldeweg (wie beim Deploy-Token-Waechter).
+    lauf("quellen_watchdog.py")
     scorer_ok = lauf("scorer.py")
     # Taeglicher OHLC-Snapshot (seit 2026-08-20, Top-Setups-Roadmap Punkt 4):
     # einzige tatsaechlich dauerhafte Kurshistorie im System, siehe
