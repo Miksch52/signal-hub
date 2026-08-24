@@ -698,7 +698,22 @@ jobs:
           # "GitHub-Authentication-Token-Expiration". Fehlt er (OAuth-/App-Token
           # oder PAT ohne Ablauf), wird die Pruefung still uebersprungen - kein
           # Fehler, nur keine Vorwarnung moeglich.
-          ABLAUF=$(grep -i '^github-authentication-token-expiration:' kopfzeilen.txt | sed 's/^[^:]*: *//' | tr -d '\r')
+          #
+          # Bugfix 2026-08-24: "|| true" am Ende der Pipeline ist hier PFLICHT,
+          # kein Stilmittel. grep liefert exit 1, wenn der Header fehlt (der
+          # Normalfall bei den meisten Tokens) - unter "bash -e" (GitHub
+          # Actions' Standard-Shell fuer run:-Bloecke) UND set -o pipefail
+          # (oben in diesem Skript gesetzt) bricht eine fehlschlagende Pipeline
+          # in einer Zuweisung das GESAMTE Script sofort ab, noch bevor die
+          # eigentlich vorgesehene "still uebersprungen"-Behandlung ueberhaupt
+          # erreicht wird. Traf bislang nie auf, weil der Case-Zweig fuer
+          # 401/403 vorher schon per exit 1 verliess - beim ERSTEN echten
+          # Erfolg (HTTP 204, nachdem der Token am 2026-08-23 erneuert wurde)
+          # brach der Schritt dadurch still ab: kein Fehlertext, kein Push,
+          # nur "Process completed with exit code 1" - obwohl der Deploy im
+          # Hauptrepo laengst erfolgreich ausgeloest war. Der Job zeigte rot
+          # fuer einen tatsaechlich funktionierenden Lauf.
+          ABLAUF=$(grep -i '^github-authentication-token-expiration:' kopfzeilen.txt | sed 's/^[^:]*: *//' | tr -d '\r' || true)
           if [ -n "$ABLAUF" ]; then
             ENDE=$(date -u -d "$ABLAUF" +%s 2>/dev/null || echo "")
             if [ -n "$ENDE" ]; then
