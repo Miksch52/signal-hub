@@ -482,6 +482,21 @@ jobs:
     needs: [signal-hub, price-action-hub, rotation-dashboard]
     runs-on: ubuntu-latest
     steps:
+      # Nur fuer forward_test_review.py (seit 2026-08-23) - der deploy-Job
+      # hatte bis dahin ueberhaupt keinen Checkout, nur Artifact-Downloads
+      # (braucht er fuer rclone/curl/jq auch nicht). Eigener Pfad
+      # "signal-hub-repo", damit er nicht mit dem Artifact-Ordner
+      # "data/signal-hub" weiter unten kollidiert.
+      - name: Signal-Hub-Repo auschecken (nur fuer forward_test_review.py)
+        uses: actions/checkout@v4
+        with:
+          path: signal-hub-repo
+
+      - name: Python fuer forward_test_review.py einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Signal-Hub-Ausgabe herunterladen
         uses: actions/download-artifact@v4
         with:
@@ -538,6 +553,12 @@ jobs:
           no_check_bucket = true
           CONF
 
+      # Rollierender Monats-Schnappschuss fuer forward_test_review.py (seit
+      # 2026-08-23) - ohne Restore haette jeder Lauf auf einem frischen Runner
+      # keine Basis und koennte nie "heute gegen vor ~1 Monat" vergleichen.
+      - name: Forward-Test-Schnappschuss aus R2 holen
+        run: rclone copy r2:signalhub-magazine/_state/forward_test_snapshot.json ./ || true
+
       - name: Ausgabedateien nach R2 hochladen (fuer den Deploy-Workflow im Hauptrepo)
         # "|| true" pro Zeile noetig: bei uebersprungenen Slots enthalten die
         # Ordner nur den ARTIFACT_KEEP-Platzhalter - "[ -d ... ] && ..."
@@ -556,6 +577,36 @@ jobs:
           [ -d data/signal-hub ] && rclone copy data/signal-hub/ r2:signalhub-magazine/_deploy/signal-hub/ --include "*.js" --include "*.json" || true
           [ -d data/price-action-hub ] && rclone copy data/price-action-hub/ r2:signalhub-magazine/_deploy/price-action-hub/ --include "*.js" --include "*.json" || true
           [ -d data/rotation-dashboard ] && rclone copy data/rotation-dashboard/ r2:signalhub-magazine/_deploy/rotation-dashboard/ --include "*.js" --include "*.json" || true
+
+      # Forward-Test-Waechter (seit 2026-08-23, Systempruefung - teuerster
+      # Einzelbefund): erkennt automatisch, wenn eine Backtest-Kohorte
+      # belastbar wird oder sich eine Rangfolge (ARMED/BREAKOUT) dreht,
+      # statt darauf zu warten, dass jemand monatlich von Hand nachschaut -
+      # siehe forward_test_review.py-Docstring fuer die volle Begruendung
+      # (der Kommentar "bei genug Daten erneut pruefen" in top_setups.py
+      # existierte bis dahin nur als Text, nie als etwas, das passiert ist).
+      # Vergleicht/erneuert den Schnappschuss nur, wenn er >= 28 Tage alt
+      # ist - an allen anderen Tagen tut dieser Schritt nichts (siehe
+      # SNAPSHOT_MINDESTALTER_TAGE im Skript), kein Push-Spam bei 4x/Tag.
+      - name: Forward-Test-Waechter ausfuehren
+        env:
+          SIGNALHUB_CONFIG_JSON: ${{ secrets.SIGNALHUB_CONFIG_JSON }}
+        run: |
+          NTFY_THEMA=$(printf '%s' "$SIGNALHUB_CONFIG_JSON" | jq -r '.benachrichtigung.ntfy_thema // ""')
+          NTFY_SERVER=$(printf '%s' "$SIGNALHUB_CONFIG_JSON" | jq -r '.benachrichtigung.ntfy_server // "https://ntfy.sh"')
+          export NTFY_THEMA NTFY_SERVER
+          python3 signal-hub-repo/src/forward_test_review.py \
+            data/signal-hub/pivot_backtest.json \
+            data/signal-hub/score_backtest.json \
+            data/signal-hub/regime_backtest.json \
+            data/price-action-hub/muster_backtest.json \
+            data/price-action-hub/hebel_backtest.json \
+            data/rotation-dashboard/rotation_backtest.json \
+            forward_test_snapshot.json
+
+      - name: Forward-Test-Schnappschuss nach R2 sichern
+        if: always()
+        run: rclone copy forward_test_snapshot.json r2:signalhub-magazine/_state/ || true
 
       # Anti-Spam-Zustand fuer die Token-Ueberwachung (seit 2026-08-23) - gleiches
       # Muster wie pivot_eval_state.json/top_setups_state.json: ohne diesen
