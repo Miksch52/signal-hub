@@ -17,6 +17,7 @@
     --clr-gold1:#e0c37f; --clr-amber:#f4b350; --clr-orangered:#ff8c7a; --clr-purple1:#c9a0dc;
     --clr-gold2:#e0a94e; --clr-bluegrey1:#c9d6e3; --clr-gold3:#e0b96e; --clr-salmon:#ff9a8c;
     --clr-purple2:#c9a4e0; --clr-gold4:#f3c869; --clr-sectgrey:#9db4cc;
+    --chart-bg:rgba(8,16,28,.55); --chart-vol:#33485f; --chart-blue:#3b9ae1; --chart-priceline:#eaf2fb;
   }
   :root[data-theme="light"]{
     color-scheme:light;
@@ -29,6 +30,7 @@
     --clr-gold1:#8A6A1F; --clr-amber:#8A5A15; --clr-orangered:#A1402F; --clr-purple1:#6B3FA0;
     --clr-gold2:#8A6A1F; --clr-bluegrey1:#3D4C5E; --clr-gold3:#8A6A1F; --clr-salmon:#A1402F;
     --clr-purple2:#6B3FA0; --clr-gold4:#8A6A1F; --clr-sectgrey:#3D4C5E;
+    --chart-bg:rgba(255,255,255,.75); --chart-vol:#B7C2D0; --chart-blue:#1D6FB8; --chart-priceline:#16212C;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -179,7 +181,7 @@
   .bar{flex:1;height:5px;border-radius:3px;background:var(--bg2);overflow:hidden}
   .bar > i{display:block;height:100%}
   .b-gruen{background:var(--ok)} .b-gelb{background:var(--warn)} .b-rot{background:var(--bad)}
-  .chart{background:#0d1828;border:1px solid var(--line);border-radius:6px;padding:2px}
+  .chart{background:var(--chart-bg);border:1px solid var(--line);border-radius:6px;padding:2px}
   .chart svg{width:100%;height:96px;display:block}
   .chleg{font-size:10px;color:var(--muted);display:flex;gap:9px;margin-top:3px}
   .chleg i{display:inline-block;width:8px;height:2px;vertical-align:middle;margin-right:3px}
@@ -247,7 +249,7 @@
   /* Akzente heller für Kontrast + Premium-Feel */
   .links a{color:var(--primary2)}
   .seg button.active{box-shadow:0 0 14px rgba(47,208,198,.35)}
-  .chart{background:rgba(8,16,28,.55)}
+  .chart{background:var(--chart-bg)}
   input[type=search],select,.field input{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
   .hittab{border-collapse:collapse;width:auto}
   .hittab th,.hittab td{padding:4px 12px;text-align:right;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap}
@@ -382,12 +384,12 @@
    </div>
    <div class="chleg">
     <span>Chart:</span>
-    <span><i style="background:#2FB08D"></i>Kerze auf</span>
-    <span><i style="background:#E74C3C"></i>Kerze ab</span>
-    <span><i style="background:#3b9ae1"></i>SMA50</span>
-    <span><i style="background:#F39C12"></i>SMA150</span>
-    <span><i style="background:#E74C3C"></i>SMA200</span>
-    <span><i style="background:#33485f;height:6px"></i>Volumen</span>
+    <span><i style="background:var(--ok)"></i>Kerze auf</span>
+    <span><i style="background:var(--bad)"></i>Kerze ab</span>
+    <span><i style="background:var(--chart-blue)"></i>SMA50</span>
+    <span><i style="background:var(--warn)"></i>SMA150</span>
+    <span><i style="background:var(--bad)"></i>SMA200</span>
+    <span><i style="background:var(--chart-vol);height:6px"></i>Volumen</span>
    </div>
   </details>
   <details id="dropbox" class="filterbox">
@@ -1143,25 +1145,25 @@ function minichart(ch){
   };
   const vmax=Math.max(...v,1), bw=Math.max(1,W/n*(kerzen?0.62:0.72));
   let vol='';
-  v.forEach((val,i)=>{ const bh=Math.max(0.4,(val/vmax)*volH); vol+=`<rect x="${(X(i)-bw/2).toFixed(1)}" y="${(H-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="#33485f"/>`; });
+  v.forEach((val,i)=>{ const bh=Math.max(0.4,(val/vmax)*volH); vol+=`<rect x="${(X(i)-bw/2).toFixed(1)}" y="${(H-bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="var(--chart-vol)"/>`; });
   let preis='';
   if(kerzen){
     for(let i=0;i<n;i++){
       if(ch.o[i]==null||ch.h[i]==null||ch.l[i]==null||c[i]==null) continue;
-      const up=c[i]>=ch.o[i], col=up?'#2FB08D':'#E74C3C', x=X(i);
+      const up=c[i]>=ch.o[i], col=up?'var(--ok)':'var(--bad)', x=X(i);
       const yO=Y(ch.o[i]), yC=Y(c[i]);
       const bodyTop=Math.min(yO,yC), bodyH=Math.max(1,Math.abs(yC-yO));
       preis+=`<line x1="${x.toFixed(1)}" y1="${Y(ch.h[i]).toFixed(1)}" x2="${x.toFixed(1)}" y2="${Y(ch.l[i]).toFixed(1)}" stroke="${col}" stroke-width="1"/>`
         +`<rect x="${(x-bw/2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${bodyH.toFixed(1)}" fill="${col}"/>`;
     }
   } else {
-    preis=linie(c,'#eaf2fb',1.7);
+    preis=linie(c,'var(--chart-priceline)',1.7);
   }
   return `<div class="chart" title="6 Monate · ${kerzen?'Kerzen':'Kurs'} + SMA50/150/200 + Volumen"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
     +vol
-    +linie(ch.s200,'#E74C3C',1)
-    +linie(ch.s150,'#F39C12',1)
-    +linie(ch.s50,'#3b9ae1',1)
+    +linie(ch.s200,'var(--bad)',1)
+    +linie(ch.s150,'var(--warn)',1)
+    +linie(ch.s50,'var(--chart-blue)',1)
     +preis
     +`</svg></div>`;
 }
