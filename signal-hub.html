@@ -13,8 +13,18 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
        background:var(--bg);color:var(--txt);line-height:1.45}
+  /* padding-left reserviert Platz für #mts-home-btn (position:fixed, siehe unten) —
+     der Chip liegt AUSSERHALB des Header-Boxmodells (eigenes z-index:2147483000,
+     bleibt so über Filter-/Einstellungs-Drawer sichtbar) und kollidierte dadurch mit
+     dem Titel "📈 Daily Signal Hub": beide starten bei x≈8-20px, der Chip überdeckte
+     "📈 Dail" (Systemprüfung 2026-08-23, gemessen bei 375px UND 823px Breite — die
+     Kollision hängt an festen Pixelpositionen, nicht an der Fensterbreite, betrifft
+     also nicht nur mobile Geräte). Bewusst per padding-left statt mehr padding-top:
+     zusätzliche Höhe hier würde exakt der zweiten in derselben Prüfung notierten
+     Baustelle widersprechen ("zu viel Kopfzeile vor dem ersten Treffer" auf mobil). */
   header{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#13243a,#0f1c2e);
-         border-bottom:1px solid var(--line);padding:14px 20px}
+         border-bottom:1px solid var(--line);padding:14px 20px;
+         padding-left:calc(env(safe-area-inset-left,0px) + 100px)}
   .htop{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   h1{font-size:20px;margin:0;font-weight:700}
   .meta{color:var(--muted);font-size:13px}
@@ -241,7 +251,16 @@
     <span id="zyklchip" class="markt-chip info" style="display:none"></span>
     <span class="meta" id="meta">lädt …</span>
     <span class="meta" id="breadth" title="Anzahl Ticker mit aktivem Pivot-Setup (BREAKOUT/ARMED/CHEAT) laut Signal-Hub/data/pivot_history.json – Fruehindikator fuer Marktbreite, unabhaengig von einem offiziellen Follow-Through-Day"></span>
-    <span class="spacer"></span>
+  </div>
+  <!-- Aktionen-Menü (seit 2026-08-23, Systemprüfung): die sieben Buttons standen
+       vorher offen in .htop und stapelten sich auf dem iPhone über eine volle
+       Bildschirmhöhe, bevor die erste Signal-Karte kam — auf einem Werkzeug, das
+       morgens ~30 Sekunden lang genutzt wird, die falsche Reihenfolge. Gleiches
+       <details>/<summary>-Muster wie "Filter & Sortierung" direkt darunter
+       (kollabiert per Default, kein neues Widget). -->
+  <details class="filterbox actionsbox">
+   <summary class="filtersum">⚙️ Aktionen</summary>
+   <div class="controls">
     <button class="btn ghost" onclick="aktualisieren(this)">🔄 Aktualisieren</button>
     <button class="btn ghost" id="watchlistBtn" onclick="erstelleWatchlist()" title="Aktuell gefilterte Titel (Markt/Score/Suche/Toggle-Filter) als TradingView-importierbare .txt in Watchlisten/Signal-Hub/ im MTS-Hauptordner speichern">🗒️ Watchlist erstellen</button>
     <a class="btn ghost" href="kauf-review.html" title="Alle aktiven Top-Setups einzeln durchgehen: Trend-Template-Checkliste, grober Positionsgrößen-Vorschlag, Beobachten/Verwerfen/Kaufen — für unterwegs auf dem iPhone" style="text-decoration:none;display:inline-flex;align-items:center">🛒 Kauf-Review</a>
@@ -249,7 +268,8 @@
     <a class="btn ghost" href="backtest-report.html" title="Wochennotiz: welche Pivot-Setups (ARMED/BREAKOUT/WATCH) unverzerrt tatsaechlich funktioniert haben, mit allen Einzelfaellen und Chart-Links" style="text-decoration:none;display:inline-flex;align-items:center">📊 Backtest-Report</a>
     <a class="btn ghost" href="https://claude.ai/code/artifact/7bfb76af-1899-4ee6-9a78-a57275d616c3" target="_blank" title="Betriebsanleitung: Tagesrhythmus, Sortierungen, Badge-Lexikon, Workflow" style="text-decoration:none;display:inline-flex;align-items:center">📖 Anleitung</a>
     <button class="btn ghost" onclick="toggleDrawer()">⚙︎ Einstellungen</button>
-  </div>
+   </div>
+  </details>
   <details id="filterbox" class="filterbox">
    <summary class="filtersum">🔧 Filter &amp; Sortierung <span id="filtercount" class="filtercount"></span></summary>
    <div class="controls">
