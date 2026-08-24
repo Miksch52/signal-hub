@@ -156,6 +156,16 @@
   .kennz div{background:var(--line2);border-radius:8px;padding:6px 9px}
   .kennz b{display:block;font-size:13px;color:var(--txt)}
 
+  /* Quartalsergebnisse-Tabelle (seit 2026-08-24): eigene, schlanke Tabelle
+     statt .fgrid-Karten - bei bis zu 5 Spalten x 3 Zeilen lesbarer als
+     Karten nebeneinander. */
+  .qtable-wrap{overflow-x:auto}
+  .qtable{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+  .qtable th,.qtable td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)}
+  .qtable th:first-child,.qtable td:first-child{text-align:left;color:var(--muted)}
+  .qtable th{font-size:10.5px;color:var(--muted2);font-weight:600;text-transform:uppercase;letter-spacing:.02em}
+  .qtable td.qpos{color:var(--ok)} .qtable td.qneg{color:var(--bad)}
+
   /* Story-Zitat (seit 2026-08-09): einzige Serif-Stelle der Seite - siehe
      renderStory()/renderDeep() im Script, dort in .story-quote gewrappt.
      Alles andere bleibt Sans/Mono, damit der Akzent nicht verwaessert. */
@@ -275,6 +285,15 @@ const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufw
 // zudem 3 Jahre Quartalshistorie bräuchte (die kostenlose Yahoo-Route liefert
 // nur ~5 Quartale).
 const CODE33_EXPLAIN = 'Code 33 (Mark Minervini): Qualitätsmerkmal für Wachstumsaktien nach TraderFox-Screening-Schwellen - EPS-Wachstum Quartal ggü. Vorjahr über 40 %, Umsatzwachstum Quartal ggü. Vorjahr über 7 %, Nettogewinnmarge um mehr als 2 Prozentpunkte verbessert (2-3 Quartale zurückgerechnet). Signalisiert institutionelles Interesse, weil das Gewinnwachstum durch echtes Umsatzwachstum getragen wird statt nur durch Kostensenkungen. Datenquelle: Yahoo Finance.';
+// Quartalsergebnisse-Tabelle (seit 2026-08-24): zeigt dieselben rohen
+// Umsatz-/EPS-Zeitreihen, aus denen Code 33 oben schon seine YoY-Bewertung
+// zieht (fundamentals.code33.quartalsserie, siehe
+// cloudflare-worker/mts-cors-proxy.js::fetchCode33) - kein zusaetzlicher
+// Abruf, nur eine zweite, tabellarische Ansicht derselben Daten. Zeigt
+// bewusst Quartal-zu-Quartal (QoQ), nicht Jahr-zu-Jahr (YoY): die kostenlose
+// Yahoo-Route liefert nur ~5 Quartale, das reicht fuer maximal einen
+// YoY-Vergleich (siehe Code33 oben), aber fuer 4 durchgehende QoQ-Vergleiche.
+const QUARTAL_EXPLAIN = 'Umsatz und Gewinn je Aktie der letzten verfügbaren Quartale, mit Veränderung zum jeweiligen Vorquartal (QoQ). Ergänzt Code 33 oben, das nur das jüngste Quartal gegen dasselbe Quartal im Vorjahr (YoY) prüft. Datenquelle: Yahoo Finance, dieselbe Zeitreihe wie Code 33.';
 const KENNZ_EXPLAIN = {
   'Pivot': 'Widerstandsniveau - höchster Schlusskurs der Basis. Der Kurs, den ein Ausbruch überwinden muss.',
   'Abstand zum Pivot': 'Wie weit der aktuelle Kurs noch unter dem Pivot liegt (negativ = bereits darüber).',
@@ -887,6 +906,9 @@ function render(sig, piv, pa, regime){
           </div></div>
         </div>
 
+        <div class="subhead">📊 Quartalsergebnisse <span class="sub" title="${QUARTAL_EXPLAIN}">Umsatz &amp; Gewinn je Aktie je Quartal, Veränderung ggü. Vorquartal - ~5 Quartale, kostenlose Yahoo-Route liefert nicht mehr</span></div>
+        <div id="quartalwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Quartalsdaten …</div></div></div>
+
         <div class="subhead">💰 Dividendenkontinuität</div>
         <div class="fgrid" id="divwrap">
           <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
@@ -957,6 +979,19 @@ function fmtGross(v){
   return String(v);
 }
 function fmtPct(v){ return v==null ? '—' : (v*100).toFixed(1)+'%'; }
+// Statt der Woerter "trailing"/"forward" das echte Geschaeftsjahr anzeigen
+// (seit 2026-08-24, auf Nutzerwunsch) - lastFiscalYearEnd/nextFiscalYearEnd
+// sind Unix-Timestamps des jeweiligen Bilanzstichtags (siehe
+// cloudflare-worker/mts-cors-proxy.js::fetchYahooFundamentalsAndNews).
+// Fallback auf aktuelles Kalenderjahr (+1 fuer "naechstes Jahr"), falls
+// Yahoo die Felder fuer diesen Ticker nicht liefert.
+function fiskaljahrLabel(epochSec, fallbackOffset){
+  if(epochSec!=null){
+    const d = new Date(epochSec*1000);
+    if(!isNaN(d)) return d.getFullYear();
+  }
+  return new Date().getFullYear() + fallbackOffset;
+}
 
 // Story/News kommen live von Yahoo bzw. der KI-Zusammenfassung - anders als
 // die kuratierten Pipeline-Dateien (signals.json etc.) nicht "hausgemacht",
@@ -967,10 +1002,13 @@ function esc(s){
 
 function renderStory(d){
   const fx = d.fundamentals || {};
+  const jahrTrailing = fiskaljahrLabel(fx.lastFiscalYearEnd, 0);
+  const jahrForward = fiskaljahrLabel(fx.nextFiscalYearEnd, 1);
   const kennz = [
     ['Marktkap.', fmtGross(fx.marketCap) + (d.currency?(' '+d.currency):'')],
-    ['KGV (trailing)', fx.trailingPE!=null ? fx.trailingPE.toFixed(1) : '—'],
-    ['KGV (forward)', fx.forwardPE!=null ? fx.forwardPE.toFixed(1) : '—'],
+    ['KGV ' + jahrTrailing, fx.trailingPE!=null ? fx.trailingPE.toFixed(1) : '—'],
+    ['KGV ' + jahrForward + ' (Schätzung)', fx.forwardPE!=null ? fx.forwardPE.toFixed(1) : '—'],
+    ['KUV (Kurs/Umsatz)', fx.priceToSales!=null ? fx.priceToSales.toFixed(1) : '—'],
     ['Umsatzwachstum (YoY)', fmtPct(fx.revenueGrowth)],
     ['Gewinnwachstum (YoY)', fmtPct(fx.earningsGrowth)],
     ['Bruttomarge', fmtPct(fx.grossMargins)],
@@ -1004,6 +1042,52 @@ function renderStory(d){
 function setCode33(c){
   const el = document.getElementById('code33wrap');
   if(el) el.outerHTML = code33Card(c);
+  setQuartalstabelle(c && c.quartalsserie);
+}
+
+// Kompakte Geldbetraege (Mrd/Mio) hat schon fmtGross weiter unten, aber
+// Quartalsumsaetze liegen meist im Mio-Bereich und wechseln bei kleineren
+// Nebenwerten leicht in einstellige Millionen - eigene, etwas feinere
+// Formatierung statt fmtGross' 0-Nachkommastellen bei Mio.
+function fmtQuartalGeld(v){
+  if(v==null) return '—';
+  const a = Math.abs(v);
+  if(a >= 1e9) return (v/1e9).toFixed(2)+' Mrd';
+  if(a >= 1e6) return (v/1e6).toFixed(1)+' Mio';
+  return v.toFixed(0);
+}
+function fmtQuartalDatum(iso){
+  const d = new Date(iso);
+  if(isNaN(d)) return iso || '—';
+  return d.toLocaleDateString('de-DE', {year:'numeric', month:'short'});
+}
+function qoqTd(pct){
+  if(pct==null) return '<td>—</td>';
+  const cls = pct > 0 ? 'qpos' : pct < 0 ? 'qneg' : '';
+  return `<td class="${cls}">${pct>0?'+':''}${pct.toFixed(1)}%</td>`;
+}
+function renderQuartalstabelle(serie){
+  if(!serie || !serie.length){
+    return '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Keine Quartalsdaten verfügbar.</div></div>';
+  }
+  const rows = serie.map(q => `<tr>
+    <td>${fmtQuartalDatum(q.quartal)}</td>
+    <td>${fmtQuartalGeld(q.umsatz)}</td>
+    ${qoqTd(q.umsatz_qoq_pct)}
+    <td>${q.eps!=null ? q.eps.toFixed(2) : '—'}</td>
+    ${qoqTd(q.eps_qoq_pct)}
+  </tr>`).join('');
+  return `<div class="pivotcard">
+    <div class="qtable-wrap"><table class="qtable">
+      <thead><tr><th>Quartal</th><th>Umsatz</th><th>Δ QoQ</th><th>EPS</th><th>Δ QoQ</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="fcard-gew" style="margin-top:8px">nicht Teil des Scores - reine Verlaufsansicht, keine Kauf-/Verkaufsempfehlung</div>
+  </div>`;
+}
+function setQuartalstabelle(serie){
+  const el = document.getElementById('quartalwrap');
+  if(el) el.innerHTML = renderQuartalstabelle(serie);
 }
 
 async function ladeStory(ticker, yahooSymbol, name){
