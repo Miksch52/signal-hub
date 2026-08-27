@@ -1010,6 +1010,7 @@ function renderStory(d){
     ['KGV ' + jahrForward + ' (Schätzung)', fx.forwardPE!=null ? fx.forwardPE.toFixed(1) : '—'],
     ['KUV ' + jahrTrailing, fx.priceToSales!=null ? fx.priceToSales.toFixed(1) : '—'],
     ['KUV ' + jahrForward + ' (Schätzung)', fx.priceToSalesForward!=null ? fx.priceToSalesForward.toFixed(1) : '—'],
+    ['Free Cashflow', fx.freeCashflow!=null ? fmtGross(fx.freeCashflow) + (d.currency?(' '+d.currency):'') : '—'],
     ['Umsatzwachstum (YoY)', fmtPct(fx.revenueGrowth)],
     ['Gewinnwachstum (YoY)', fmtPct(fx.earningsGrowth)],
     ['Bruttomarge', fmtPct(fx.grossMargins)],
