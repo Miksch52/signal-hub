@@ -1004,6 +1004,12 @@ function renderStory(d){
   const fx = d.fundamentals || {};
   const jahrTrailing = fiskaljahrLabel(fx.lastFiscalYearEnd, 0);
   const jahrForward = fiskaljahrLabel(fx.nextFiscalYearEnd, 1);
+  // FCF-Marge (seit 2026-08-27, Nutzerwunsch "FCF als Wert UND in Prozent"):
+  // Yahoo liefert keinen fertigen Umsatzwert in fundamentals, aber
+  // priceToSales (trailing) = marketCap / Umsatz - daraus laesst sich der
+  // Umsatz zurueckrechnen, ohne einen weiteren Yahoo-Aufruf zu brauchen.
+  const umsatzTTM = (fx.marketCap!=null && fx.priceToSales!=null && fx.priceToSales>0) ? fx.marketCap/fx.priceToSales : null;
+  const fcfMarge = (fx.freeCashflow!=null && umsatzTTM!=null && umsatzTTM>0) ? fx.freeCashflow/umsatzTTM : null;
   const kennz = [
     ['Marktkap.', fmtGross(fx.marketCap) + (d.currency?(' '+d.currency):'')],
     ['KGV ' + jahrTrailing, fx.trailingPE!=null ? fx.trailingPE.toFixed(1) : '—'],
@@ -1011,6 +1017,7 @@ function renderStory(d){
     ['KUV ' + jahrTrailing, fx.priceToSales!=null ? fx.priceToSales.toFixed(1) : '—'],
     ['KUV ' + jahrForward + ' (Schätzung)', fx.priceToSalesForward!=null ? fx.priceToSalesForward.toFixed(1) : '—'],
     ['Free Cashflow', fx.freeCashflow!=null ? fmtGross(fx.freeCashflow) + (d.currency?(' '+d.currency):'') : '—'],
+    ['FCF-Marge', fmtPct(fcfMarge)],
     ['Umsatzwachstum (YoY)', fmtPct(fx.revenueGrowth)],
     ['Gewinnwachstum (YoY)', fmtPct(fx.earningsGrowth)],
     ['Bruttomarge', fmtPct(fx.grossMargins)],
@@ -1075,16 +1082,21 @@ function renderQuartalstabelle(serie){
   // Neuestes Quartal zuerst (die Worker-Serie liefert aufsteigend, weil die
   // QoQ-Veraenderung dort gegen das jeweils VORHERIGE - also aeltere -
   // Quartal berechnet wird; hier nur fuer die Anzeige umgedreht).
+  // Nettomarge (seit 2026-08-27, Nutzerwunsch "Quartalsergebnisse um die
+  // Werte des Code 33 ergaenzen"): dieselbe Nettomarge-Zahl, die Code 33 oben
+  // fuer die Erfuellungspruefung nutzt (marge_delta_pp/marge_aktuell_pct),
+  // hier je Quartal statt nur als Einzelwert des juengsten Quartals.
   const rows = serie.slice().reverse().map(q => `<tr>
     <td>${fmtQuartalDatum(q.quartal)}</td>
     <td>${fmtQuartalGeld(q.umsatz)}</td>
     ${qoqTd(q.umsatz_qoq_pct)}
     <td>${q.eps!=null ? q.eps.toFixed(2) : '—'}</td>
     ${qoqTd(q.eps_qoq_pct)}
+    <td>${q.marge_pct!=null ? q.marge_pct.toFixed(1)+'%' : '—'}</td>
   </tr>`).join('');
   return `<div class="pivotcard">
     <div class="qtable-wrap"><table class="qtable">
-      <thead><tr><th>Quartal</th><th>Umsatz</th><th>Δ QoQ</th><th>EPS</th><th>Δ QoQ</th></tr></thead>
+      <thead><tr><th>Quartal</th><th>Umsatz</th><th>Δ QoQ</th><th>EPS</th><th>Δ QoQ</th><th>Nettomarge</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
     <div class="fcard-gew" style="margin-top:8px">nicht Teil des Scores - reine Verlaufsansicht, keine Kauf-/Verkaufsempfehlung</div>
