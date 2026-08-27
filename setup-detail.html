@@ -1008,7 +1008,8 @@ function renderStory(d){
     ['Marktkap.', fmtGross(fx.marketCap) + (d.currency?(' '+d.currency):'')],
     ['KGV ' + jahrTrailing, fx.trailingPE!=null ? fx.trailingPE.toFixed(1) : '—'],
     ['KGV ' + jahrForward + ' (Schätzung)', fx.forwardPE!=null ? fx.forwardPE.toFixed(1) : '—'],
-    ['KUV (Kurs/Umsatz)', fx.priceToSales!=null ? fx.priceToSales.toFixed(1) : '—'],
+    ['KUV ' + jahrTrailing, fx.priceToSales!=null ? fx.priceToSales.toFixed(1) : '—'],
+    ['KUV ' + jahrForward + ' (Schätzung)', fx.priceToSalesForward!=null ? fx.priceToSalesForward.toFixed(1) : '—'],
     ['Umsatzwachstum (YoY)', fmtPct(fx.revenueGrowth)],
     ['Gewinnwachstum (YoY)', fmtPct(fx.earningsGrowth)],
     ['Bruttomarge', fmtPct(fx.grossMargins)],
@@ -1070,7 +1071,10 @@ function renderQuartalstabelle(serie){
   if(!serie || !serie.length){
     return '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Keine Quartalsdaten verfügbar.</div></div>';
   }
-  const rows = serie.map(q => `<tr>
+  // Neuestes Quartal zuerst (die Worker-Serie liefert aufsteigend, weil die
+  // QoQ-Veraenderung dort gegen das jeweils VORHERIGE - also aeltere -
+  // Quartal berechnet wird; hier nur fuer die Anzeige umgedreht).
+  const rows = serie.slice().reverse().map(q => `<tr>
     <td>${fmtQuartalDatum(q.quartal)}</td>
     <td>${fmtQuartalGeld(q.umsatz)}</td>
     ${qoqTd(q.umsatz_qoq_pct)}
