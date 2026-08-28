@@ -11,6 +11,7 @@ Trennt bewusst:
           (sonst Sync-Konflikte/Eviction bei haeufigem Schreiben).
 """
 
+import json
 import os
 
 HIER = os.path.dirname(os.path.abspath(__file__))      # .../Signal-Hub/src
@@ -95,3 +96,48 @@ REGIME_LOGBUCH = os.path.join(LOKAL, "regime_logbuch.json")  # Forward-Log des M
 # "heute ploetzlich 0" ueberhaupt erkennen liesse.
 QUELLEN_HISTORIE = os.path.join(LOKAL, "quellen_historie.json")
 QUELLEN_WATCHDOG_STATE = os.path.join(LOKAL, "quellen_watchdog_state.json")
+
+
+# --- Atomares Schreiben -----------------------------------------------------
+# Grund (2026-08-28): Ein direktes open(pfad, "w") kuerzt die Datei sofort auf
+# 0 Bytes und fuellt sie erst ueber die naechsten Millisekunden bis Sekunden
+# wieder auf. In diesem Fenster sieht JEDER andere Leser eine unvollstaendige
+# Datei - bei signals.json (~4 MB) hat genau das den 8090-Server dazu gebracht,
+# ein 200 mit zu wenig Bytes auszuliefern (net::ERR_CONTENT_LENGTH_MISMATCH im
+# Browser, siehe server_mts.py::_serve_json_snapshot im Hauptprojekt).
+#
+# Stattdessen: in eine Nebendatei schreiben und erst danach per os.replace()
+# an ihren Platz schieben. Das Umbenennen ist auf demselben Dateisystem eine
+# atomare Operation - ein Leser sieht entweder komplett den alten oder komplett
+# den neuen Stand, nie etwas dazwischen. Hat er die Datei bereits geoeffnet,
+# liest er den alten Inhalt ungestoert zu Ende.
+#
+# Gilt fuer beide Sorten Ausgabe, aus je eigenem Grund:
+#   DATA  - wird waehrend des Laufs von aussen gelesen (Server/Dashboard).
+#   LOKAL - Caches/State: schuetzt vor einer halb geschriebenen Datei, wenn
+#           der Lauf mittendrin abbricht (Cloud-Runner-Timeout, Ctrl+C). Die
+#           war sonst beim naechsten Lauf unlesbar und der Cache still leer.
+#
+# Gleiches Muster wie server.py beim Speichern der config.json.
+
+def schreibe_atomar(pfad, schreiber):
+    """Ruft schreiber(fp) auf eine geoeffnete Nebendatei auf und schiebt sie
+    danach per os.replace() an ihren Platz. Bricht das Schreiben ab, bleibt die
+    bisherige Datei unveraendert und die Nebendatei wird aufgeraeumt."""
+    tmp = pfad + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fp:
+            schreiber(fp)
+        os.replace(tmp, pfad)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def schreibe_json_atomar(pfad, obj, **dump_args):
+    """schreibe_atomar() fuer den Normalfall 'eine JSON-Datei'.
+    dump_args werden an json.dump durchgereicht (ensure_ascii, indent, ...)."""
+    schreibe_atomar(pfad, lambda fp: json.dump(obj, fp, **dump_args))

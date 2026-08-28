@@ -416,8 +416,7 @@ def f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb):
                      else "B" if score >= schwellen["beobachten"] else "C")
         e["einstufung"] = ("Kauf-Kandidat" if score >= schwellen["kauf_kandidat"]
                             else "Beobachten" if score >= schwellen["beobachten"] else "—")
-    with open(pfade.FUNDAMENTAL_CACHE, "w", encoding="utf-8") as fp:
-        json.dump(cache, fp, ensure_ascii=False)
+    pfade.schreibe_json_atomar(pfade.FUNDAMENTAL_CACHE, cache, ensure_ascii=False)
     print(f"Fundamental: {mit_zahlen} mit Zahlen, {abrufe} Abrufe "
           f"(Yahoo {neu_yahoo}, Nasdaq {neu_nasdaq}; "
           f"Crumb {'ok' if ycrumb else 'fehlt -> Nasdaq-Fallback fuer US'})")
@@ -582,8 +581,7 @@ def f_code33(ergebnisse, yop, ycrumb, schwellen):
                 "verfuegbar", "ampel", "eps_erfuellt", "umsatz_erfuellt", "marge_erfuellt",
                 "anzahl_erfuellt", "eps_yoy_pct", "umsatz_yoy_pct", "marge_delta_pp",
                 "marge_aktuell_pct", "quartal", "vorjahresquartal") if k in c}
-    with open(pfade.CODE33_CACHE, "w", encoding="utf-8") as fp:
-        json.dump(cache, fp, ensure_ascii=False)
+    pfade.schreibe_json_atomar(pfade.CODE33_CACHE, cache, ensure_ascii=False)
     print(f"Code 33: {verfuegbar} verfuegbar, {gruen} davon 3/3 grün, {abrufe} Abrufe")
 
 def lade_depot_namen(datei):
@@ -641,8 +639,7 @@ def lade_cache():
     return {}
 
 def speichere_cache(cache):
-    with open(CACHE_PFAD, "w", encoding="utf-8") as f:
-        json.dump(cache, f)
+    pfade.schreibe_json_atomar(CACHE_PFAD, cache)
 
 def hole_chart_cached(symbol, cache):
     heute = datetime.now().strftime("%Y-%m-%d")
@@ -1463,8 +1460,7 @@ def score_alle(limit=None):
     roh = lade_rohsignale()
     sym_cache = lade_symbolcache()
     gruppen = resolve_gruppen(roh, sym_cache)
-    with open(SYMBOL_CACHE_PFAD, "w", encoding="utf-8") as fp:
-        json.dump(sym_cache, fp, ensure_ascii=False)
+    pfade.schreibe_json_atomar(SYMBOL_CACHE_PFAD, sym_cache, ensure_ascii=False)
     # nach Konsens sortieren, ggf. begrenzen
     rang = sorted(gruppen.values(),
                   key=lambda g: len({e["quelle_datei"] for e in g["eintraege"]}),
@@ -1686,8 +1682,7 @@ def score_alle(limit=None):
             f"{etf} {i['rang']}/{i['n']}" for etf, i in top3))
     speichere_cache(cache)
     if profil_neu:
-        with open(PROFIL_CACHE_PFAD, "w", encoding="utf-8") as fp:
-            json.dump(profil_cache, fp, ensure_ascii=False)
+        pfade.schreibe_json_atomar(PROFIL_CACHE_PFAD, profil_cache, ensure_ascii=False)
         print(f"Sektor/Branche: {profil_neu} neu geholt (Cache: {len(profil_cache)})")
 
     f_rs_pool_rang(ergebnisse, gew, gew_summe, schwellen)
@@ -1710,8 +1705,7 @@ def score_alle(limit=None):
     for e in ergebnisse:
         e["neu"] = e["score"] >= kauf and e["ticker"] not in vorher
     state["scorer_gesehen"] = [e["ticker"] for e in ergebnisse if e["score"] >= kauf]
-    with open(state_pfad, "w", encoding="utf-8") as fp:
-        json.dump(state, fp, ensure_ascii=False, indent=2)
+    pfade.schreibe_json_atomar(state_pfad, state, ensure_ascii=False, indent=2)
 
     # Health-Status der Quellen (sichtbar im Dashboard) ------------------
     def _src(typ):
@@ -1746,19 +1740,22 @@ def score_alle(limit=None):
         "politikzyklus": politikzyklus_jahr(),
         "treffer": ergebnisse,
     }
-    with open(pfade.SIGNALS_JSON, "w", encoding="utf-8") as fp:
-        json.dump(out, fp, ensure_ascii=False, separators=(",", ":"))
-    with open(pfade.SIGNALS_JS, "w", encoding="utf-8") as fp:  # file://-Fallback
+    pfade.schreibe_json_atomar(pfade.SIGNALS_JSON, out,
+                               ensure_ascii=False, separators=(",", ":"))
+
+    def _schreibe_signals_js(fp):                        # file://-Fallback
         fp.write("window.SIGNAL_DATA = ")
         json.dump(out, fp, ensure_ascii=False)
         fp.write(";")
+    pfade.schreibe_atomar(pfade.SIGNALS_JS, _schreibe_signals_js)
     import copy
     cfg_oeffentlich = copy.deepcopy(cfg)
     cfg_oeffentlich.get("server", {}).pop("token", None)  # Token nie ausliefern
-    with open(pfade.CONFIG_JS, "w", encoding="utf-8") as fp:
+    def _schreibe_config_js(fp):
         fp.write("window.APP_CONFIG = ")
         json.dump(cfg_oeffentlich, fp, ensure_ascii=False)
         fp.write(";")
+    pfade.schreibe_atomar(pfade.CONFIG_JS, _schreibe_config_js)
 
     # Trefferquoten-Logbuch: 1x pro Tag Top-Picks festhalten (fuer spaetere Auswertung)
     heute = datetime.now().strftime("%Y-%m-%d")
@@ -1782,8 +1779,7 @@ def score_alle(limit=None):
                for e in ergebnisse if e["score"] >= schwellen["beobachten"]]
         lb.append({"datum": heute, "anzahl": len(top), "treffer": top})
         lb = lb[-400:]
-        with open(pfade.LOGBUCH, "w", encoding="utf-8") as fp:
-            json.dump(lb, fp, ensure_ascii=False)
+        pfade.schreibe_json_atomar(pfade.LOGBUCH, lb, ensure_ascii=False)
     return out
 
 # ---------------------------------------------------------------------------
