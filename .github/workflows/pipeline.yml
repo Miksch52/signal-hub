@@ -315,12 +315,27 @@ jobs:
       # muster_logbuch.json (seit 2026-08-17): Forward-Log der Price-Action-
       # Muster (muster_backtest.py) - gleicher Grund/gleiches Muster wie
       # hebel_logbuch.json direkt darueber.
-      - name: Zustand (top_setups_state.json, hebel_logbuch.json, muster_logbuch.json) aus R2 wiederherstellen
+      # katalysator_state.json/katalysator_logbuch.json (seit 2026-08-28):
+      # Tages-Gate + Forward-Log des Katalysator-Layers (katalysator.py) -
+      # ohne die R2-Sicherung des Gates riefe JEDER der vier taeglichen
+      # Cloud-Slots die kostenpflichtige Perplexity-API erneut auf (jeder
+      # Runner startet frisch), statt hoechstens einmal pro Kalendertag.
+      - name: Zustand (top_setups_state.json, hebel_logbuch.json, muster_logbuch.json, katalysator_state.json, katalysator_logbuch.json) aus R2 wiederherstellen
         run: |
           mkdir -p ~/"Library/Application Support/PriceActionHub"
           rclone copy r2:signalhub-magazine/_state/top_setups_state.json ~/"Library/Application Support/PriceActionHub/" || true
           rclone copy r2:signalhub-magazine/_state/hebel_logbuch.json ~/"Library/Application Support/PriceActionHub/" || true
           rclone copy r2:signalhub-magazine/_state/muster_logbuch.json ~/"Library/Application Support/PriceActionHub/" || true
+          rclone copy r2:signalhub-magazine/_state/katalysator_state.json ~/"Library/Application Support/PriceActionHub/" || true
+          rclone copy r2:signalhub-magazine/_state/katalysator_logbuch.json ~/"Library/Application Support/PriceActionHub/" || true
+          # top_setups_katalysator.json/.js sind AUSGABE (Signal-Hub/data/),
+          # nicht Zustand - trotzdem hier mitgesichert: das Tages-Gate laesst
+          # katalysator.py an drei von vier Slots pro Tag gar nicht laufen,
+          # auf einem frischen Runner waere die Ausgabe ohne diese Zeile an
+          # jedem uebersprungenen Slot leer und der Katalysator-Text auf der
+          # Startseite wuerde zwischen den Slots immer wieder verschwinden.
+          rclone copy r2:signalhub-magazine/_state/top_setups_katalysator.json Signal-Hub/data/ || true
+          rclone copy r2:signalhub-magazine/_state/top_setups_katalysator.js Signal-Hub/data/ || true
 
       # NUR fuer den ntfy-Kanal (benachrichtigung.ntfy_thema/-server) gebraucht,
       # reiner Datei-Read in top_setups.py (siehe pfade.py::SIGNAL_HUB_CONFIG,
@@ -334,8 +349,15 @@ jobs:
           SIGNALHUB_CONFIG_JSON: ${{ secrets.SIGNALHUB_CONFIG_JSON }}
         run: printf '%s' "$SIGNALHUB_CONFIG_JSON" > Signal-Hub/config.json
 
+      # PERPLEXITY_API_KEY (seit 2026-08-28): Repo-Secret im signal-hub-Repo,
+      # analog DEPLOY_TRIGGER_TOKEN - MUSS vom Nutzer einmalig gesetzt werden
+      # (Perplexity-Account, Sonar-API-Key). Ohne das Secret ueberspringt
+      # katalysator.py den Lauf bewusst still (kein Pipeline-Fehler), siehe
+      # katalysator.py::lauf().
       - name: Price-Action-Hub Pipeline (nur wenn Signal-Hub in diesem Lauf frisch geschrieben hat)
         working-directory: Price-Action-Hub
+        env:
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
         run: |
           if [ -f "../Signal-Hub/data/signals.json" ]; then
             python3 src/run.py
@@ -343,12 +365,19 @@ jobs:
             echo "Signal-Hub hat in diesem Lauf keine neuen Daten geschrieben (kein faelliger Slot) - uebersprungen."
           fi
 
-      - name: Zustand (top_setups_state.json, hebel_logbuch.json, muster_logbuch.json) nach R2 sichern
+      - name: Zustand (top_setups_state.json, hebel_logbuch.json, muster_logbuch.json, katalysator_state.json, katalysator_logbuch.json) nach R2 sichern
         if: always()
         run: |
           rclone copy ~/"Library/Application Support/PriceActionHub/top_setups_state.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/PriceActionHub/hebel_logbuch.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/PriceActionHub/muster_logbuch.json" r2:signalhub-magazine/_state/ || true
+          rclone copy ~/"Library/Application Support/PriceActionHub/katalysator_state.json" r2:signalhub-magazine/_state/ || true
+          rclone copy ~/"Library/Application Support/PriceActionHub/katalysator_logbuch.json" r2:signalhub-magazine/_state/ || true
+          # Aktuellste verfuegbare Ausgabe zurueck nach R2 (Gegenstueck zum
+          # Restore oben) - lief die API heute schon frueher, ist das ein
+          # No-op-Save desselben Stands, kein Problem.
+          rclone copy Signal-Hub/data/top_setups_katalysator.json r2:signalhub-magazine/_state/ || true
+          rclone copy Signal-Hub/data/top_setups_katalysator.js r2:signalhub-magazine/_state/ || true
 
       - name: Platzhalter fuer Artifact-Upload sicherstellen (auch ohne faelligen Slot)
         run: mkdir -p Price-Action-Hub/data && touch Price-Action-Hub/data/ARTIFACT_KEEP
@@ -368,8 +397,18 @@ jobs:
       # Im alten Ein-Job-Design lief das automatisch mit (gleicher
       # Workspace); jetzt braucht es einen eigenen Artifact-Umweg zurueck in
       # den signal-hub-Datenordner des deploy-Jobs.
+      # touch statt echtem Schreiben, wo die Datei schon existiert (Restore
+      # oben oder frischer katalysator.py-Lauf) - aendert nur die mtime, laesst
+      # den Inhalt unangetastet. Erst leer, dann touch: verhindert einen
+      # Upload-Fehler bei "keine Datei passt", falls weder R2 noch ein
+      # heutiger Lauf je etwas geliefert haben (z.B. Secret noch nie gesetzt).
       - name: Platzhalter fuer Top-Setups-Artifact sicherstellen (auch ohne faelligen Slot)
-        run: touch Signal-Hub/data/TOP_SETUPS_KEEP
+        run: |
+          touch Signal-Hub/data/TOP_SETUPS_KEEP
+          touch Signal-Hub/data/top_setups_katalysator.json
+          touch Signal-Hub/data/top_setups_katalysator.js
+          touch Signal-Hub/data/katalysator_backtest.json
+          touch Signal-Hub/data/katalysator_backtest.js
 
       - name: Top-Setups-Aggregat fuer den Deploy-Schritt bereitstellen
         uses: actions/upload-artifact@v4
@@ -379,6 +418,10 @@ jobs:
             Signal-Hub/data/top_setups.json
             Signal-Hub/data/top_setups.js
             Signal-Hub/data/TOP_SETUPS_KEEP
+            Signal-Hub/data/top_setups_katalysator.json
+            Signal-Hub/data/top_setups_katalysator.js
+            Signal-Hub/data/katalysator_backtest.json
+            Signal-Hub/data/katalysator_backtest.js
           retention-days: 1
 
   rotation-dashboard:

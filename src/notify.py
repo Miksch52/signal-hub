@@ -39,13 +39,23 @@ def lade_config():
     with open(CONFIG_PFAD, encoding="utf-8") as f:
         return json.load(f)
 
-def sende_ntfy(server, thema, titel, text, tags="chart_with_upwards_trend", prio="default"):
+DASHBOARD_URL = "https://mts-hub.pages.dev/Signal-Hub/signal-hub.html"
+
+def sende_ntfy(server, thema, titel, text, tags="chart_with_upwards_trend", prio="default", click=None):
     url = f"{server.rstrip('/')}/{thema}"
     daten = text.encode("utf-8")
     req = urllib.request.Request(url, data=daten, method="POST")
     req.add_header("Title", titel.encode("utf-8"))
     req.add_header("Tags", tags)
     req.add_header("Priority", prio)
+    if click:
+        # Tippen auf die Push-Nachricht oeffnet click direkt (ntfy-"Click"-
+        # Header, https://docs.ntfy.sh/publish/#click-action) - spart das
+        # Nachschlagen im Dashboard fuer den haeufigsten Fall (Signal
+        # anschauen). Nur die Dashboard-Startseite, kein Tiefen-Link auf
+        # EINE Aktie: die Nachricht listet meist mehrere Ticker, ein
+        # Click-Ziel kann nur EINEN Ort oeffnen.
+        req.add_header("Click", click)
     with urllib.request.urlopen(req, timeout=15, context=SSL_CTX) as r:
         return r.status
 
@@ -64,6 +74,62 @@ def _state_save(s):
         json.dump(s, f, ensure_ascii=False, indent=2)
 
 AMPEL_ICON = {"gruen": "🟢", "gelb": "🟡", "rot": "🔴"}
+
+def _pivot_treffer():
+    """pivot.json::treffer, [] wenn die Datei fehlt/kaputt ist - reiner
+    Best-Effort-Read wie der Rest dieser Datei, blockiert den Push nie."""
+    if not os.path.exists(pfade.PIVOT_JSON):
+        return []
+    try:
+        return json.load(open(pfade.PIVOT_JSON, encoding="utf-8")).get("treffer", [])
+    except Exception:
+        return []
+
+
+def _staerkste_kandidaten_zeilen(qual_marktkarte, max_n=3):
+    """Top-N nach Score unter den Kauf-Kandidaten, die zusaetzlich einen
+    ARMED/BREAKOUT-Pivot haben - fuers Morning Brief, damit der erste Push
+    des Tages nicht nur SAGT, wie viele Kandidaten es gibt, sondern die
+    staerksten mit Pivot/Stop gleich mitliefert (kein Nachschlagen im
+    Dashboard fuer die Handvoll, die ohnehin am ehesten dran sind).
+
+    Bewusst eine LEICHTERE Version der Startseiten-"Top-Setups" (die zusaetzlich
+    Price-Action-Hub-Score und Katalysator-Text kreuzen): pivot.json liegt zum
+    Zeitpunkt dieses Pushs vor (laeuft im selben Signal-Hub-Job VOR notify.py),
+    top_setups.json noch nicht (wird erst im NACHGELAGERTEN Price-Action-Hub-
+    Job dieses Pipeline-Laufs berechnet) - siehe pipeline.yml. `qual_marktkarte`
+    ist ticker->score, bereits um Markt-Regime-/Sentiment-Ausschluesse bereinigt
+    (dieselbe Menge wie der Hauptteil des Pushs), damit hier kein Ticker aus
+    einem roten Markt auftaucht, den der Rest der Nachricht gerade zurueckhaelt."""
+    kandidaten = []
+    for t in _pivot_treffer():
+        ticker = t.get("ticker")
+        if ticker not in qual_marktkarte or t.get("pivot_status") not in ("ARMED", "BREAKOUT"):
+            continue
+        kandidaten.append(t)
+    kandidaten.sort(key=lambda t: qual_marktkarte.get(t.get("ticker"), 0), reverse=True)
+    zeilen = []
+    for t in kandidaten[:max_n]:
+        status = "🚀" if t.get("pivot_status") == "BREAKOUT" else "🎯"
+        pivot, stop = t.get("pivot"), t.get("stop")
+        preisangabe = f" · Pivot {pivot:.2f} / Stop {stop:.2f}" if pivot and stop else ""
+        zeilen.append(f"  {status} {t['ticker']}  {qual_marktkarte[t['ticker']]:.0f}{preisangabe}")
+    return zeilen
+
+
+def _earnings_depot_zeilen(warn_tage):
+    """Offene Depot-Positionen (im_depot, Namensabgleich gegen mts_data.json -
+    siehe pivot.json/scorer.py) mit Earnings innerhalb des Warnfensters. Reine
+    Namens-/Terminwarnung, KEINE Betraege/Stueckzahlen (dieselbe Datengrenze
+    wie SIGNALHUB_DEPOT_NAMEN) - laeuft deshalb unveraendert im Cloud- UND im
+    lokalen Lauf. Frueheste Termine zuerst."""
+    treffer = [t for t in _pivot_treffer()
+               if t.get("im_depot") and t.get("earnings")
+               and t["earnings"].get("status") == "termin"
+               and t["earnings"].get("tage") is not None
+               and 0 <= t["earnings"]["tage"] <= warn_tage]
+    treffer.sort(key=lambda t: t["earnings"]["tage"])
+    return [f"  📅 {t['ticker']}  in {t['earnings']['tage']}T" for t in treffer]
 
 def _ampel_zeilen(d):
     """Eine Zeile je aktivem Markt mit Ampel-Icon + Klartext-Hinweis - Basis
@@ -136,6 +202,9 @@ def baue_nachricht(cfg, morgens=False):
             qual = [t for t in qual if t.get("markt") not in sentiment_warn]
             unterdrueckt_sentiment = vorher - len(qual)
     unterdrueckt = unterdrueckt_rot + unterdrueckt_sentiment
+    # ticker->score der bereits um Markt-Regime/Sentiment bereinigten Menge -
+    # Basis fuer die Morning-Brief-Zusatzabschnitte unten (_staerkste_kandidaten_zeilen).
+    qual_marktkarte = {t["ticker"]: t["score"] for t in qual}
 
     nur_neue = bcfg.get("nur_neue", False)
     if nur_neue:
@@ -169,8 +238,14 @@ def baue_nachricht(cfg, morgens=False):
                     f"keine neuen Positionen eröffnen.")
         if morgens:
             # Morning Brief bleibt nicht stumm wie die anderen drei Slots -
-            # ohne Kandidaten zeigt es wenigstens die Marktlage.
-            return "☀️ Morning Brief", kopf.rstrip() + "\nKeine Kauf-Kandidaten über der Schwelle."
+            # ohne Kandidaten zeigt es wenigstens die Marktlage + faellige
+            # Earnings in bestehenden Positionen (unabhaengig von neuen Ideen
+            # relevant, deshalb auch hier noch angehaengt).
+            text = kopf.rstrip() + "\nKeine Kauf-Kandidaten über der Schwelle."
+            earn_zeilen = _earnings_depot_zeilen(warn)
+            if earn_zeilen:
+                text += f"\n\n📅 Earnings in offenen Positionen (≤{warn}T):\n" + "\n".join(earn_zeilen)
+            return "☀️ Morning Brief", text
         return None, None
 
     titel = ("☀️ Morning Brief · " if morgens else "") + (
@@ -188,7 +263,19 @@ def baue_nachricht(cfg, morgens=False):
     if unterdrueckt_sentiment:
         fuss += (f"\n⚠️ {unterdrueckt_sentiment} Wert(e) aus {', '.join(sorted(sentiment_warn))} "
                  f"zurückgehalten (Distribution Days/Follow-Through-Day)")
-    return titel, kopf + "\n".join(zeilen) + fuss
+    text = kopf + "\n".join(zeilen) + fuss
+    if morgens:
+        # Zwei Zusatzabschnitte NUR im ersten Push des Tages (sonst waere die
+        # Nachricht an den drei anderen Slots unnoetig lang) - siehe
+        # _staerkste_kandidaten_zeilen()/_earnings_depot_zeilen() oben fuer die
+        # Datengrundlage und deren bewusste Grenzen.
+        staerkste = _staerkste_kandidaten_zeilen(qual_marktkarte)
+        if staerkste:
+            text += "\n\n🎯 Stärkste mit Pivot heute:\n" + "\n".join(staerkste)
+        earn_zeilen = _earnings_depot_zeilen(warn)
+        if earn_zeilen:
+            text += f"\n\n📅 Earnings in offenen Positionen (≤{warn}T):\n" + "\n".join(earn_zeilen)
+    return titel, text
 
 def main():
     cfg = lade_config()
@@ -214,7 +301,7 @@ def main():
         else:
             print("Keine Treffer ueber Mindest-Score – nichts gesendet.")
         return
-    status = sende_ntfy(server, thema, titel, text)
+    status = sende_ntfy(server, thema, titel, text, click=DASHBOARD_URL)
     print(f"Push gesendet (HTTP {status}) an {server}/{thema}:\n{titel}\n{text}")
 
 if __name__ == "__main__":
