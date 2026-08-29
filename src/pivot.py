@@ -83,6 +83,56 @@ SUPPLY_FENSTER  = 100    # deutlich laenger als BASIS_FENSTER: der Pivot IST per
                          # aktuellen Basis) macht echtes Overhead-Angebot sichtbar.
 
 
+# --- VCP-Feinmessung (Minervini/SEPA-Abgleich 2026-08-29) ------------------
+# Drei Kennzahlen, die der Detektor bis dahin NICHT gemessen hat, obwohl
+# Minervini sie ausdruecklich verlangt:
+#   1. Anzahl der Kontraktionen (er nennt 3-4; Markets 360 misst das laengst
+#      ueber vcp.py, der Signal-Hub bislang gar nicht - hier nachgezogen).
+#   2. Dauer der Basis (Faustregel >= 7 Wochen; die Hauptapp prueft das schon
+#      als Checkbox, der automatische Detektor bisher nicht).
+#   3. Follow-Through-Volumen NACH dem Ausbruch (er verlangt 2-5 Tage mit
+#      deutlich ueberdurchschnittlichem Volumen; bislang wurde nur der
+#      Ausbruchstag selbst geprueft).
+#
+# ALLE DREI SIND ZUNAECHST REIN MESSEND (siehe GATES): sie erscheinen in der
+# Ausgabe und im Forward-Logbuch, aendern aber KEINE Status-Entscheidung.
+# Grund ist die Backtest-Pflicht aus CLAUDE.md - ein Gate ohne unverzerrte
+# Forward-Kohorte waere eine unbelegte Verschaerfung, und die bestehenden
+# Schwellen (ENG_MAX/SUPPLY_MIN) sind ihrerseits durch Backtests begruendet.
+# Sobald pivot_backtest.py --evaluate genug gereifte Picks hat, laesst sich
+# jedes Gate durch Umlegen EINES Schalters scharf schalten.
+# Kontraktionen werden INNERHALB der erkannten Basis gezaehlt, nicht ueber ein
+# festes 6-Monats-Fenster wie bei Markets360 vcp.py. Grund (empirisch am
+# 2026-08-29 ueber 400 echte Charts aus signals.json gemessen): mit festem
+# 130-Tage-Fenster und 1%-Tiefenschwelle landeten 397 von 400 Werten am
+# Maximum von 6 - die Kennzahl haette null Trennschaerfe gehabt. Minervini
+# zaehlt die Kontraktionen einer BASIS, nicht jede Welle eines halben Jahres.
+# Mit Basisfenster + 3%-Schwelle ist die Verteilung brauchbar gestreut
+# (0..6: 44/68/52/66/54/41/40), Modus bei 1-3.
+KONTRAKTION_ORDER   = 3     # +/- Bars fuer ein lokales Extrem (auf Schlusskursen)
+KONTRAKTION_MIN     = 2     # wie Markets360 vcp.min_contractions
+KONTRAKTION_MAX     = 6     # wie Markets360 vcp.max_contractions
+KONTRAKTION_MIN_TIEFE = 0.03  # 3%: tief genug gegen Rauschen, flach genug, um
+                              # Minervinis finale 3-5%-Kontraktion noch zu sehen
+KONTRAKTION_MIN_BASIS_TAGE = 15  # darunter ist keine sinnvolle Zaehlung moeglich
+KONTRAKTION_TOLERANZ  = 1.05  # spaetere Kontraktion darf 5% tiefer sein und gilt noch als "enger"
+
+KONSOLIDIERUNG_CAP       = 0.30  # 1:1 aus "Maick's Trading System.html" (_sepaPattern)
+KONSOLIDIERUNG_MAX_TAGE  = 90    # dito - damit App und Detektor dieselbe Wochenzahl nennen
+BASIS_MIN_WOCHEN         = 7     # Minervini-Faustregel, dito zur Checkbox sc3_2
+
+FT_VOL_FENSTER = 5     # Minervini: 2-5 Tage Follow-Through nach dem Ausbruch
+FT_VOL_MIN     = 1.30  # Ø-Volumen der Folgetage / Ø50 - darunter fehlt die Bestaetigung
+
+# Schalter fuer die drei neuen Kriterien. Default AUS = reine Messung.
+# Erst nach belegter Forward-Kohorte einzeln auf True setzen.
+GATES = {
+    "kontraktionen": False,   # ARMED nur mit >= KONTRAKTION_MIN Kontraktionen
+    "basis_wochen": False,    # ARMED/BREAKOUT nur ab BASIS_MIN_WOCHEN
+    "follow_through": False,  # BREAKOUT nur mit bestaetigtem Folgevolumen
+}
+
+
 def clamp(x, lo=0.0, hi=1.0):
     return max(lo, min(hi, x))
 
@@ -209,6 +259,131 @@ def _cheat_pivot(c, v, price, s50):
     }
 
 
+def _swing_extrema(werte, order=KONTRAKTION_ORDER):
+    """Indizes lokaler Hochs/Tiefs (Extrem im +/-order-Fenster).
+
+    Arbeitet auf SCHLUSSKURSEN, nicht auf High/Low wie Markets360 vcp.py -
+    der Chart-Block in signals.json enthaelt bewusst nur c/v/s50/s150/s200
+    (Groesse: signals.js liegt schon bei ~12 MB). Die Kontraktionstiefen
+    fallen dadurch systematisch etwas flacher aus als bei einer High/Low-
+    Messung; fuer den VERGLEICH der Kontraktionen untereinander (wird es
+    enger?) ist das unerheblich, fuer absolute Tiefenangaben nicht - deshalb
+    werden die Tiefen als Naeherung ausgewiesen, nicht als exakte Werte."""
+    hochs, tiefs = [], []
+    n = len(werte)
+    for i in range(order, n - order):
+        fenster = werte[i - order:i + order + 1]
+        if werte[i] == max(fenster) and werte[i] > werte[i - 1]:
+            hochs.append(i)
+        if werte[i] == min(fenster) and werte[i] < werte[i - 1]:
+            tiefs.append(i)
+    return hochs, tiefs
+
+
+def _kontraktionen(c, basis_tage):
+    """Chronologische Kontraktionen (Hoch -> folgendes Tief) INNERHALB der
+    aktuellen Basis.
+
+    Portierung von MinerviniMarkets360 scoring/vcp.py::_contractions auf die
+    hier verfuegbaren Schlusskurse, mit zwei bewussten Abweichungen:
+      * Fenster = die tatsaechlich erkannte Basis (siehe _basis_tage), nicht
+        fixe 130 Tage - sonst saettigt die Zaehlung (siehe Konstanten-Kommentar).
+      * Tiefenschwelle 3% statt 1% - auf Schlusskursen ohne High/Low erzeugt
+        1% fast nur Rauschen.
+    Rueckgabe: Liste von Tiefen (0..1), juengste zuletzt, auf die letzten
+    KONTRAKTION_MAX begrenzt. Leere Liste, wenn die Basis zu kurz ist."""
+    if basis_tage < KONTRAKTION_MIN_BASIS_TAGE:
+        return []
+    teil = c[-basis_tage:]
+    if len(teil) < 3 * KONTRAKTION_ORDER + 2:
+        return []
+    hochs, tiefs = _swing_extrema(teil)
+    punkte = sorted([(i, "H") for i in hochs] + [(i, "L") for i in tiefs])
+    tiefen = []
+    letztes_hoch = None
+    for idx, typ in punkte:
+        if typ == "H":
+            # hoeheres Hoch ersetzt ein noch unbestaetigtes Hoch
+            if letztes_hoch is None or teil[idx] >= teil[letztes_hoch]:
+                letztes_hoch = idx
+        elif letztes_hoch is not None:
+            hoch = teil[letztes_hoch]
+            if hoch:
+                tiefe = (hoch - teil[idx]) / hoch
+                if tiefe > KONTRAKTION_MIN_TIEFE:
+                    tiefen.append(tiefe)
+            letztes_hoch = None
+    return tiefen[-KONTRAKTION_MAX:]
+
+
+def _verengung_stufen(tiefen):
+    """Wie viele Uebergaenge tatsaechlich enger werden (T(i+1) <= T(i)*Toleranz).
+    Minervinis Kernbild ist die FORTSCHREITENDE Verengung, nicht die blosse
+    Anzahl. Rueckgabe (erfuellt, moeglich) - z.B. (2, 3) = 2 von 3 Uebergaengen."""
+    if len(tiefen) < 2:
+        return 0, 0
+    moeglich = len(tiefen) - 1
+    erfuellt = sum(1 for i in range(1, len(tiefen))
+                   if tiefen[i] <= tiefen[i - 1] * KONTRAKTION_TOLERANZ)
+    return erfuellt, moeglich
+
+
+def _basis_tage(c):
+    """Laenge der aktuellen Konsolidierung in Handelstagen: laengstes
+    zurueckreichendes Fenster, in dem die Spanne <= KONSOLIDIERUNG_CAP bleibt.
+
+    Bewusst identisch zu _sepaPattern() in "Maick's Trading System.html"
+    (gleiche Konstanten, gleiche Schleife) - sonst nennt die SEPA-Checkliste
+    der Hauptapp eine andere Wochenzahl als der automatische Detektor fuer
+    dieselbe Aktie."""
+    n = len(c)
+    if n < 10:
+        return 0
+    tage = 0
+    for w in range(10, min(n, KONSOLIDIERUNG_MAX_TAGE) + 1):
+        if _range(c[-w:]) <= KONSOLIDIERUNG_CAP:
+            tage = w
+        else:
+            break
+    return tage
+
+
+def _basis_wochen(c):
+    """Dieselbe Konsolidierung in Wochen (Anzeige-/Vergleichsformat, wie die
+    SEPA-Checkliste der Hauptapp sie nennt)."""
+    return round(_basis_tage(c) / 5.0, 1)
+
+
+def _follow_through_vol(v, tage_seit_ausbruch, vol_basis):
+    """Ø-Volumen der Tage NACH dem Ausbruch relativ zum Ø50.
+
+    Minervini verlangt nicht nur einen Volumenschub am Ausbruchstag, sondern
+    2-5 Folgetage mit ueberdurchschnittlichem Volumen - ein Ausbruch, dem das
+    Folgevolumen fehlt, ist der klassische Fehlausbruch. Rueckgabe None, wenn
+    der Ausbruch HEUTE war (dann gibt es noch keine Folgetage zu messen) -
+    None heisst ausdruecklich "noch nicht bewertbar", nicht "schlecht".
+
+    WICHTIGE EINSCHRAENKUNG (2026-08-29 an echten Daten gemessen): der JUENGSTE
+    Balken ist haeufig eine ANGEFANGENE Sitzung - zwei der vier taeglichen
+    Pipeline-Slots (15:00/17:00 Berlin) laufen mitten im US-Handel. Sein
+    Volumen ist dann naturgemaess nur ein Bruchteil eines vollen Tages
+    (beobachtet: 0.28x statt ~1x). Der Mittelwert hier wird dadurch
+    systematisch nach unten gezogen; gemessene 0.07-0.75 sind ueberwiegend
+    dieser Effekt, kein schwaches Folgevolumen. Dasselbe gilt seit jeher fuer
+    vol_surge (v[-1]/Ø50). Genau deshalb ist GATES["follow_through"] AUS: erst
+    muss die Forward-Kohorte zeigen, wie die Zahl bei abgeschlossenen
+    Sitzungen (Slot 21:30 / 07:30) verteilt ist, bevor daraus ein Filter
+    werden darf. Die Schwelle FT_VOL_MIN ist bis dahin ein Platzhalter aus der
+    Literatur (+30-40%), keine gemessene Groesse."""
+    if not vol_basis or tage_seit_ausbruch < 1:
+        return None
+    n = min(tage_seit_ausbruch, FT_VOL_FENSTER)
+    folge = [x for x in v[-n:] if x]
+    if not folge:
+        return None
+    return round((sum(folge) / len(folge)) / vol_basis, 2)
+
+
 def klassifiziere(chart, preis=None, cheat_aktiv=True):
     """Bewertet einen Chart-Block. Liefert immer ein dict (status '-' wenn kein Setup)."""
     c = [x for x in (chart.get("c") or []) if x is not None]
@@ -258,6 +433,26 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
     megaphone = _megaphone(c)
     supply_score = _supply_score(c, v, pivot)
 
+    # Neue VCP-Feinmessung (rein messend, siehe GATES oben)
+    basis_tage = _basis_tage(c)
+    basis_wochen = round(basis_tage / 5.0, 1)
+    tiefen = _kontraktionen(c, basis_tage)
+    verengt, verengt_moeglich = _verengung_stufen(tiefen)
+    # Follow-Through-Volumen NUR bei einem echten frischen Durchbruch messen.
+    # Sonst waere die Zahl bedeutungslos: ein ARMED-Wert notiert unter seinem
+    # Pivot, kann aber ueber dem aelteren pivot_brk liegen - "Tage seit
+    # Ausbruch" haette dort keinen Bezugspunkt (erste Fassung lieferte so
+    # Werte wie 0.36 fuer Aktien, die gar nicht ausgebrochen sind).
+    ft_vol = None
+    if frisch_gekreuzt:
+        tage_ueber = 0
+        for x in reversed(c[-(BREAKOUT_LOOKBACK + 1):]):
+            if x > pivot_brk:
+                tage_ueber += 1
+            else:
+                break
+        ft_vol = _follow_through_vol(v, max(0, tage_ueber - 1), vol_basis)
+
     # --- Teil-Scores 0..1 ---------------------------------------------------
     s_eng = clamp((ENG_MAX - eng) / (ENG_MAX - ENG_MIN))
     s_dry = clamp((DRYUP_MAX - dryup) / (DRYUP_MAX - DRYUP_MIN))
@@ -279,6 +474,12 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
         "vol_surge": round(vol_surge, 2),       # Vol heute / 50T
         "megaphone": megaphone,                 # informational, siehe Docstring
         "supply_score": supply_score,           # informational, siehe Docstring
+        # --- VCP-Feinmessung (2026-08-29), noch ohne Status-Einfluss --------
+        "kontraktionen": len(tiefen),           # Minervini nennt 3-4 als Ideal
+        "kontraktion_tiefen": [round(t * 100, 1) for t in tiefen],  # Naeherung, s. _swing_extrema
+        "verengung_stufen": (f"{verengt}/{verengt_moeglich}" if verengt_moeglich else None),
+        "basis_wochen": basis_wochen,           # Faustregel >= BASIS_MIN_WOCHEN
+        "follow_through_vol": ft_vol,           # None = heute ausgebrochen, noch nicht bewertbar
     }
 
     # --- Zustands-Logik (Reihenfolge = Prioritaet) --------------------------
@@ -301,13 +502,32 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
         if stop:
             warn = " ⚠️weiter Stop" if stop.get("stop_warnung") else ""
             stop_txt = f", Stop {stop['stop']:.2f} (-{stop['stop_pct']:.1f}%){warn}"
+        # Optionale Gates (Default AUS, siehe GATES): erst nach belegter
+        # Forward-Kohorte scharf schalten.
+        if GATES["basis_wochen"] and basis_wochen < BASIS_MIN_WOCHEN:
+            return {"status": "WATCH", "qualitaet": armed_score, "armed_score": armed_score, **kennz,
+                    "detail": (f"Ausbruch ueber {pivot_brk:.2f}, aber Basis erst {basis_wochen} Wochen "
+                               f"(< {BASIS_MIN_WOCHEN} - Minervini: zu junge Basis)")}
+        if GATES["follow_through"] and ft_vol is not None and ft_vol < FT_VOL_MIN:
+            return {"status": "WATCH", "qualitaet": armed_score, "armed_score": armed_score, **kennz,
+                    "detail": (f"Ausbruch ueber {pivot_brk:.2f}, aber Folgevolumen nur {ft_vol:.2f}x "
+                               f"(< {FT_VOL_MIN} - Bestaetigung fehlt)")}
+        ft_txt = ""
+        if ft_vol is not None:
+            ft_txt = (f", Folgevolumen {ft_vol:.2f}x"
+                      + ("" if ft_vol >= FT_VOL_MIN else " ⚠️schwach"))
         return {"status": "BREAKOUT", "qualitaet": qual, "armed_score": armed_score,
                 "pivot": round(pivot_brk, 2), "dist_pct": round((price / pivot_brk - 1) * 100, 1),
                 "eng_pct": kennz["eng_pct"], "contraction": kennz["contraction"],
                 "dryup": kennz["dryup"], "vol_surge": kennz["vol_surge"],
-                "megaphone": megaphone, "supply_score": _supply_score(c, v, pivot_brk), **stop,
+                "megaphone": megaphone, "supply_score": _supply_score(c, v, pivot_brk),
+                "kontraktionen": kennz["kontraktionen"],
+                "kontraktion_tiefen": kennz["kontraktion_tiefen"],
+                "verengung_stufen": kennz["verengung_stufen"],
+                "basis_wochen": basis_wochen, "follow_through_vol": ft_vol, **stop,
                 "detail": (f"Frischer Ausbruch ueber {pivot_brk:.2f} auf {vol_surge:.1f}x Volumen "
-                           f"(Basis {basis_brk_range*100:.0f}% Range){stop_txt}")}
+                           f"(Basis {basis_brk_range*100:.0f}% Range, {basis_wochen} Wochen, "
+                           f"{len(tiefen)} Kontraktionen){ft_txt}{stop_txt}")}
 
     # ARMED: eng + ausgetrocknet + dicht unter Pivot = der Pre-Breakout-Punkt
     if (0 <= dist <= NAH_PIVOT and eng <= ENG_MAX and dryup <= DRYUP_MAX
@@ -319,14 +539,26 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
                     "detail": (f"{dist*100:.0f}% unter Pivot {pivot:.2f}, eng+trocken, aber "
                                f"Supply-Score {supply_score:.2f} < {SUPPLY_MIN:.2f} "
                                f"(zu viel Angebot ueber dem Pivot - Backtest: Win 48% statt 67%)")}
+        if GATES["kontraktionen"] and len(tiefen) < KONTRAKTION_MIN:
+            return {"status": "WATCH", "qualitaet": armed_score, "armed_score": armed_score, **kennz,
+                    "detail": (f"{dist*100:.0f}% unter Pivot {pivot:.2f}, aber nur {len(tiefen)} "
+                               f"Kontraktion(en) (< {KONTRAKTION_MIN} - kein echtes VCP)")}
+        if GATES["basis_wochen"] and basis_wochen < BASIS_MIN_WOCHEN:
+            return {"status": "WATCH", "qualitaet": armed_score, "armed_score": armed_score, **kennz,
+                    "detail": (f"{dist*100:.0f}% unter Pivot {pivot:.2f}, aber Basis erst "
+                               f"{basis_wochen} Wochen (< {BASIS_MIN_WOCHEN})")}
         stop = _stop_info(price, pivot, min(c[-ENG_FENSTER:]))
         stop_txt = ""
         if stop:
             warn = " ⚠️weiter Stop" if stop.get("stop_warnung") else ""
             stop_txt = f", Stop {stop['stop']:.2f} (-{stop['stop_pct']:.1f}%){warn}"
+        vcp_txt = f", {len(tiefen)} Kontraktionen"
+        if verengt_moeglich:
+            vcp_txt += f" ({verengt}/{verengt_moeglich} enger werdend)"
+        vcp_txt += f", Basis {basis_wochen} Wochen"
         return {"status": "ARMED", "qualitaet": armed_score, "armed_score": armed_score, **kennz, **stop,
                 "detail": (f"{dist*100:.0f}% unter Pivot {pivot:.2f}, Range {eng*100:.0f}%, "
-                           f"Vol-Dry-up {dryup:.2f}{stop_txt}")}
+                           f"Vol-Dry-up {dryup:.2f}{vcp_txt}{stop_txt}")}
 
     # WATCH: Trend da, Basis bildet sich, noch nicht scharf
     if 0 <= dist <= WATCH_PIVOT:

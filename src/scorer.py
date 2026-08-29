@@ -714,6 +714,112 @@ def sma(werte, n, offset=0):
 def clamp(x, lo=0.0, hi=1.0):
     return max(lo, min(hi, x))
 
+# --- 10-Monats-EMA-Marktfilter (Minervini) ---------------------------------
+# Minervini prueft das Marktumfeld nicht nur ueber MA50/MA200, sondern auch
+# ueber den 10-Perioden-EMA auf MONATSBASIS (in seiner Auswertung liegt die
+# grosse Mehrheit erfolgreicher Ausbrueche in Phasen, in denen die Leitindizes
+# darueber notieren). Bis 2026-08-29 fehlte dieser Filter im ganzen System.
+#
+# Die Konstanten/Logik hier sind 1:1 gespiegelt in assets/marktampel.js und
+# MinerviniMarkets360/src/minervini360/scoring/market.py - bei Aenderungen
+# IMMER alle drei zusammen anfassen (gleiche Regel wie bei DIST_*/FTD_*).
+MONATS_EMA_PERIODE = 10
+# Untergrenze mit Reserve: der EMA wird mit dem SMA der ersten 10 Monate
+# initialisiert, danach braucht es Glaettungsschritte, bis der Seed keine
+# spuerbare Rolle mehr spielt. Unter 20 Monatskerzen liefern wir lieber None
+# (Kriterium faellt still weg) als eine seed-dominierte Scheinzahl.
+MONATS_EMA_MIN_KERZEN = 20
+
+def ema(werte, n):
+    """Exponentieller gleitender Durchschnitt als volle Reihe (None fuer die
+    ersten n-1 Positionen). Initialisiert mit dem SMA der ersten n Werte -
+    das Standardverfahren, identisch zu pandas ewm(adjust=False) mit
+    SMA-Seed und zu TradingViews ema()."""
+    if not werte or len(werte) < n:
+        return []
+    reihe = [None] * (n - 1)
+    schnitt = sum(werte[:n]) / n
+    reihe.append(schnitt)
+    faktor = 2.0 / (n + 1)
+    for w in werte[n:]:
+        schnitt = (w - schnitt) * faktor + schnitt
+        reihe.append(schnitt)
+    return reihe
+
+def monats_closes(timestamps, closes, gmtoffset=0):
+    """Monats-Schlusskurse aus (timestamp, close)-Paaren: pro Kalendermonat
+    gewinnt der ZULETZT gemeldete Wert.
+
+    ``gmtoffset`` (Sekunden, aus dem Yahoo-Meta) ist PFLICHT fuer korrekte
+    Monatsgrenzen und darf nicht weggelassen werden: Yahoo datiert die
+    Monatskerzen auf den Monatsersten in der BOERSEN-Zeitzone. Als UTC gelesen
+    faellt die ^STOXX-Augustkerze auf 2026-07-31 22:00 - also in den Juli
+    (verifiziert 2026-08-29). Und mit der lokalen Rechnerzeit gelesen haengt
+    das Ergebnis davon ab, WO der Code laeuft: auf dem Mac mini (Europe/Berlin)
+    stimmte ^STOXX zufaellig, auf dem GitHub-Actions-Runner (UTC) waere die
+    Augustkerze still in den Juli gerutscht und haette die Europa-Ampel im
+    Cloud-Lauf anders berechnet als lokal. Deshalb: Zeitstempel um den
+    Boersen-Offset verschieben und dann fest in UTC auswerten.
+
+    Warum die Deduplizierung zwingend ist (am 2026-08-29 gegen die
+    Live-Schnittstelle verifiziert): Yahoo haengt bei interval=1mo die aktuelle
+    Live-Notierung als ZUSAETZLICHE Zeile an, zusaetzlich zur regulaeren Kerze
+    des laufenden Monats. Der laufende Monat steht dadurch doppelt im Array
+    (beobachtet: 2026-08-01 UND 2026-08-28 bei ^GSPC/^IXIC/^STOXX). Ohne
+    Zusammenfassung je Monat zaehlt der laufende Monat doppelt und zieht den
+    EMA in Richtung des letzten Kurses."""
+    # Je Monat gewinnt der Eintrag mit dem HOECHSTEN Zeitstempel, und die
+    # Monate werden nach Kalender sortiert - bewusst nicht "zuletzt gelieferter
+    # gewinnt" in Eingabereihenfolge. Yahoo liefert zwar aufsteigend, aber eine
+    # Regel, die von der Reihenfolge der Eingabe abhaengt, liefert bei
+    # unsortierten Daten still ein anderes Ergebnis (nachgemessen: 7190.23
+    # statt 7186.74). Alle drei Schwesterfassungen nutzen dieselbe Regel.
+    nach_monat = {}
+    for ts, c in zip(timestamps or [], closes or []):
+        if not ts or c is None:
+            continue
+        d = datetime.fromtimestamp(ts + (gmtoffset or 0), tz=timezone.utc)
+        key = (d.year, d.month)
+        if key not in nach_monat or ts >= nach_monat[key][0]:
+            nach_monat[key] = (ts, c)
+    return [nach_monat[k][1] for k in sorted(nach_monat)]
+
+def ueber_monats_ema(m_closes, periode=MONATS_EMA_PERIODE):
+    """True/False, ob der letzte Monats-Schlusskurs ueber dem n-Monats-EMA
+    liegt. None bei zu wenig Historie - das Kriterium faellt dann still weg
+    (die Ampel rechnet unveraendert mit den vier SMA-Kriterien weiter),
+    statt eine Aktie/einen Markt faelschlich abzuwerten."""
+    if not m_closes or len(m_closes) < max(MONATS_EMA_MIN_KERZEN, periode):
+        return None
+    reihe = ema(m_closes, periode)
+    letzter = reihe[-1] if reihe else None
+    if letzter is None:
+        return None
+    return m_closes[-1] > letzter
+
+def yahoo_monatskerzen(symbol):
+    """Monats-Schlusskurse (10 Jahre) eines Symbols oder [] bei Fehler.
+
+    Eigener Abruf mit interval=1mo statt Resampling der bestehenden
+    Tagesdaten: ALLE Index-Abrufe im System holen nur 1-2 Jahre
+    (scorer.py 2y, assets/marktampel.js 1y, Minervini/server.py 1y). Daraus
+    liessen sich 12-24 Monatswerte ableiten - davon 10 allein fuer den
+    EMA-Seed. Ein eigener Abruf kostet 1 Anfrage je Index (2-3 pro Lauf) und
+    liefert ~121 Monatskerzen. Fehler sind nie fatal: das Kriterium faellt
+    dann weg (siehe ueber_monats_ema)."""
+    try:
+        url = (f"https://query1.finance.yahoo.com/v8/finance/chart/"
+               f"{urllib.parse.quote(symbol)}?range=10y&interval=1mo")
+        d = _http_json(url)
+        res = (d.get("chart", {}).get("result") or [None])[0]
+        if not res:
+            return []
+        return monats_closes(res.get("timestamp") or [],
+                             (res.get("indicators", {}).get("quote") or [{}])[0].get("close") or [],
+                             (res.get("meta") or {}).get("gmtoffset") or 0)
+    except Exception:
+        return []
+
 def markt_von_meta(meta):
     exch = (meta.get("exchangeName") or meta.get("fullExchangeName") or "").upper()
     cur = (meta.get("currency") or "").upper()
@@ -831,7 +937,7 @@ def follow_through_day(closes, volumes, lookback=FTD_LOOKBACK):
     # nie bestaetigt -> gilt als veraltet, kein Dauer-Warnsignal.
     return {"state": 2, "day": None, "gain_pct": None, "pullback_pct": round(rueckgang * 100, 1)}
 
-def _index_trend_status(idx_closes):
+def _index_trend_status(idx_closes, m_closes=None):
     """Trend-Status EINES Index (state 2/1/0 + Einzelkriterien) - Baustein von
     markt_regime(), 1:1 dieselbe Schwelle wie assets/marktampel.js::
     ampelEvaluateIndex / minervini360.scoring.market.evaluate_index:
@@ -849,17 +955,25 @@ def _index_trend_status(idx_closes):
     s50_ueber_s200 = bool(s50 and s200 and s50 > s200)
     steigt = bool(s200 and s200_alt and s200 > s200_alt)
     n = sum([ueber50, ueber200, s50_ueber_s200, steigt])
+    # Der 10-Monats-EMA (Minervini) geht BEWUSST NICHT in n ein: n>=3 ist eine
+    # seit jeher auf VIER Kriterien geeichte Schwelle, und "score" wird in
+    # Markets 360 als n/4 in Prozent umgerechnet. Stattdessen wirkt er als
+    # reines Zusatz-Gate, das GRUEN auf GELB herunterstufen kann - nie
+    # umgekehrt, nie auf Rot. Damit kann der neue Filter nur vorsichtiger
+    # machen (weniger Kaufsignale), nie neue Kaeufe erlauben.
+    ema10m = ueber_monats_ema(m_closes) if m_closes else None
     if ueber200 and s50_ueber_s200 and n >= 3:
-        state = 2
+        state = 1 if ema10m is False else 2
     elif not ueber200 or not s50_ueber_s200:
         state = 0
     else:
         state = 1
     return {"state": state, "ueber_ma50": ueber50, "ueber_ma200": ueber200,
-            "sma50_ueber_sma200": s50_ueber_s200, "ma200_steigt": steigt}
+            "sma50_ueber_sma200": s50_ueber_s200, "ma200_steigt": steigt,
+            "ueber_ema10_monat": ema10m}
 
 
-def markt_regime(idx_liste):
+def markt_regime(idx_liste, monats_liste=None):
     """Ampel fuer den Gesamtmarkt (Minervini/Weinstein: erst das Umfeld, dann
     die Aktie - in einem schwachen Markt scheitern auch die besten Setups).
     ``idx_liste``: Liste von (closes, volumes)-Paaren - fuer USA seit
@@ -889,7 +1003,13 @@ def markt_regime(idx_liste):
     der Trend-Ampel ab - ein Markt kann noch gruen sein und trotzdem schon
     unter institutionellem Verkaufsdruck stehen, siehe
     notify.py::baue_nachricht()."""
-    zustaende = [z for z in (_index_trend_status(c) for c, _ in idx_liste) if z]
+    # monats_liste ist positionsgleich zu idx_liste (gleiche Symbolreihenfolge);
+    # fehlt sie oder ist kuerzer, faellt das EMA-Kriterium fuer den jeweiligen
+    # Index still weg - markt_regime() bleibt damit auch fuer Aufrufer ohne
+    # Monatsdaten unveraendert nutzbar (z.B. Tests).
+    ml = list(monats_liste or [])
+    zustaende = [z for z in (_index_trend_status(c, ml[i] if i < len(ml) else None)
+                             for i, (c, _) in enumerate(idx_liste)) if z]
     if not zustaende:
         return {"ampel": "unbekannt", "detail": "zu wenig Index-Historie", "hinweis": ""}
 
@@ -911,6 +1031,14 @@ def markt_regime(idx_liste):
               f"({'steigend' if leit['ma200_steigt'] else 'fallend'}), "
               f"{'>' if leit['ueber_ma50'] else '<'}MA50, MA50 "
               f"{'>' if leit['sma50_ueber_sma200'] else '<'}MA200")
+    if leit.get("ueber_ema10_monat") is not None:
+        detail += f", {'>' if leit['ueber_ema10_monat'] else '<'}10M-EMA"
+    # Eigener Hinweis, wenn allein der Monats-EMA die Ampel gebremst hat -
+    # sonst waere fuer den Nutzer nicht erkennbar, WARUM trotz sauberem
+    # MA-Geruest nur Gelb steht.
+    if a == "gelb" and leit.get("ueber_ema10_monat") is False:
+        hinweis += (" Leitindex unter dem 10-Monats-EMA – Minervini: das "
+                    "Umfeld, in dem die meisten Ausbrüche scheitern.")
 
     dist_counts = [x for x in (distribution_days(c, v) for c, v in idx_liste if v) if x is not None]
     dist_count = max(dist_counts) if dist_counts else None
@@ -950,12 +1078,15 @@ def f_stage2(closes, hi52, lo52):
     # 30%/25%-Schwellen unten sind bereits identisch mit MinerviniMarkets360
     # (min_pct_above_low/within_pct_of_high) und dem Trend-Screener
     # (MIN_PCT_ABOVE_52W_LOW/MAX_PCT_BELOW_52W_HIGH) - keine Aenderung noetig.
-    # RS-Schwellen bleiben bewusst engine-spezifisch: hier ein stetiger
-    # 0..1-Faktor (f_relative_staerke), bei Markets 360 ein hartes
-    # Trend-Template-Kriterium (rs_min 70), beim Trend-Screener ein
-    # "Leader"-Label (RS_THRESHOLD 80) - unterschiedliche Konzepte, keine
-    # gemeinsame Zahl. VCP-Erkennung bleibt aus demselben Grund je Engine
-    # eigenstaendig (siehe Punkt 4 in der Architektur-Notiz).
+    # RS taucht hier bewusst NICHT unter den 8 Kriterien auf: dieser Faktor
+    # ist der stetige 0..1-Trendwert. Minervinis Kriterium 8 (RS-Rating >=
+    # Schwelle) wird seit dem SEPA-Abgleich 2026-08-29 separat in
+    # f_trend_template() geprueft - erst nach dem Haupt-Loop, weil der
+    # RS-RANG den fertigen Kandidatenpool braucht (f_rs_pool_rang). Dort
+    # gilt dieselbe Schwelle 70 wie in MinerviniMarkets360; der
+    # Trend-Screener nutzt weiterhin sein eigenes "Leader"-Label
+    # (RS_THRESHOLD 80) - anderes Universum, andere Fragestellung.
+    # Der Wert `erfuellt/8` unten ist von alledem unberuehrt.
     krit = [
         bool(s150 and s200 and p > s150 and p > s200),
         bool(s150 and s200 and s150 > s200),
@@ -967,7 +1098,21 @@ def f_stage2(closes, hi52, lo52):
         p >= 0.75 * hi52,                              # <=25% unter 52W-Hoch
     ]
     erfuellt = sum(krit)
-    return erfuellt / len(krit), f"{erfuellt}/{len(krit)} Trend-Kriterien"
+    # Zusaetzlich die BENANNTEN Kriterien in der Zaehlweise von
+    # MinerviniMarkets360 scoring/trend_template.py (Kriterium 8 = RS folgt
+    # als Post-Pass, sobald der Pool-Rang existiert - siehe
+    # f_trend_template()). Der 0..1-Score oben bleibt davon voellig
+    # unberuehrt; die Liste ist reine Zusatzinformation.
+    benannt = {
+        "1_kurs_ueber_sma150_200": krit[0],
+        "2_sma150_ueber_sma200": krit[1],
+        "3_sma200_steigt": krit[2],
+        "4_sma50_ueber_150_200": krit[4],
+        "5_kurs_ueber_sma50": krit[5],
+        "6_min_30pct_ueber_52w_tief": krit[6],
+        "7_max_25pct_unter_52w_hoch": krit[7],
+    }
+    return erfuellt / len(krit), f"{erfuellt}/{len(krit)} Trend-Kriterien", benannt
 
 # Gewichtete Multi-Fenster-RS (IBD/Minervini-Stil): das juengste Quartal
 # zaehlt doppelt - erkennt Werte, die JETZT Fuehrung uebernehmen, statt
@@ -1262,6 +1407,10 @@ def f_rs_pool_rang(ergebnisse, gew, gew_summe, schwellen):
         if x is None or alt is None:
             continue
         perz = bisect.bisect_right(werte, x) / n
+        # IBD-Skala 1..99 - Basis fuer Kriterium 8 des Trend Templates
+        # (f_trend_template) und damit dieselbe Groesse, die Markets 360
+        # gegen rs_min 70 prueft.
+        e["rs_rating"] = max(1, min(99, round(perz * 98) + 1))
         neu = clamp(0.5 * alt + 0.5 * perz)
         fak = e["faktoren"]["relative_staerke"]
         fak["wert"] = round(neu, 2)
@@ -1274,6 +1423,91 @@ def f_rs_pool_rang(ergebnisse, gew, gew_summe, schwellen):
                      else "B" if score >= schwellen["beobachten"] else "C")
         e["einstufung"] = ("Kauf-Kandidat" if score >= schwellen["kauf_kandidat"]
                             else "Beobachten" if score >= schwellen["beobachten"] else "—")
+
+# Kriterium 8 des Trend Templates: RS-Rating-Mindestwert. 70 ist derselbe
+# Wert wie in MinerviniMarkets360 config.yaml (trend_template.rs_min) - die
+# beiden Engines sollen dieselbe Frage identisch beantworten.
+TT_RS_MIN = 70
+
+def f_trend_template(ergebnisse, cfg, schwellen):
+    """Post-Pass: Minervinis Trend Template als HARTE K.-o.-Pruefung.
+
+    Schliesst zwei Luecken aus dem SEPA-Abgleich vom 2026-08-29:
+      * Der Signal-Hub kannte das RS-Kriterium (Nr. 8) nicht als Bestandteil
+        des Templates - RS war nur ein gewichteter Score-Faktor.
+      * Der Signal-Hub kannte ueberhaupt kein "bestanden/nicht bestanden".
+        `stage2_trend` ist ein stetiger 0..1-Faktor mit 25% Gewicht; eine
+        Aktie mit 6 von 8 Kriterien konnte damit Kauf-Kandidat werden, obwohl
+        Minervini alle 8 als PFLICHT beschreibt.
+
+    Zaehlweise und Schwellen sind bewusst identisch zu
+    MinerviniMarkets360 scoring/trend_template.py (dieselben 8 Kriterien,
+    rs_min 70) - vorher beantworteten beide Engines dieselbe Frage
+    unterschiedlich.
+
+    WICHTIGER VORBEHALT zum RS-Kriterium (Nr. 8): `rs_rating` ist hier das
+    Perzentil im AKTUELLEN KANDIDATENPOOL (f_rs_pool_rang) - also innerhalb
+    der ohnehin schon vorgefilterten Screener-Treffer. Markets 360 rankt
+    dagegen ueber sein breites Universum (S&P 500 + Nasdaq 100 + DAX/MDAX
+    + EU). "RS >= 70" heisst hier deshalb "besser als 70% der heutigen
+    Kandidaten", dort "besser als 70% des Marktes" - dieselbe Zahl, zwei
+    verschiedene Aussagen. In einem starken Pool faellt ein objektiv guter
+    Wert dadurch durch, in einem schwachen kommt ein mittelmaessiger durch.
+    Genau deshalb bleibt `strikt` bis zur gemessenen Forward-Kohorte AUS;
+    ein Wechsel auf ein marktweites RS-Rating waere die sauberere Loesung
+    und ist als eigener Schritt vorgemerkt (siehe Wiki-Abschnitt 09).
+
+    STANDARDMAESSIG NUR MESSEND: `pass` wird berechnet und mitgeschrieben,
+    aendert aber weder Score noch Einstufung. Grund ist die Backtest-Pflicht
+    aus CLAUDE.md - die bestehende Gewichtung ist durch
+    score_faktoren_backtest.py gemessen, die K.-o.-Variante nicht. Erst wenn
+    trend_template_backtest.py zeigt, dass die strikte Variante besser
+    trennt, darf config `trend_template.strikt` auf true.
+    """
+    strikt = bool((cfg or {}).get("strikt", False))
+    rs_min = int((cfg or {}).get("rs_min", TT_RS_MIN))
+    gezaehlt = bestanden = 0
+    for e in ergebnisse:
+        krit = dict(e.pop("_tt_kriterien", None) or {})
+        if not krit:
+            continue
+        rs_rating = e.get("rs_rating")
+        # Ohne RS-Rating (zu kleiner Kandidatenpool, siehe f_rs_pool_rang:
+        # unter 10 Werten ist der Rang nicht belastbar) ist das Template
+        # NICHT BEWERTBAR - ausdruecklich nicht "durchgefallen". Sonst waere
+        # das Ergebnis an duennen Tagen still "0 von N bestanden", ohne dass
+        # irgendetwas am Markt schlechter geworden waere.
+        krit["8_rs_rating"] = bool(rs_rating is not None and rs_rating >= rs_min)
+        erfuellt = sum(1 for v in krit.values() if v)
+        technisch = all(v for k, v in krit.items() if not k.startswith("8_"))
+        bestanden_flag = None if rs_rating is None else bool(technisch and krit["8_rs_rating"])
+        e["trend_template"] = {
+            "kriterien": krit,
+            "erfuellt": erfuellt,
+            "gesamt": len(krit),
+            "rs_rating": rs_rating,
+            "rs_min": rs_min,
+            "pass": bestanden_flag,
+            "technisch_pass": technisch,
+            "strikt_aktiv": strikt,
+        }
+        gezaehlt += 1
+        if bestanden_flag:
+            bestanden += 1
+        # Nur wenn ausdruecklich scharf geschaltet: Kauf-Kandidat setzt das
+        # vollstaendige Template voraus (Minervinis K.-o.-Logik). Der Score
+        # selbst bleibt unangetastet - herabgestuft wird nur die Einstufung,
+        # damit die gemessene Zahl im Dashboard vergleichbar bleibt.
+        if strikt and bestanden_flag is False and e.get("score", 0) >= schwellen["kauf_kandidat"]:
+            e["tier"] = "B"
+            e["einstufung"] = "Beobachten"
+            e["trend_template"]["herabgestuft"] = True
+    if gezaehlt:
+        nicht_bewertbar = sum(1 for e in ergebnisse
+                              if (e.get("trend_template") or {}).get("pass") is None)
+        print(f"Trend Template (8 Kriterien, RS>={rs_min}): {bestanden}/{gezaehlt} bestanden"
+              + (f", {nicht_bewertbar} ohne RS-Rating nicht bewertbar" if nicht_bewertbar else "")
+              + ("  [STRIKT aktiv]" if strikt else "  [nur messend]"))
 
 def f_sektor_staerke(ergebnisse, etf_rang, gew, gew_summe, schwellen):
     """Branchenstaerke gegen den GANZEN Markt statt (wie bis 2026-07-24) nur
@@ -1477,14 +1711,19 @@ def score_alle(limit=None):
             symbole = m["index_yahoo"]
             if isinstance(symbole, str):
                 symbole = [symbole]
-            idx_liste = [(d["closes"], d["volumes"]) for d in
-                         (hole_chart_cached(sym, cache) for sym in symbole) if d]
+            geladen = [(sym, d) for sym, d in
+                       ((sym, hole_chart_cached(sym, cache)) for sym in symbole) if d]
+            idx_liste = [(d["closes"], d["volumes"]) for _, d in geladen]
+            # Monatskerzen fuer den 10-Monats-EMA-Filter: eigener Abruf je
+            # Index (2-3 pro Lauf, siehe yahoo_monatskerzen). Positionsgleich
+            # zu idx_liste, damit markt_regime() sie je Index zuordnen kann.
+            monats_liste = [yahoo_monatskerzen(sym) for sym, _ in geladen]
             # idx_daten[markt] bleibt NUR der primaere/erste Index (fuer
             # f_relative_staerke() - RS braucht genau EINEN Vergleichsindex,
             # keine kombinierte Liste), unabhaengig davon, wie viele Indizes
             # markt_regime() fuer die Ampel/Sentiment-Berechnung kombiniert.
             idx_daten[markt] = idx_liste[0][0] if idx_liste else []
-            regime[markt] = markt_regime(idx_liste)
+            regime[markt] = markt_regime(idx_liste, monats_liste)
     if regime:
         print("Markt-Regime: " + " · ".join(
             f"{k} {v['ampel']} ({v.get('detail', '')})"
@@ -1560,7 +1799,7 @@ def score_alle(limit=None):
 
         faktoren = {}
         f = {}
-        f["stage2_trend"], faktoren_detail_s2 = f_stage2(closes, hi52, lo52)
+        f["stage2_trend"], faktoren_detail_s2, tt_benannt = f_stage2(closes, hi52, lo52)
         f["relative_staerke"], d_rs, rs_gew = f_relative_staerke(closes, idx_closes)
         f["naehe_52w_hoch"], d_nh = f_naehe_hoch(closes, hi52)
         f["basis_konsolidierung"], d_ba = f_basis(closes)
@@ -1641,6 +1880,7 @@ def score_alle(limit=None):
             im_depot = depot_match(nm, depot_namen)
 
         ergebnisse.append({
+            "_tt_kriterien": tt_benannt,
             "ticker": ticker,
             "yahoo_symbol": symbol,
             "name": meta.get("longName") or meta.get("shortName") or rohname or ticker,
@@ -1690,6 +1930,11 @@ def score_alle(limit=None):
     f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb)
     f_code33(ergebnisse, yop, ycrumb, schwellen)
     f_marktampel_dynamik(ergebnisse, regime, cfg.get("marktregime", {}), schwellen)
+    # BEWUSST ALS LETZTER Post-Pass: f_sektor_staerke/f_fundamental/
+    # f_marktampel_dynamik schreiben tier+einstufung jeweils NEU aus dem
+    # Score. Liefe die Template-Pruefung vorher, wuerde ihre Herabstufung
+    # von einem der nachfolgenden Paesse stillschweigend wieder ueberschrieben.
+    f_trend_template(ergebnisse, cfg.get("trend_template", {}), schwellen)
     ergebnisse.sort(key=lambda e: e["score"], reverse=True)
 
     # "neu" markieren: Kauf-Kandidaten, die seit dem letzten Lauf neu sind

@@ -256,12 +256,28 @@ def _earnings_tage_map():
     return out
 
 
+def _trend_template_map():
+    """Ticker -> Trend-Template bestanden (True/False/None).
+
+    Liegt in signals.json, nicht in pivot.json (der Pivot-Detektor kennt das
+    Template nicht) - deshalb wie _earnings_tage_map() separat extrahiert,
+    ohne Cross-Import. None = nicht bewertbar (kein RS-Rating, siehe
+    scorer.f_trend_template)."""
+    try:
+        signale = json.load(open(pfade.SIGNALS_JSON, encoding="utf-8")).get("treffer", [])
+    except Exception:
+        return {}
+    return {e.get("ticker"): (e.get("trend_template") or {}).get("pass")
+            for e in signale if e.get("trend_template")}
+
+
 def log_heute():
     if not os.path.exists(pfade.PIVOT_JSON):
         print("Keine pivot.json -> nichts zu loggen.")
         return
     daten = json.load(open(pfade.PIVOT_JSON, encoding="utf-8"))
     earn_map = _earnings_tage_map()
+    tt_map = _trend_template_map()
     heute = datetime.now().strftime("%Y-%m-%d")
     lb = _logbuch_load()
     bekannt = {(e["datum"], e["ticker"], e["status"]) for e in lb}
@@ -279,6 +295,18 @@ def log_heute():
             "preis_signal": e.get("preis"), "pivot": e.get("pivot"),
             "stop": e.get("stop"),   # seit 2026-08-21, Basis fuer den Exit-Regel-Backtest (_simulate_exit)
             "earnings_tage": earn_map.get(e.get("ticker")),   # seit 2026-08-21, siehe Modul-Docstring
+            # SEPA-Abgleich 2026-08-29: vier neue Kriterien, die bislang nicht
+            # gemessen wurden. Alle vier sind im Live-Betrieb noch OHNE Wirkung
+            # (pivot.GATES / config trend_template.strikt sind aus) - hier wird
+            # zunaechst nur die unverzerrte Forward-Kohorte aufgebaut, damit
+            # spaeter belegbar ist, ob ein Gate den Ertrag verbessert.
+            # Wie beim Earnings-Split gilt: aeltere Logbuch-Eintraege haben
+            # diese Felder nicht und bleiben bis zu ihrer Reife in der
+            # jeweiligen "unbekannt"-Kohorte (kein rueckwirkendes Backfill).
+            "kontraktionen": e.get("kontraktionen"),
+            "basis_wochen": e.get("basis_wochen"),
+            "follow_through_vol": e.get("follow_through_vol"),
+            "tt_pass": tt_map.get(e.get("ticker")),
             "realisiert": None,        # wird von --evaluate gefuellt
         })
         neu += 1
@@ -414,7 +442,20 @@ def evaluate():
     # ist (keine 4W/8W-Zwischenstaende).
     exit_stati = ("ARMED_exit_staffel", "ARMED_exit_hold",
                   "BREAKOUT_exit_staffel", "BREAKOUT_exit_hold")
-    eimer = {s: {h: [] for h, _ in HORIZONTE} for s in basis_stati + qual_stati + earn_stati + exit_stati}
+    # SEPA-Abgleich 2026-08-29: je Kriterium eine Ja/Nein-Kohorte, getrennt
+    # nach Pivot-Status (sonst ueberdeckt der ARMED/BREAKOUT-Unterschied den
+    # gesuchten Effekt - dieselbe Logik wie beim Earnings-Split). Erst wenn
+    # eine Kohorte SCHWELLE_PUSH erreicht UND besser laeuft, darf das
+    # zugehoerige Gate in pivot.GATES scharf geschaltet werden.
+    sepa_stati = tuple(
+        f"{st}_{k}" for st in basis_stati for k in (
+            "vcp_ge2", "vcp_lt2",              # >= KONTRAKTION_MIN Kontraktionen?
+            "basis_ge7w", "basis_lt7w",        # >= BASIS_MIN_WOCHEN Konsolidierung?
+            "tt_pass", "tt_fail",              # Trend Template 8/8 bestanden?
+        )
+    ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")   # Folgevolumen nur bei Ausbruechen sinnvoll
+    eimer = {s: {h: [] for h, _ in HORIZONTE}
+             for s in basis_stati + qual_stati + earn_stati + exit_stati + sepa_stati}
     # Einzelfaelle (seit 2026-08): dieselben Belege wie eimer, aber ticker-
     # scharf statt aggregiert - Basis fuer die "Fundstellen"-Ansicht im
     # Backtest-Report (dashboard.html hat sonst keinen Zugriff auf das lokale,
@@ -448,6 +489,30 @@ def evaluate():
         nah = et is not None and 0 <= et <= warn
         eimer[f"{e['status']}_earnings_{'nah' if nah else 'fern'}"][bk].append(ret)
 
+        # --- SEPA-Kriterien (2026-08-29) --------------------------------
+        # Fehlt ein Feld (Eintrag von vor diesem Umbau), wird NICHT einsortiert
+        # - lieber eine kleinere, saubere Kohorte als eine, in der "unbekannt"
+        # stillschweigend als "nein" zaehlt und das Ergebnis verfaelscht.
+        # Schwellen kommen aus pivot.py, NICHT als Zahlen hierher kopiert: die
+        # Kohorte muss exakt dort teilen, wo das spaetere Gate greift. Zwei
+        # unabhaengig gepflegte Zahlen wuerden sonst still auseinanderlaufen
+        # und man wuerde ein Gate anhand einer Kohorte belegen, die eine
+        # andere Frage beantwortet.
+        kt = e.get("kontraktionen")
+        if kt is not None:
+            eng = kt >= pivot.KONTRAKTION_MIN
+            eimer[f"{e['status']}_vcp_{'ge2' if eng else 'lt2'}"][bk].append(ret)
+        bw = e.get("basis_wochen")
+        if bw is not None:
+            lang = bw >= pivot.BASIS_MIN_WOCHEN
+            eimer[f"{e['status']}_basis_{'ge7w' if lang else 'lt7w'}"][bk].append(ret)
+        tt = e.get("tt_pass")
+        if tt is not None:
+            eimer[f"{e['status']}_tt_{'pass' if tt else 'fail'}"][bk].append(ret)
+        ft = e.get("follow_through_vol")
+        if ft is not None and e["status"] == "BREAKOUT":
+            eimer["BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach"][bk].append(ret)
+
         # Exit-Regel-Backtest: einmalig berechnen und dauerhaft im Logbuch-
         # Eintrag cachen (wie "realisiert") - kein erneutes Nachrechnen bei
         # spaeteren Laeufen, siehe Modul-Docstring.
@@ -467,6 +532,8 @@ def evaluate():
             "return_pct": round(ret * 100, 2),
             "earnings_tage": et,
             "exit_sim": e.get("exit_sim"),
+            "kontraktionen": kt, "basis_wochen": bw,
+            "follow_through_vol": e.get("follow_through_vol"), "tt_pass": tt,
         })
     scorer.speichere_cache(cache)
     _logbuch_save(lb)
