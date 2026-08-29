@@ -584,6 +584,101 @@ def f_code33(ergebnisse, yop, ycrumb, schwellen):
     pfade.schreibe_json_atomar(pfade.CODE33_CACHE, cache, ensure_ascii=False)
     print(f"Code 33: {verfuegbar} verfuegbar, {gruen} davon 3/3 grün, {abrufe} Abrufe")
 
+# --- Institutioneller Besitzanteil (Minervini/SEPA-Kriterium) ---------------
+# Minervini nennt einen optimalen Bereich von 30-70% institutionellem Besitz,
+# idealerweise ueber Quartale steigend. Das MTS-System hat diesen Prozentsatz
+# bisher NIRGENDS gemessen - nur Verhaltens-Proxys (Akkumulationstage, OBV,
+# CMF, Up/Down-Volumen). Diese Luecke wird HIER geschlossen, rein messend.
+#
+# Datenquelle am 2026-08-29 live gegen mehrere Ticker verifiziert (nicht nur
+# angenommen, siehe CLAUDE.md-Pflicht): Yahoo quoteSummary defaultKeyStatistics,
+# Feld heldPercentInstitutions (raw, 0..1-Anteil). Getestet gegen US (AAPL,
+# MSFT, NVDA, TSLA, PLTR, GME, BABA, NIO, TSM), Europa (SAP.DE, ASML.AS,
+# SIE.DE, NESN.SW, RACE.MI, ULVR.L, SHEL.L, NOVN.SW, OMV.VI, EVK.DE, GTT.PA,
+# BION.SW, SOON.SW, AKER.OL, 1COV.DE, IBE.MC, VOLV-B.ST, NOVO-B.CO,
+# NOKIA.HE) sowie Asien/Kanada (7203.T, 0700.HK, SHOP.TO): Feld war fuer ALLE
+# getesteten Einzelaktien vorhanden, auch europaeische - anders als zunaechst
+# angenommen liefert Yahoo es dort in der Praxis meist mit. Es fehlt dagegen
+# zuverlaessig bei ETFs (SPY, QQQ -> None), und kann bei einzelnen duennen/
+# neuen Werten ebenfalls fehlen - deshalb bleibt die Codepfad-Behandlung
+# defensiv: fehlendes Feld => "nicht verfuegbar", NIE 0% oder Absturz.
+# Keine Quartals-Trendmessung: defaultKeyStatistics liefert nur den
+# aktuellen Stand, keine Historie - Minervinis "steigend ueber Quartale"-
+# Kriterium ist damit NICHT abgedeckt, nur der aktuelle Prozentsatz.
+# KEIN Score-Einfluss (wie f_code33) - Backtest-Pflicht (CLAUDE.md): neue
+# Kriterien erst messen, dann ggf. spaeter scharf schalten.
+INSTITUTIONAL_CACHE_TAGE = 7      # aendert sich quartalsweise -> 7-Tage-TTL wie Code 33
+INSTITUTIONAL_MAX_ABRUFE = 300    # Deckel je Lauf, wie beim Fundamental-/Code33-Post-Pass
+
+def yahoo_institutional(symbol, op, crumb):
+    """{prozent} (institutioneller Besitzanteil als Anteil 0..1, z.B. 0.664 =
+    66.4%) via Yahoo quoteSummary defaultKeyStatistics, Feld
+    heldPercentInstitutions - live verifiziert, siehe Modulkommentar oben.
+    None bei Abruf-/Parsefehler; {"prozent": None} (kein Fehler!), wenn Yahoo
+    fuer dieses Symbol schlicht keinen Wert liefert (z.B. ETFs) - dieser
+    Unterschied entscheidet, ob der naechste Lauf erneut versucht oder das
+    Ergebnis 7 Tage gecacht bleibt (siehe f_institutional())."""
+    if not op or not crumb:
+        return None
+    try:
+        u = (f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/"
+             f"{urllib.parse.quote(symbol)}?modules=defaultKeyStatistics&crumb={urllib.parse.quote(crumb)}")
+        with op.open(urllib.request.Request(u, headers=UA), timeout=12) as r:
+            j = json.load(r)["quoteSummary"]["result"][0].get("defaultKeyStatistics") or {}
+        roh = (j.get("heldPercentInstitutions") or {}).get("raw")
+        return {"prozent": roh}
+    except Exception:
+        return None
+
+def f_institutional(ergebnisse, yop, ycrumb, schwellen):
+    """Post-Pass: fuellt e['institutional'] = {verfuegbar, prozent (0-100),
+    im_zielbereich (30-70%), einordnung} fuer ALLE Treffer (anders als
+    f_code33, das das Feld bei fehlenden Daten ganz auslaesst - hier soll
+    "nicht verfuegbar" explizit sichtbar sein statt eines schlicht fehlenden
+    Feldes, siehe Aufgabenstellung). Datenabruf nur fuer Treffer ab
+    Beobachten-Schwelle, gecacht/ratenlimitiert wie f_code33() (7-Tage-TTL,
+    300 Abrufe/Lauf - Rest folgt beim naechsten Lauf). KEIN Score-Einfluss,
+    siehe Modulkommentar oben."""
+    cache = {}
+    if os.path.exists(pfade.INSTITUTIONAL_CACHE):
+        try:
+            cache = json.load(open(pfade.INSTITUTIONAL_CACHE, encoding="utf-8"))
+        except Exception:
+            cache = {}
+    heute = datetime.now().date()
+    abrufe = verfuegbar_n = 0
+    for e in ergebnisse:
+        sym = e["yahoo_symbol"]
+        c = cache.get(sym)
+        frisch = False
+        if c and c.get("stand"):
+            try:
+                frisch = (heute - datetime.strptime(c["stand"], "%Y-%m-%d").date()).days <= INSTITUTIONAL_CACHE_TAGE
+            except Exception:
+                frisch = False
+        relevant = e["score"] >= schwellen["beobachten"]
+        if relevant and abrufe < INSTITUTIONAL_MAX_ABRUFE and not frisch and ycrumb:
+            d = yahoo_institutional(sym, yop, ycrumb)
+            time.sleep(0.15); abrufe += 1
+            if d is not None:      # nur ein wirklicher Abruf wird gecacht (Fehlversuch = kein Cache)
+                c = {"prozent": d.get("prozent"), "stand": heute.strftime("%Y-%m-%d")}
+                cache[sym] = c
+        roh = c.get("prozent") if c else None
+        if roh is not None:
+            verfuegbar_n += 1
+            pct = round(roh * 100, 1)
+            im_ziel = 30 <= pct <= 70
+            einordnung = ("im Zielbereich (30-70%)" if im_ziel
+                          else "unterhalb 30% - noch wenig institutionelles Interesse" if pct < 30
+                          else "oberhalb 70% - wenig Kaufkraft-Reserve durch Institutionelle")
+            e["institutional"] = {"verfuegbar": True, "prozent": pct,
+                                   "im_zielbereich": im_ziel, "einordnung": einordnung}
+        else:
+            e["institutional"] = {"verfuegbar": False, "prozent": None,
+                                   "im_zielbereich": None, "einordnung": "nicht verfuegbar"}
+    pfade.schreibe_json_atomar(pfade.INSTITUTIONAL_CACHE, cache, ensure_ascii=False)
+    print(f"Institutioneller Besitz: {verfuegbar_n} verfuegbar, {abrufe} Abrufe")
+
 def lade_depot_namen(datei):
     """Namen offener Positionen (status 'Offen'). Lokal aus mts_data.json;
     im Cloud-Lauf (keine mts_data.json im Checkout) aus der Umgebungsvariable
@@ -1929,6 +2024,7 @@ def score_alle(limit=None):
     f_sektor_staerke(ergebnisse, etf_rang, gew, gew_summe, schwellen)
     f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb)
     f_code33(ergebnisse, yop, ycrumb, schwellen)
+    f_institutional(ergebnisse, yop, ycrumb, schwellen)
     f_marktampel_dynamik(ergebnisse, regime, cfg.get("marktregime", {}), schwellen)
     # BEWUSST ALS LETZTER Post-Pass: f_sektor_staerke/f_fundamental/
     # f_marktampel_dynamik schreiben tier+einstufung jeweils NEU aus dem

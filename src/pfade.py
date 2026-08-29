@@ -82,6 +82,7 @@ SYMBOL_CACHE = os.path.join(LOKAL, "symbol_cache.json")
 PROFIL_CACHE = os.path.join(LOKAL, "profil_cache.json")
 FUNDAMENTAL_CACHE = os.path.join(LOKAL, "fundamental_cache.json")  # EPS/Umsatz-Wachstum (7-Tage-TTL)
 CODE33_CACHE = os.path.join(LOKAL, "code33_cache.json")  # Code-33-Kriterien (7-Tage-TTL)
+INSTITUTIONAL_CACHE = os.path.join(LOKAL, "institutional_cache.json")  # institutioneller Besitzanteil (7-Tage-TTL)
 STATE = os.path.join(LOKAL, "state.json")
 LOGBUCH = os.path.join(LOKAL, "logbuch.json")
 PIVOT_STATE = os.path.join(LOKAL, "pivot_state.json")   # Zustands-Uebergaenge fuer Push
