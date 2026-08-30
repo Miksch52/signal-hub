@@ -1534,6 +1534,9 @@ def f_rs_pool_rang(ergebnisse, gew, gew_summe, schwellen):
         # (f_trend_template) und damit dieselbe Groesse, die Markets 360
         # gegen rs_min 70 prueft.
         e["rs_rating"] = max(1, min(99, round(perz * 98) + 1))
+        # Ausgangslage; f_rs_marktweit() ersetzt das gleich durch einen
+        # marktweiten Wert, wo immer das moeglich ist.
+        e["rs_rating_quelle"] = "pool"
         neu = clamp(0.5 * alt + 0.5 * perz)
         fak = e["faktoren"]["relative_staerke"]
         fak["wert"] = round(neu, 2)
@@ -1568,17 +1571,14 @@ def f_trend_template(ergebnisse, cfg, schwellen):
     rs_min 70) - vorher beantworteten beide Engines dieselbe Frage
     unterschiedlich.
 
-    WICHTIGER VORBEHALT zum RS-Kriterium (Nr. 8): `rs_rating` ist hier das
-    Perzentil im AKTUELLEN KANDIDATENPOOL (f_rs_pool_rang) - also innerhalb
-    der ohnehin schon vorgefilterten Screener-Treffer. Markets 360 rankt
-    dagegen ueber sein breites Universum (S&P 500 + Nasdaq 100 + DAX/MDAX
-    + EU). "RS >= 70" heisst hier deshalb "besser als 70% der heutigen
-    Kandidaten", dort "besser als 70% des Marktes" - dieselbe Zahl, zwei
-    verschiedene Aussagen. In einem starken Pool faellt ein objektiv guter
-    Wert dadurch durch, in einem schwachen kommt ein mittelmaessiger durch.
-    Genau deshalb bleibt `strikt` bis zur gemessenen Forward-Kohorte AUS;
-    ein Wechsel auf ein marktweites RS-Rating waere die sauberere Loesung
-    und ist als eigener Schritt vorgemerkt (siehe Wiki-Abschnitt 09).
+    RS-Kriterium (Nr. 8) seit 2026-08-30 MARKTWEIT: `rs_rating` war bis dahin
+    das Perzentil im vorgefilterten Kandidatenpool - "besser als 70% der
+    heutigen Kandidaten" statt "besser als 70% des Marktes". Gemessen war das
+    an der 70er-Schwelle in 37% der Faelle die falsche Ja/Nein-Entscheidung
+    (siehe f_rs_marktweit). Jetzt kommt die Zahl aus Markets 360s breitem
+    Universum, direkt oder kalibriert. Treffer, fuer die weder das eine noch
+    das andere moeglich ist (rs_rating_quelle "pool"), gelten fuer Kriterium 8
+    ausdruecklich als NICHT BEWERTBAR statt als durchgefallen.
 
     STANDARDMAESSIG NUR MESSEND: `pass` wird berechnet und mitgeschrieben,
     aendert aber weder Score noch Einstufung. Grund ist die Backtest-Pflicht
@@ -1595,11 +1595,17 @@ def f_trend_template(ergebnisse, cfg, schwellen):
         if not krit:
             continue
         rs_rating = e.get("rs_rating")
-        # Ohne RS-Rating (zu kleiner Kandidatenpool, siehe f_rs_pool_rang:
-        # unter 10 Werten ist der Rang nicht belastbar) ist das Template
-        # NICHT BEWERTBAR - ausdruecklich nicht "durchgefallen". Sonst waere
-        # das Ergebnis an duennen Tagen still "0 von N bestanden", ohne dass
-        # irgendetwas am Markt schlechter geworden waere.
+        rs_quelle = e.get("rs_rating_quelle")
+        # Kriterium 8 verlangt eine MARKTWEITE Aussage ("besser als X% des
+        # Marktes"). Ein blosser Rang im heutigen Kandidatenpool erfuellt das
+        # nicht - siehe f_rs_marktweit(). Solche Treffer gelten deshalb als
+        # NICHT BEWERTBAR, ausdruecklich nicht als "durchgefallen": sonst
+        # waere das Ergebnis still "0 von N bestanden", ohne dass am Markt
+        # irgendetwas schlechter geworden waere. Gleiches gilt, wenn gar kein
+        # Rating vorliegt (zu kleiner Pool, siehe f_rs_pool_rang).
+        marktweit = rs_quelle in ("markets360", "kalibriert")
+        if not marktweit:
+            rs_rating = None
         krit["8_rs_rating"] = bool(rs_rating is not None and rs_rating >= rs_min)
         erfuellt = sum(1 for v in krit.values() if v)
         technisch = all(v for k, v in krit.items() if not k.startswith("8_"))
@@ -1609,6 +1615,7 @@ def f_trend_template(ergebnisse, cfg, schwellen):
             "erfuellt": erfuellt,
             "gesamt": len(krit),
             "rs_rating": rs_rating,
+            "rs_quelle": rs_quelle,
             "rs_min": rs_min,
             "pass": bestanden_flag,
             "technisch_pass": technisch,
@@ -1628,9 +1635,163 @@ def f_trend_template(ergebnisse, cfg, schwellen):
     if gezaehlt:
         nicht_bewertbar = sum(1 for e in ergebnisse
                               if (e.get("trend_template") or {}).get("pass") is None)
+        # "nicht bewertbar" heisst ab 2026-08-30 fast immer: kein marktweites
+        # RS-Rating verfuegbar (weder Markets-360-Eintrag noch Kalibrierung).
         print(f"Trend Template (8 Kriterien, RS>={rs_min}): {bestanden}/{gezaehlt} bestanden"
               + (f", {nicht_bewertbar} ohne RS-Rating nicht bewertbar" if nicht_bewertbar else "")
               + ("  [STRIKT aktiv]" if strikt else "  [nur messend]"))
+
+# --- Marktweites RS-Rating (statt Perzentil im Kandidatenpool) -------------
+# Problem, das hier geloest wird: f_rs_pool_rang() rankt die relative Staerke
+# INNERHALB der heutigen Screener-Treffer. Dieser Pool ist aber bereits auf
+# Momentum vorgefiltert - "besser als 70% der heutigen Kandidaten" ist etwas
+# voellig anderes als Minervinis "besser als 70% des Marktes". Fuer den Score
+# ist das unkritisch (dort ist der Rang nur eine von mehreren Zutaten und per
+# score_faktoren_backtest.py kalibriert), fuer Kriterium 8 des Trend Templates
+# aber falsch: dort steht die Zahl 70 fuer eine MARKTWEITE Aussage.
+#
+# Loesung ohne einen einzigen zusaetzlichen Kursabruf: Markets 360 berechnet
+# sein RS-Rating (1-99) ohnehin ueber ein breites Universum (S&P 500 +
+# Nasdaq 100 + DAX/MDAX + EU, ~630 bewertete Werte) und der Signal-Hub liest
+# dessen Export bereits ein. Zwei Faelle:
+#   1. Der Ticker steht im Markets-360-Export -> dessen Rating direkt
+#      uebernehmen (exakt, keine Schaetzung).
+#   2. Er steht nicht drin (gemessen 2026-08-30: 60% der Treffer, vor allem
+#      Small-/Mid-Caps aus Finviz/TraderFox) -> das Rating ueber die
+#      UEBERSCHNEIDUNG schaetzen: fuer jeden Ticker, der in beiden vorkommt,
+#      liegt ein Wertepaar (eigener rs_gewichtet, marktweites Rating) vor.
+#      Daraus wird eine monotone Umrechnungskurve gebaut.
+# Beleg fuer die Tragfaehigkeit (2026-08-30, 217 Paare): die Ueberschneidung
+# deckt den GESAMTEN Ratingbereich ab (2..99, jede Zehnergruppe besetzt) und
+# verhaelt sich monoton (Viertel-Mediane 30 / 73 / 84 / 94).
+#
+# GRENZE, die bewusst so bleibt: Markets 360s Universum sind Index-Werte,
+# also gross-kapitalisiert. Ein geschaetztes Rating heisst damit "wo dieser
+# Wert unter grossen Standardwerten raenge" - nicht "unter allen Aktien".
+# Das ist deutlich naeher an Minervinis Aussage als der Kandidatenpool, aber
+# kein IBD-Rating ueber 8000 Titel. Deshalb wird die Herkunft je Treffer
+# mitgeschrieben (rs_rating_quelle).
+RS_KALIB_MIN_PAARE = 40   # darunter ist die Kurve nicht belastbar -> keine Schaetzung
+RS_KALIB_BINS = 15
+
+def lade_markt_rs():
+    """{SYMBOL: RS-Rating 1..99} aus dem Markets-360-Export.
+
+    Bewusst OHNE den Fab5/TT_Pass-Qualitaetsfilter aus
+    markets360_screener.py: der entscheidet, ob eine Zeile als bestaetigende
+    QUELLE zaehlt. Als MASSSTAB brauchen wir dagegen das ganze Universum -
+    ein Rating ist nur so viel wert wie die Breite, gegen die es rankt.
+
+    Beide Datenpfade wie in markets360_screener.py::screene_markets360():
+    lokal schreibt Markets 360 direkt hin, im Cloud-Lauf existiert nur der
+    per rclone gezogene _magazine-Pfad. Einen davon zu vergessen fuehrt zu
+    leisem Datenverlust (Rating faellt auf den Pool zurueck), nicht zu einem
+    Fehler - siehe CLAUDE.md."""
+    pfad = pfade.LOKAL_MARKETS360 if os.path.exists(pfade.LOKAL_MARKETS360) else pfade.EXTERN_MARKETS360
+    if not os.path.exists(pfad):
+        return {}
+    import csv
+    out = {}
+    try:
+        with open(pfad, encoding="utf-8-sig", newline="") as f:
+            for row in csv.DictReader(f, delimiter=";"):
+                sym = (row.get("Symbol") or "").strip().upper()
+                roh = (row.get("RS") or "").strip().replace(",", ".")
+                if not sym or not roh:
+                    continue
+                try:
+                    out[sym] = float(roh)
+                except ValueError:
+                    continue
+    except Exception:
+        return {}
+    return out
+
+def _markt_rs_fuer(e, markt_rs):
+    """Markets-360-Rating fuer einen Treffer - Ticker ODER Yahoo-Symbol,
+    weil beide Systeme dieselbe Aktie unterschiedlich benennen koennen."""
+    for k in ((e.get("ticker") or "").upper(), (e.get("yahoo_symbol") or "").upper()):
+        if k and k in markt_rs:
+            return markt_rs[k]
+    return None
+
+def rs_kalibrierung(paare):
+    """Monotone Umrechnung rs_gewichtet -> marktweites Rating aus
+    (x, rating)-Paaren. Gibt eine Funktion zurueck oder None (zu wenig Paare).
+
+    Verfahren bewusst einfach und robust statt einer Regression: gleich
+    besetzte Bins ueber x, Median des Ratings je Bin (unempfindlich gegen
+    Ausreisser), danach kumulatives Maximum, damit die Kurve monoton bleibt
+    (ein hoeherer rs_gewichtet darf nie ein niedrigeres Rating ergeben),
+    dazwischen linear interpoliert."""
+    paare = sorted((x, r) for x, r in paare if x is not None and r is not None)
+    n = len(paare)
+    if n < RS_KALIB_MIN_PAARE:
+        return None
+    k = max(4, min(RS_KALIB_BINS, n // 8))
+    stuetz = []
+    for i in range(k):
+        teil = paare[i * n // k:(i + 1) * n // k]
+        if not teil:
+            continue
+        xs = [t[0] for t in teil]
+        rs_sort = sorted(t[1] for t in teil)
+        stuetz.append((sum(xs) / len(xs), rs_sort[len(rs_sort) // 2]))
+    if len(stuetz) < 2:
+        return None
+    mono, bisher = [], 0.0
+    for x, r in stuetz:
+        bisher = max(bisher, r)
+        mono.append((x, bisher))
+
+    def umrechnen(x):
+        if x is None:
+            return None
+        if x <= mono[0][0]:
+            return mono[0][1]
+        if x >= mono[-1][0]:
+            return mono[-1][1]
+        for i in range(1, len(mono)):
+            if x <= mono[i][0]:
+                x0, r0 = mono[i - 1]
+                x1, r1 = mono[i]
+                anteil = (x - x0) / (x1 - x0) if x1 > x0 else 0.0
+                return r0 + anteil * (r1 - r0)
+        return mono[-1][1]
+    return umrechnen
+
+def f_rs_marktweit(ergebnisse):
+    """Post-Pass: ersetzt das pool-basierte rs_rating durch ein marktweites.
+    Laeuft NACH f_rs_pool_rang (das den Pool-Wert als Ausgangslage setzt) und
+    VOR f_trend_template (das die Zahl gegen rs_min prueft).
+
+    Aendert AUSDRUECKLICH keinen Score: der Faktor relative_staerke bleibt
+    exakt wie er ist (dort ist der Pool-Rang per score_faktoren_backtest.py
+    kalibriert). Betroffen ist nur rs_rating - die Zahl, die Kriterium 8 des
+    Trend Templates auswertet."""
+    markt_rs = lade_markt_rs()
+    if not markt_rs:
+        print("Marktweites RS: Markets-360-Export nicht gefunden -> Pool-Rang bleibt.")
+        return
+    paare = [(e["rs_gewichtet"], r) for e in ergebnisse
+             if e.get("rs_gewichtet") is not None
+             for r in (_markt_rs_fuer(e, markt_rs),) if r is not None]
+    umrechnen = rs_kalibrierung(paare)
+    direkt = geschaetzt = pool = 0
+    for e in ergebnisse:
+        r = _markt_rs_fuer(e, markt_rs)
+        if r is not None:
+            e["rs_rating"] = max(1, min(99, int(round(r))))
+            e["rs_rating_quelle"] = "markets360"
+            direkt += 1
+        elif umrechnen and e.get("rs_gewichtet") is not None:
+            e["rs_rating"] = max(1, min(99, int(round(umrechnen(e["rs_gewichtet"])))))
+            e["rs_rating_quelle"] = "kalibriert"
+            geschaetzt += 1
+        else:
+            pool += 1   # rs_rating/-quelle bleiben auf dem Pool-Wert stehen
+    print(f"Marktweites RS-Rating: {direkt} direkt aus Markets 360, "
+          f"{geschaetzt} kalibriert ({len(paare)} Stuetzpaare), {pool} nur Pool-Rang")
 
 def f_sektor_staerke(ergebnisse, etf_rang, gew, gew_summe, schwellen):
     """Branchenstaerke gegen den GANZEN Markt statt (wie bis 2026-07-24) nur
@@ -2049,6 +2210,7 @@ def score_alle(limit=None):
         print(f"Sektor/Branche: {profil_neu} neu geholt (Cache: {len(profil_cache)})")
 
     f_rs_pool_rang(ergebnisse, gew, gew_summe, schwellen)
+    f_rs_marktweit(ergebnisse)
     f_sektor_staerke(ergebnisse, etf_rang, gew, gew_summe, schwellen)
     f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb)
     f_code33(ergebnisse, yop, ycrumb, schwellen)
