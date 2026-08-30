@@ -265,6 +265,7 @@ const FAKTOR_INFO = {
     'CANSLIM/SEPA-Bestätigung: Gewinn- und Umsatzwachstum gegenüber Vorjahr. Minervini bevorzugt Aktien mit beschleunigtem Gewinnwachstum, nicht nur charttechnische Stärke.'},
 };
 const VERIFY_EXPLAIN = 'Unabhängige Gegenprüfung des Stage-2-Trend-Templates: berechnet die 8 Kriterien frisch aus eigenen Yahoo-Kursdaten (Cloudflare Worker, sieht die Pipeline-Begründung nicht) und vergleicht sie mit dem gespeicherten Wert. Rein deterministisch, kein KI-Aufruf - Prinzip "wer etwas berechnet hat, prüft es nicht selbst nach".';
+const BUSINESSQUANT_EXPLAIN = 'Institutioneller Besitz (SEC Form 13F), Insider-Transaktionen (SEC Form 4) und Analysten-EPS-Schätzungen von Business Quant - manuell abrufbar, nur für US-börsennotierte Werte. Ergänzt die automatische institutionelle Trendkennzahl der Pipeline um echte Insider-Trades und Analysten-Konsens. Free-Plan (30 Anfragen/Tag insgesamt) - deshalb bewusst nicht automatisch für jedes Setup geladen.';
 const PIVOT_EXPLAIN = 'Pivot-Armed-Detektor (ergänzt den nachlaufenden Score um die Entstehung des Ausbruchs): BREAKOUT = frischer Ausbruch über die Basis auf hohem Volumen. ARMED = enge, ausgetrocknete Basis knapp unter dem Pivot (Pre-Breakout). WATCH = Trend intakt, Basis noch nicht reif. CHEAT = früher Ausbruch vor vollem Trend-Template, klein positionieren.';
 const PA_EXPLAIN = 'Unabhängige Candlestick-Musteranalyse (Trendbar, Breakout, Gap, Bar-Counting) aus dem Price-Action-Hub - positiver Wert = bullisches Chartbild, kein Ersatz für den Score.';
 const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufwärtsphase, Distribution/Declining = Abwärtsphase - gemessen an Kurs gegen den gleitenden 200-Tage-Durchschnitt und dessen Steigung.';
@@ -933,6 +934,9 @@ function render(sig, piv, pa, regime){
           </div></div>
         </div>
 
+        <div class="subhead">🏦 Institutionelle Daten, Insider &amp; Analysten-Schätzungen <span class="sub" title="${BUSINESSQUANT_EXPLAIN}">optional, manuell abrufbar (Business Quant, Free-Plan mit begrenztem Tageskontingent)</span></div>
+        <div id="bqwrap"></div>
+
         <div class="subhead">📰 Story &amp; News <span class="sub">live Yahoo Finance/KI-Zusammenfassung</span></div>
         <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
         <div id="deepwrap" style="margin-top:10px"></div>
@@ -963,6 +967,7 @@ function render(sig, piv, pa, regime){
   ladeStory(t.ticker, t.yahoo_symbol, t.name);
   ladeDividenden(t.ticker, t.yahoo_symbol);
   renderDeepButton(t.ticker, t.yahoo_symbol, t.name);
+  renderBqButton(t.ticker, t.yahoo_symbol, t.markt);
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
     if(!isNaN(dt)) document.getElementById('stand').textContent =
@@ -1225,6 +1230,132 @@ async function ladeDeepStory(ticker, yahooSymbol, name){
       Erweiterter Bericht gerade nicht verfügbar (${esc((e && e.message) || e)}).
     </div></div>
     <button class="deepbtn" onclick="ladeDeepStory('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🔄 Erneut versuchen</button>`;
+  }
+}
+
+// ─── Institutionelle Daten / Insider / Analysten-Schätzungen (seit 2026-08-30) ──
+// Manueller Button wie "Erweiterter Bericht" - Business Quant erlaubt im
+// Free-Plan insgesamt nur 30 Requests/Tag (nicht pro Ticker), deshalb bewusst
+// NICHT automatisch beim Öffnen der Seite geladen. Nur für US-Werte sinnvoll
+// (SEC-Meldepflicht) - der Worker würde für andere Börsen ohnehin leere Daten
+// liefern. Ergebnis wird pro Ticker in sessionStorage gecacht, damit erneutes
+// Öffnen derselben Setup-Seite nicht unnötig das Tageskontingent verbraucht.
+function fmtBqZahl(x, nachkomma){
+  if(x==null || isNaN(x)) return '—';
+  return Number(x).toLocaleString('de-DE', {maximumFractionDigits: nachkomma ?? 0});
+}
+function fmtBqPct(x){
+  if(x==null || isNaN(x)) return '—';
+  return (x>=0?'+':'') + x.toFixed(1) + '%';
+}
+function renderBqButton(ticker, yahooSymbol, markt){
+  const wrap = document.getElementById('bqwrap');
+  if(!wrap) return;
+  if(markt !== 'USA'){
+    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">
+      🏦 Nur für US-börsennotierte Werte verfügbar (SEC-Meldepflicht für 13F/Form 4).
+    </div></div>`;
+    return;
+  }
+  wrap.innerHTML = `<button id="bqbtn" class="deepbtn" onclick="ladeBusinessQuant('${esc(ticker)}','${esc(yahooSymbol||ticker)}')">🏦 Institutionelle Daten, Insider &amp; Analysten abrufen</button>`;
+}
+function renderBusinessQuant(d){
+  if(d.kontingent_erschoepft){
+    return `<div class="pivotcard"><div class="pdetail" style="color:var(--warn)">
+      ⚠️ Business-Quant-Tageskontingent erschöpft (Free-Plan: 30 Anfragen/Tag insgesamt) — später erneut versuchen.
+    </div></div>
+    <button class="deepbtn" onclick="ladeBusinessQuant('${esc(d.ticker)}','${esc(d.ticker)}')">🔄 Erneut versuchen</button>`;
+  }
+
+  const inst = d.institutional;
+  const instHtml = inst ? `<div class="pivotcard">
+      <div class="pdetail" style="margin-bottom:0">🏦 Institutioneller Besitz (SEC Form 13F, Stand ${esc(String(inst.quarter||'').slice(0,10)) || '?'})</div>
+      <div class="fgrid" style="margin-top:8px">
+        <div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
+          <div class="fcard-head"><span class="fcard-lbl">Anteil ausstehender Aktien</span></div>
+          <div class="fcard-detail">${fmtBqZahl(inst.institutions_shares_pct_outstanding,1)}%</div>
+        </div></div>
+        <div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
+          <div class="fcard-head"><span class="fcard-lbl">Δ ggü. Vorquartal</span></div>
+          <div class="fcard-detail">${fmtBqPct(inst.shares_changed_qoq_pct)}</div>
+        </div></div>
+        <div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
+          <div class="fcard-head"><span class="fcard-lbl">Δ ggü. Vorjahr</span></div>
+          <div class="fcard-detail">${fmtBqPct(inst.shares_changed_yoy_pct)}</div>
+        </div></div>
+        <div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
+          <div class="fcard-head"><span class="fcard-lbl">Käufer / Verkäufer</span></div>
+          <div class="fcard-detail">${fmtBqZahl(inst.institutions_bought_count)} / ${fmtBqZahl(inst.institutions_sold_count)} von ${fmtBqZahl(inst.institutions_total_count)}</div>
+        </div></div>
+      </div>
+      <div class="fcard-gew" style="margin-top:8px">reine Kontextzahl, kein Score-Bestandteil - ergänzt die automatische institutionelle Trendkennzahl der Pipeline um den aktuellen Quartalsstand</div>
+    </div>`
+    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">🏦 Keine SEC-13F-Daten bei Business Quant gefunden.</div></div>`;
+
+  const insiderListe = (d.insider || []).filter(i => i.shares_bought || i.shares_sold).slice(0, 10);
+  const insiderRows = insiderListe.map(i => `<tr>
+      <td>${esc(i.name_insider)}${i.relationship_title ? '<div style="color:var(--muted);font-size:10.5px">'+esc(i.relationship_title)+'</div>' : ''}</td>
+      <td style="color:var(--ok)">${i.shares_bought ? '+'+fmtBqZahl(i.shares_bought) : '—'}</td>
+      <td style="color:var(--bad)">${i.shares_sold ? '−'+fmtBqZahl(i.shares_sold) : '—'}</td>
+    </tr>`).join('');
+  const insiderHtml = insiderListe.length ? `<div class="pivotcard">
+      <div class="pdetail" style="margin-bottom:0">👤 Insider-Transaktionen (SEC Form 4)</div>
+      <div class="qtable-wrap" style="margin-top:8px"><table class="qtable">
+        <thead><tr><th>Insider</th><th>Gekauft</th><th>Verkauft</th></tr></thead>
+        <tbody>${insiderRows}</tbody>
+      </table></div>
+    </div>`
+    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">👤 Keine Insider-Transaktionen bei Business Quant gefunden.</div></div>`;
+
+  const annualDim = (d.estimates || []).find(x => x.dimension === 'annual');
+  const estRows = (annualDim ? annualDim.estimates : []).slice(-6).map(e => `<tr>
+      <td>${esc(e.period)}</td>
+      <td>${e.data_type === 'reported' ? 'Ist' : 'Schätzung'}</td>
+      <td>${e.value_reported!=null ? Number(e.value_reported).toFixed(2) : '—'}</td>
+      <td>${e.value_estimate!=null ? Number(e.value_estimate).toFixed(2) : '—'}</td>
+      <td>${(e.low_estimate!=null && e.high_estimate!=null) ? Number(e.low_estimate).toFixed(2)+'–'+Number(e.high_estimate).toFixed(2) : '—'}</td>
+    </tr>`).join('');
+  const estHtml = estRows ? `<div class="pivotcard">
+      <div class="pdetail" style="margin-bottom:0">📈 Analysten-EPS-Schätzungen (jährlich)</div>
+      <div class="qtable-wrap" style="margin-top:8px"><table class="qtable">
+        <thead><tr><th>Jahr</th><th>Typ</th><th>Ist-EPS</th><th>Konsens</th><th>Spanne</th></tr></thead>
+        <tbody>${estRows}</tbody>
+      </table></div>
+      <div class="fcard-gew" style="margin-top:8px">Free-Plan: nur 1 Jahr Ist-Historie, 2 Jahre Vorschau - reine Kontextzahl, kein Score-Bestandteil</div>
+    </div>`
+    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">📈 Keine Analysten-Schätzungen bei Business Quant gefunden.</div></div>`;
+
+  const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+  return `${instHtml}${insiderHtml}${estHtml}
+    <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
+      Quelle: Business Quant (Free-Plan, 30 Anfragen/Tag insgesamt) · rein informativ, keine Anlageberatung · Stand ${stand} Uhr
+    </div>`;
+}
+async function ladeBusinessQuant(ticker, yahooSymbol){
+  const wrap = document.getElementById('bqwrap');
+  if(!wrap) return;
+  const symbol = yahooSymbol || ticker;
+  const cacheKey = 'bq_' + symbol;
+  try{
+    const cached = sessionStorage.getItem(cacheKey);
+    if(cached){ wrap.innerHTML = renderBusinessQuant(JSON.parse(cached)); return; }
+  }catch(e){ /* sessionStorage evtl. gesperrt (privater Modus) - dann einfach neu laden */ }
+
+  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt institutionelle Daten, Insider-Transaktionen und Analysten-Schätzungen …</div></div>';
+  try{
+    const u = MTS_PROXY + 'businessquant?ticker=' + encodeURIComponent(symbol);
+    const r = await fetch(u, {signal: AbortSignal.timeout(20000)});
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
+    wrap.innerHTML = renderBusinessQuant(d);
+    if(!d.kontingent_erschoepft){
+      try{ sessionStorage.setItem(cacheKey, JSON.stringify(d)); }catch(e){ /* Speicher voll/gesperrt - ignorieren */ }
+    }
+  }catch(e){
+    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
+      Business-Quant-Daten gerade nicht verfügbar (${esc((e && e.message) || e)}).
+    </div></div>
+    <button class="deepbtn" onclick="ladeBusinessQuant('${esc(ticker)}','${esc(symbol)}')">🔄 Erneut versuchen</button>`;
   }
 }
 

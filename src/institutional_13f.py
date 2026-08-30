@@ -8,17 +8,27 @@ Minervini verlangt institutionellen Besitz, der UEBER QUARTALE STEIGT.
 scorer.py::f_institutional liefert per Yahoo nur den aktuellen Stand ohne
 Historie - die Richtung war damit nicht messbar.
 
-Warum SEC und nicht Finnhub/Business Quant (am 2026-08-30 alle drei getestet):
+Warum SEC und nicht Finnhub/Business Quant fuer den automatischen Screener-
+Lauf (am 2026-08-30 beide getestet):
   * Finnhub: stock/ownership und stock/fund-ownership antworten mit 403
     ("You don't have access"), stock/institutional-ownership liefert die
     Upgrade-Seite. Im vorhandenen Tarif nicht enthalten.
-  * Business Quant: data.businessquant.com/13f existiert und antwortet, aber
-    alle Modi (summary/stats/historic) mit 401 "API key is missing" - ein
-    kostenpflichtiges Abo. Loest ausserdem die Europa-Luecke nicht, denn 13F
-    ist 13F, egal wer es verpackt.
-  * SEC: kostenlos, autoritativ, deckt 446 der 548 damaligen Kandidaten ab
-    (81 %). Die fehlenden sind fast ausschliesslich europaeische Werte -
-    13F-meldepflichtig sind nur US-Institutionelle ab 100 Mio. USD.
+  * Business Quant: data.businessquant.com/13f antwortete beim ERSTEN Test
+    ohne registrierten Key mit 401 "API key is missing" - das wurde hier
+    faelschlich als "kostenpflichtiges Abo" eingestuft. Mit echtem, kostenlosem
+    Free-Plan-Key (registriert 2026-08-30) liefern 13f/form4/estimates alle
+    drei anstandslos (live gegen AAPL verifiziert) - der Free-Plan deckt sogar
+    Insider-Transaktionen (Form 4) und Analysten-Schaetzungen mit ab, die SEC
+    EDGAR so nicht liefert. Limitiert ist er nur auf 30 Requests/Tag insgesamt
+    (data.businessquant.com/pricing) - fuer einen automatischen Lauf ueber
+    hunderte Ticker ungeeignet, fuer einen manuellen Einzelticker-Abruf aber
+    genau richtig: siehe den "🏦 Institutionelle Daten, Insider & Analysten"-
+    Button in Signal-Hub/setup-detail.html (Worker-Route /businessquant in
+    cloudflare-worker/mts-cors-proxy.js). Loest trotzdem NICHT die Europa-
+    Luecke fuer den automatischen Lauf, denn 13F ist 13F, egal wer es verpackt.
+  * SEC: kostenlos, kein Tageslimit, autoritativ, deckt 446 der 548 damaligen
+    Kandidaten ab (81 %). Die fehlenden sind fast ausschliesslich europaeische
+    Werte - 13F-meldepflichtig sind nur US-Institutionelle ab 100 Mio. USD.
 
 DER ENTSCHEIDENDE PUNKT - NORMIERUNG:
 Die ROHE Summe der gemeldeten Aktien ist als Trendsignal WERTLOS. Gemessen
