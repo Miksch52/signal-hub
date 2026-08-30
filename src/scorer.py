@@ -585,10 +585,16 @@ def f_code33(ergebnisse, yop, ycrumb, schwellen):
     print(f"Code 33: {verfuegbar} verfuegbar, {gruen} davon 3/3 grün, {abrufe} Abrufe")
 
 # --- Institutioneller Besitzanteil (Minervini/SEPA-Kriterium) ---------------
-# Minervini nennt einen optimalen Bereich von 30-70% institutionellem Besitz,
-# idealerweise ueber Quartale steigend. Das MTS-System hat diesen Prozentsatz
-# bisher NIRGENDS gemessen - nur Verhaltens-Proxys (Akkumulationstage, OBV,
-# CMF, Up/Down-Volumen). Diese Luecke wird HIER geschlossen, rein messend.
+# Minervini nennt einen optimalen Bereich von 30-70% institutionellem Besitz
+# (bezogen auf die AUSSTEHENDEN Aktien), idealerweise ueber Quartale steigend.
+# Das MTS-System hat diesen Prozentsatz bisher NIRGENDS gemessen - nur
+# Verhaltens-Proxys (Akkumulationstage, OBV, CMF, Up/Down-Volumen). Diese
+# Luecke wird HIER geschlossen, rein messend.
+#
+# WICHTIG: Der Wert wird als reine KONTEXTZAHL gefuehrt, NICHT gegen die
+# 30-70%-Bandbreite geprueft - Yahoo rechnet gegen den Streubesitz, nicht
+# gegen die ausstehenden Aktien. Begruendung mit Messwerten im Docstring von
+# f_institutional().
 #
 # Datenquelle am 2026-08-29 live gegen mehrere Ticker verifiziert (nicht nur
 # angenommen, siehe CLAUDE.md-Pflicht): Yahoo quoteSummary defaultKeyStatistics,
@@ -631,14 +637,31 @@ def yahoo_institutional(symbol, op, crumb):
         return None
 
 def f_institutional(ergebnisse, yop, ycrumb, schwellen):
-    """Post-Pass: fuellt e['institutional'] = {verfuegbar, prozent (0-100),
-    im_zielbereich (30-70%), einordnung} fuer ALLE Treffer (anders als
-    f_code33, das das Feld bei fehlenden Daten ganz auslaesst - hier soll
-    "nicht verfuegbar" explizit sichtbar sein statt eines schlicht fehlenden
-    Feldes, siehe Aufgabenstellung). Datenabruf nur fuer Treffer ab
-    Beobachten-Schwelle, gecacht/ratenlimitiert wie f_code33() (7-Tage-TTL,
-    300 Abrufe/Lauf - Rest folgt beim naechsten Lauf). KEIN Score-Einfluss,
-    siehe Modulkommentar oben."""
+    """Post-Pass: institutioneller Besitzanteil als reine KONTEXTZAHL.
+
+    e['institutional'] = {verfuegbar, prozent (0-100+), ueber_100, hinweis}
+    fuer ALLE Treffer (anders als f_code33, das das Feld bei fehlenden Daten
+    ganz auslaesst - hier soll "nicht verfuegbar" explizit sichtbar sein).
+    Datenabruf nur ab Beobachten-Schwelle, gecacht/ratenlimitiert wie
+    f_code33() (7-Tage-TTL, 300 Abrufe/Lauf). KEIN Score-Einfluss.
+
+    BEWUSST OHNE Abgleich gegen Minervinis 30-70%-Bandbreite (2026-08-30
+    geaendert, urspruenglich war genau das eingebaut): Minervini misst den
+    Anteil an den AUSSTEHENDEN Aktien, Yahoos heldPercentInstitutions rechnet
+    aber erkennbar gegen den STREUBESITZ. Beleg aus dem ersten Live-Lauf
+    (2026-08-30, 548 Treffer): von 288 verfuegbaren Werten lagen 77 UEBER
+    100 % (Spitze 131,2 % bei Dropbox), der Median bei 89,8 %. Ueber 100 % ist
+    nur gegen den Streubesitz erklaerbar. Der Vergleich mit 30-70 % waere
+    damit Aepfel mit Birnen - er stufte 224 von 288 Werten als "oberhalb
+    70 % - wenig Kaufkraft-Reserve" ein und trennte damit nichts mehr.
+
+    Deshalb: Prozentsatz als Kontextzahl ausweisen (wie basis_anzahl() und
+    extended_pct()), Werte ueber 100 % zusaetzlich als Datenbasis-Hinweis
+    markieren - und KEINE eigene, "passende" Bandbreite erfinden. Dafuer
+    fehlt die Grundlage; eine an die beobachtete Verteilung angelegte Grenze
+    waere geraten, nicht belegt. Minervinis eigentliches Kriterium
+    ("steigend ueber die Quartale") bleibt ohnehin unabgedeckt, weil Yahoo
+    hier nur den aktuellen Stand liefert, keine Historie."""
     cache = {}
     if os.path.exists(pfade.INSTITUTIONAL_CACHE):
         try:
@@ -646,7 +669,7 @@ def f_institutional(ergebnisse, yop, ycrumb, schwellen):
         except Exception:
             cache = {}
     heute = datetime.now().date()
-    abrufe = verfuegbar_n = 0
+    abrufe = verfuegbar_n = ueber_100_n = 0
     for e in ergebnisse:
         sym = e["yahoo_symbol"]
         c = cache.get(sym)
@@ -667,17 +690,22 @@ def f_institutional(ergebnisse, yop, ycrumb, schwellen):
         if roh is not None:
             verfuegbar_n += 1
             pct = round(roh * 100, 1)
-            im_ziel = 30 <= pct <= 70
-            einordnung = ("im Zielbereich (30-70%)" if im_ziel
-                          else "unterhalb 30% - noch wenig institutionelles Interesse" if pct < 30
-                          else "oberhalb 70% - wenig Kaufkraft-Reserve durch Institutionelle")
+            ueber_100 = pct > 100
+            if ueber_100:
+                ueber_100_n += 1
+            # Nur dort einen Hinweis setzen, wo die Zahl fuer sich genommen
+            # irrefuehrend waere - sonst None statt eines Pseudo-Urteils.
+            hinweis = ("über 100 % – gegen den Streubesitz gerechnet, nicht mit "
+                       "Minervinis 30–70 % (ausstehende Aktien) vergleichbar"
+                       if ueber_100 else None)
             e["institutional"] = {"verfuegbar": True, "prozent": pct,
-                                   "im_zielbereich": im_ziel, "einordnung": einordnung}
+                                   "ueber_100": ueber_100, "hinweis": hinweis}
         else:
             e["institutional"] = {"verfuegbar": False, "prozent": None,
-                                   "im_zielbereich": None, "einordnung": "nicht verfuegbar"}
+                                   "ueber_100": None, "hinweis": "nicht verfügbar"}
     pfade.schreibe_json_atomar(pfade.INSTITUTIONAL_CACHE, cache, ensure_ascii=False)
-    print(f"Institutioneller Besitz: {verfuegbar_n} verfuegbar, {abrufe} Abrufe")
+    print(f"Institutioneller Besitz: {verfuegbar_n} verfuegbar "
+          f"({ueber_100_n} davon >100% = Streubesitz-Basis), {abrufe} Abrufe")
 
 def lade_depot_namen(datei):
     """Namen offener Positionen (status 'Offen'). Lokal aus mts_data.json;
