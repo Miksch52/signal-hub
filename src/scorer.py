@@ -34,6 +34,7 @@ import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+import institutional_13f
 import ticker_resolver
 
 try:
@@ -706,6 +707,58 @@ def f_institutional(ergebnisse, yop, ycrumb, schwellen):
     pfade.schreibe_json_atomar(pfade.INSTITUTIONAL_CACHE, cache, ensure_ascii=False)
     print(f"Institutioneller Besitz: {verfuegbar_n} verfuegbar "
           f"({ueber_100_n} davon >100% = Streubesitz-Basis), {abrufe} Abrufe")
+
+# Minervinis eigentliches Besitz-Kriterium ist die RICHTUNG ("steigend ueber
+# aufeinanderfolgende Quartale"), nicht das Niveau. Yahoo liefert dafuer nichts
+# (nur den aktuellen Stand), Finnhub und Business Quant nur gegen Bezahlung -
+# beides am 2026-08-30 getestet. Die Richtung kommt deshalb aus SEC Form 13F,
+# aufbereitet von institutional_13f.py (dort auch die ausfuehrliche Begruendung
+# und der Grund, warum ROHE 13F-Summen als Trendsignal unbrauchbar sind).
+TREND_FOLGE_MIN = 2   # Minervini: "ueber aufeinanderfolgende Quartale" -> >= 2
+
+def f_institutional_trend(ergebnisse):
+    """Post-Pass: fuellt e['institutional_trend'] aus der 13F-Quartalstabelle.
+
+    Reines Messfeld ohne Score-Einfluss, wie f_institutional/f_code33 -
+    Backtest-Pflicht. Fehlt die Tabelle (noch nie gebaut) oder ein Ticker
+    (nicht-US-Werte sind in 13F systematisch nicht enthalten), steht
+    ausdruecklich "nicht verfuegbar" statt einer 0 oder eines fehlenden
+    Feldes."""
+    tab = institutional_13f.lade()
+    werte = (tab or {}).get("werte") or {}
+    if not werte:
+        for e in ergebnisse:
+            e["institutional_trend"] = {"verfuegbar": False, "hinweis": "13F-Tabelle fehlt"}
+        print("Institutioneller Trend: keine 13F-Tabelle -> uebersprungen "
+              "(src/institutional_13f.py --bauen)")
+        return
+    treffer = steigend = 0
+    for e in ergebnisse:
+        v = None
+        for k in ((e.get("ticker") or "").upper(), (e.get("yahoo_symbol") or "").upper()):
+            if k and k in werte:
+                v = werte[k]
+                break
+        if not v:
+            e["institutional_trend"] = {
+                "verfuegbar": False,
+                "hinweis": "nicht in 13F (nur US-meldepflichtige Institutionelle)"}
+            continue
+        treffer += 1
+        folge = v.get("steigend_folge") or 0
+        erfuellt = folge >= TREND_FOLGE_MIN
+        if erfuellt:
+            steigend += 1
+        e["institutional_trend"] = {
+            "verfuegbar": True,
+            "norm_pct": v.get("norm_pct"),
+            "steigend_folge": folge,
+            "erfuellt": erfuellt,
+            "uebergaenge": tab.get("uebergaenge"),
+            "stand": tab.get("erstellt"),
+        }
+    print(f"Institutioneller Trend (13F): {treffer} mit Daten, "
+          f"{steigend} davon >= {TREND_FOLGE_MIN} Quartale in Folge steigend")
 
 def lade_depot_namen(datei):
     """Namen offener Positionen (status 'Offen'). Lokal aus mts_data.json;
@@ -2214,6 +2267,7 @@ def score_alle(limit=None):
     f_sektor_staerke(ergebnisse, etf_rang, gew, gew_summe, schwellen)
     f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb)
     f_code33(ergebnisse, yop, ycrumb, schwellen)
+    f_institutional_trend(ergebnisse)
     f_institutional(ergebnisse, yop, ycrumb, schwellen)
     f_marktampel_dynamik(ergebnisse, regime, cfg.get("marktregime", {}), schwellen)
     # BEWUSST ALS LETZTER Post-Pass: f_sektor_staerke/f_fundamental/

@@ -1,0 +1,70 @@
+# Baut die 13F-Quartalstabelle (institutioneller Besitz, Richtung nach
+# Minervini). Laeuft NICHT im taeglichen Zyklus: 13F-Daten aendern sich nur
+# quartalsweise, ein taeglicher Lauf waere reine Verschwendung (4x ~90 MB
+# Download je Lauf).
+#
+# Zeitpunkt: 13F ist 45 Tage nach Quartalsende faellig (Q1->15.05.,
+# Q2->14.08., Q3->14.11., Q4->14.02.). Der Lauf liegt bewusst einige Tage
+# DANACH, damit der SEC-Datensatz vollstaendig ist - laeuft er zu frueh,
+# fehlen Melder und die Normierung rechnet gegen einen unfertigen Quermarkt.
+#
+# Ergebnis wird in den Branch zurueckcommittet (daten-13f/), NICHT nach R2:
+# die Datei ist klein, rein oeffentliche SEC-Daten, und liegt so in jedem
+# Checkout vor - der taegliche Signal-Hub-Lauf braucht keinen Extra-Schritt.
+name: 13F Institutioneller Besitz (quartalsweise)
+
+on:
+  schedule:
+    - cron: "0 6 20 2,5,8,11 *"   # 20. Feb/Mai/Aug/Nov, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: institutional-13f
+  cancel-in-progress: false
+
+jobs:
+  bauen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhaengigkeiten
+        run: pip install --quiet certifi
+
+      - name: Quartalstabelle bauen
+        working-directory: .
+        run: python3 src/institutional_13f.py --bauen
+
+      - name: Ergebnis pruefen
+        run: |
+          f=daten-13f/institutional_13f.json
+          test -s "$f" || { echo "::error::$f fehlt oder ist leer"; exit 1; }
+          python3 - <<'PY'
+          import json
+          d = json.load(open("daten-13f/institutional_13f.json", encoding="utf-8"))
+          n = len(d.get("werte") or {})
+          print(f"{n} Ticker, Uebergaenge: {d.get('uebergaenge')}")
+          # Untergrenze als Absturzsicherung: bei einem halb geladenen
+          # Datensatz waere die Tabelle still fast leer statt fehlerhaft.
+          assert n >= 5000, f"nur {n} Ticker - Datensatz vermutlich unvollstaendig"
+          PY
+
+      - name: Zurueckcommitten (nur bei Aenderung)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add daten-13f/institutional_13f.json
+          if git diff --cached --quiet; then
+            echo "Keine Aenderung - nichts zu committen."
+          else
+            git commit -m "Daten: 13F-Quartalstabelle aktualisiert (automatisch)"
+            git push
+          fi

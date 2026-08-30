@@ -19,6 +19,12 @@ PROJEKT = os.path.dirname(HIER)                          # .../Signal-Hub
 CONFIG = os.path.join(PROJEKT, "config.json")
 
 DATA = os.path.join(PROJEKT, "data")                    # Outputs (iCloud, 1 Host)
+# Quartalsdaten aus SEC Form 13F. BEWUSST NICHT unter data/ (das ist komplett
+# gitignored): die Tabelle wird nur viermal im Jahr gebaut, ist klein, enthaelt
+# ausschliesslich oeffentliche SEC-Daten und muss in JEDEM Checkout vorliegen -
+# auch im Cloud-Lauf, ohne Umweg ueber R2/rclone. Deshalb versioniert.
+DATEN_13F = os.path.join(PROJEKT, "daten-13f")
+INSTITUTIONAL_13F = os.path.join(DATEN_13F, "institutional_13f.json")
 LOKAL = os.path.expanduser("~/Library/Application Support/SignalHub")  # Caches/State (lokal)
 
 os.makedirs(DATA, exist_ok=True)

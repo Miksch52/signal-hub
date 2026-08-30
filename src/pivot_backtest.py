@@ -271,6 +271,24 @@ def _trend_template_map():
             for e in signale if e.get("trend_template")}
 
 
+def _inst_trend_map():
+    """Ticker -> institutioneller Besitz steigend (True/False/None).
+
+    Wie _trend_template_map() aus signals.json extrahiert (pivot.json kennt
+    das Feld nicht). None = nicht bewertbar, weil der Ticker nicht in den
+    13F-Daten steht - das betrifft systematisch alle nicht-US-Werte und ist
+    ausdruecklich KEIN "Kriterium nicht erfuellt"."""
+    try:
+        signale = json.load(open(pfade.SIGNALS_JSON, encoding="utf-8")).get("treffer", [])
+    except Exception:
+        return {}
+    out = {}
+    for e in signale:
+        it = e.get("institutional_trend") or {}
+        out[e.get("ticker")] = it.get("erfuellt") if it.get("verfuegbar") else None
+    return out
+
+
 def log_heute():
     if not os.path.exists(pfade.PIVOT_JSON):
         print("Keine pivot.json -> nichts zu loggen.")
@@ -278,6 +296,7 @@ def log_heute():
     daten = json.load(open(pfade.PIVOT_JSON, encoding="utf-8"))
     earn_map = _earnings_tage_map()
     tt_map = _trend_template_map()
+    it_map = _inst_trend_map()
     heute = datetime.now().strftime("%Y-%m-%d")
     lb = _logbuch_load()
     bekannt = {(e["datum"], e["ticker"], e["status"]) for e in lb}
@@ -311,6 +330,9 @@ def log_heute():
             # damit sich auch Minervinis Enge-Vorgabe (3-5 %) als Kohorte
             # messen laesst und nicht nur unsere weichere 12-%-Schwelle.
             "eng_pct": e.get("eng_pct"),
+            # Minervinis Besitz-Richtung (SEC 13F, quartalsweise). None bei
+            # nicht-US-Werten - siehe _inst_trend_map().
+            "inst_trend": it_map.get(e.get("ticker")),
             "realisiert": None,        # wird von --evaluate gefuellt
         })
         neu += 1
@@ -464,6 +486,7 @@ def evaluate():
             # Schwelle besser trennt.
             "vcp_ge3", "vcp_lt3",              # Minervini: 3-4 Kontraktionen
             "eng_le5", "eng_gt5",              # Minervini: Endkontraktion 3-5 %
+            "insttrend_ja", "insttrend_nein",  # institutioneller Besitz steigend?
         )
     ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")   # Folgevolumen nur bei Ausbruechen sinnvoll
     eimer = {s: {h: [] for h, _ in HORIZONTE}
@@ -527,6 +550,9 @@ def evaluate():
         tt = e.get("tt_pass")
         if tt is not None:
             eimer[f"{e['status']}_tt_{'pass' if tt else 'fail'}"][bk].append(ret)
+        it = e.get("inst_trend")
+        if it is not None:
+            eimer[f"{e['status']}_insttrend_{'ja' if it else 'nein'}"][bk].append(ret)
         ft = e.get("follow_through_vol")
         if ft is not None and e["status"] == "BREAKOUT":
             eimer["BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach"][bk].append(ret)
@@ -552,7 +578,7 @@ def evaluate():
             "exit_sim": e.get("exit_sim"),
             "kontraktionen": kt, "basis_wochen": bw,
             "follow_through_vol": e.get("follow_through_vol"), "tt_pass": tt,
-            "eng_pct": e.get("eng_pct"),
+            "eng_pct": e.get("eng_pct"), "inst_trend": it,
         })
     scorer.speichere_cache(cache)
     _logbuch_save(lb)
