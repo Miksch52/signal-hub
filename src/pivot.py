@@ -124,6 +124,18 @@ BASIS_MIN_WOCHEN         = 7     # Minervini-Faustregel, dito zur Checkbox sc3_2
 FT_VOL_FENSTER = 5     # Minervini: 2-5 Tage Follow-Through nach dem Ausbruch
 FT_VOL_MIN     = 1.30  # Ø-Volumen der Folgetage / Ø50 - darunter fehlt die Bestaetigung
 
+# Strengere Vergleichswerte direkt aus Minervinis Beschreibung. Sie sind
+# ausdruecklich KEINE Gates und aendern nichts an der Erkennung - die
+# bestehenden Schwellen KONTRAKTION_MIN (2) und ENG_MAX (12 %) bleiben
+# unveraendert und backtest-kalibriert. Diese beiden Zahlen existieren allein,
+# damit pivot_backtest.py auch MINERVINIS eigene Werte als Kohorte messen kann
+# statt nur der hier gewaehlten (Luecke, die beim ersten Aufsetzen der
+# Kohorten uebersehen wurde: geteilt wurde bei >=2 Kontraktionen, Minervini
+# nennt aber 3-4; und die Enge der Endkontraktion wurde gar nicht geteilt,
+# obwohl er dort 3-5 % nennt und wir bis 12 % als "eng" werten).
+KONTRAKTION_MIN_STRENG = 3     # Minervini: 3-4 Kontraktionen je Basis
+ENG_MAX_STRENG = 0.05          # Minervini: letzte Kontraktion 3-5 % Range
+
 # Schalter fuer die drei neuen Kriterien. Default AUS = reine Messung.
 # Erst nach belegter Forward-Kohorte einzeln auf True setzen.
 GATES = {

@@ -307,6 +307,10 @@ def log_heute():
             "basis_wochen": e.get("basis_wochen"),
             "follow_through_vol": e.get("follow_through_vol"),
             "tt_pass": tt_map.get(e.get("ticker")),
+            # Range der Endkontraktion in Prozent - seit 2026-08-30 mitgeloggt,
+            # damit sich auch Minervinis Enge-Vorgabe (3-5 %) als Kohorte
+            # messen laesst und nicht nur unsere weichere 12-%-Schwelle.
+            "eng_pct": e.get("eng_pct"),
             "realisiert": None,        # wird von --evaluate gefuellt
         })
         neu += 1
@@ -452,6 +456,14 @@ def evaluate():
             "vcp_ge2", "vcp_lt2",              # >= KONTRAKTION_MIN Kontraktionen?
             "basis_ge7w", "basis_lt7w",        # >= BASIS_MIN_WOCHEN Konsolidierung?
             "tt_pass", "tt_fail",              # Trend Template 8/8 bestanden?
+            # Minervinis EIGENE Zahlen als zweite, strengere Teilung (seit
+            # 2026-08-30). Ohne sie beantworten die Kohorten oben nur, ob
+            # UNSERE gewaehlten Schwellen etwas bringen - nicht, ob seine
+            # strengeren richtig waeren. Beide Teilungen laufen bewusst
+            # parallel, damit sich hinterher vergleichen laesst, welche
+            # Schwelle besser trennt.
+            "vcp_ge3", "vcp_lt3",              # Minervini: 3-4 Kontraktionen
+            "eng_le5", "eng_gt5",              # Minervini: Endkontraktion 3-5 %
         )
     ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")   # Folgevolumen nur bei Ausbruechen sinnvoll
     eimer = {s: {h: [] for h, _ in HORIZONTE}
@@ -502,6 +514,12 @@ def evaluate():
         if kt is not None:
             eng = kt >= pivot.KONTRAKTION_MIN
             eimer[f"{e['status']}_vcp_{'ge2' if eng else 'lt2'}"][bk].append(ret)
+            streng = kt >= pivot.KONTRAKTION_MIN_STRENG
+            eimer[f"{e['status']}_vcp_{'ge3' if streng else 'lt3'}"][bk].append(ret)
+        ep = e.get("eng_pct")
+        if ep is not None:
+            schmal = ep <= pivot.ENG_MAX_STRENG * 100     # eng_pct ist in Prozent
+            eimer[f"{e['status']}_eng_{'le5' if schmal else 'gt5'}"][bk].append(ret)
         bw = e.get("basis_wochen")
         if bw is not None:
             lang = bw >= pivot.BASIS_MIN_WOCHEN
@@ -534,6 +552,7 @@ def evaluate():
             "exit_sim": e.get("exit_sim"),
             "kontraktionen": kt, "basis_wochen": bw,
             "follow_through_vol": e.get("follow_through_vol"), "tt_pass": tt,
+            "eng_pct": e.get("eng_pct"),
         })
     scorer.speichere_cache(cache)
     _logbuch_save(lb)
