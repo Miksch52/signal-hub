@@ -8,6 +8,13 @@ data/
 config.json
 config.local.json
 
+# Eingang fuer Minervini-Lexikon-Screenshots (siehe minervini_lexikon.py):
+# Original-Bilder von X duerfen nicht ins OEFFENTLICHE Repo - auch nicht
+# uebergangsweise vor der Verarbeitung. LIES-MICH.txt bleibt versioniert,
+# alles andere im Ordner nicht.
+minervini-lexikon-eingang/*
+!minervini-lexikon-eingang/LIES-MICH.txt
+
 # Python/macOS/Editor (vorher ueber das Root-.gitignore des alten Repos abgedeckt)
 __pycache__/
 *.pyc

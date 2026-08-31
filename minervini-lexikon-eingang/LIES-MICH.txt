@@ -1,0 +1,14 @@
+Eingang für Minervini-Lexikon-Screenshots
+==========================================
+
+So einfach geht's:
+
+1. Screenshot vom Post machen (wie bisher).
+2. Bilddatei hier in diesen Ordner ziehen/speichern — der Dateiname ist
+   egal, am besten mit Datum, z. B. 2026-08-31_zitat.png
+3. Den Text des Posts + Datum/Uhrzeit einfach im Claude-Code-Chat dazu
+   schreiben (wie bisher) — daraus baue ich den Eintrag.
+
+Dieser Ordner wird NICHT automatisch verarbeitet — er ist nur die
+Ablage für die Bilddateien, bis wir den Verarbeitungsschritt bauen.
+Nichts hier wird von der Signal-Hub-Pipeline gelöscht oder verändert.

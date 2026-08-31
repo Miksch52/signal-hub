@@ -51,6 +51,17 @@ OHLC_HISTORY_DIR = os.path.join(DATA, "ohlc-history")
 SCORE_BACKTEST = os.path.join(DATA, "score_backtest.json")  # Trefferquoten Momentum-Score (Tier A/B)
 SCORE_FAKTOREN_BACKTEST = os.path.join(DATA, "score_faktoren_backtest.json")  # Pro-Faktor-Erfolgsanalyse
 
+# Minervini-Lexikon (Phase 0, seit 2026-08-31): manuell erfasste X-Posts von
+# Mark Minervini, je Eintrag mit Marktkontext aus REGIME_LOGBUCH/signals.json
+# verknuepft, siehe minervini_lexikon.py. EINGANG ist die Ablage fuer rohe
+# Screenshot-Dateien (Nutzer zieht sie rein), BILDER die verarbeitete,
+# umbenannte Ablage, die vom Lexikon-JSON referenziert wird.
+MINERVINI_LEXIKON_DIR = os.path.join(DATA, "minervini-lexikon")
+MINERVINI_LEXIKON_JSON = os.path.join(MINERVINI_LEXIKON_DIR, "minervini_lexikon.json")
+MINERVINI_LEXIKON_JS = os.path.join(MINERVINI_LEXIKON_DIR, "minervini_lexikon.js")
+MINERVINI_LEXIKON_BILDER = os.path.join(MINERVINI_LEXIKON_DIR, "bilder")
+MINERVINI_LEXIKON_EINGANG = os.path.join(PROJEKT, "minervini-lexikon-eingang")
+
 # Lokale Laufzeitdaten (kein iCloud)
 RAW_PDF = os.path.join(LOKAL, "signals_raw.json")
 RAW_MAIL = os.path.join(LOKAL, "signals_raw_mail.json")

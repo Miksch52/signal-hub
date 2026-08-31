@@ -148,6 +148,16 @@ def pipeline(c, push=False):
         # hebel_backtest.py bei jedem Lauf komplett durchzulaufen (--evaluate
         # ruft log_und_evaluate() auf, kein separates Scheduling noetig).
         lauf("regime_backtest.py", "--evaluate")
+        # Minervini-Lexikon-Backfill (seit 2026-08-31): traegt bei bestehenden
+        # Marktkommentar-Eintraegen fehlenden Marktkontext nach. Bewusst HIER
+        # (nach sync_logbuch_lokal() oben, nach regime_backtest.py --evaluate)
+        # - REGIME_LOGBUCH ist an dieser Stelle garantiert frisch aus R2
+        # gezogen, egal ob der Lauf auf dem Mac mini, dem MacBook oder einem
+        # GitHub-Actions-Runner passiert (sonst waere das Ergebnis vom Zufall
+        # abhaengig, welche Maschine zuletzt lokal geschrieben hat - siehe
+        # minervini_lexikon.py-Docstring, gleicher Bug wie beim
+        # pivot_backtest-Mac-mini-Fix weiter oben in dieser Datei).
+        lauf("minervini_lexikon.py", "--backfill")
         # Beide lesen LOGBUCH (pfade.LOKAL). Bis 2026-08-16 wuchs das nur auf
         # der Maschine, die zuletzt schrieb - der Cloud-Lauf startete jeden Job
         # mit leerem LOGBUCH (siehe deren main(): "if not lb: return", schrieb
