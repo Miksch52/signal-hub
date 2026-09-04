@@ -875,10 +875,11 @@ function render(sig, piv, pa, regime){
     <h2>🔎 Sofort-Überblick <span class="sub">${erfuelltCount} von ${qsAmpeln.length} Kriterien grün erfüllt</span></h2>
     <div class="quickscan">${qsItems.join('')}</div>
 
-    <!-- Die drei Blöcke starten seit 2026-09-04 zugeklappt (Nutzerwunsch, zu
-         viel Scrollen v.a. am iPhone durch die vielen Erweiterungen) - der
-         Sofort-Überblick oben bleibt die einzige immer sichtbare Zusammenfassung. -->
-    <details class="acc">
+    <!-- Technische Analyse/Fundamentalanalyse starten seit 2026-09-04
+         zugeklappt (Nutzerwunsch, zu viel Scrollen v.a. am iPhone durch die
+         vielen Erweiterungen) - die Charttechnik bleibt bewusst offen (auf
+         erneuten Nutzerwunsch), der Chart ist der Einstiegspunkt der Seite. -->
+    <details class="acc" open>
       <summary>🕯️ Charttechnik <span class="acc-sub">Live-Chart, Pivot-Armed-Detektor, Price-Action</span><span class="chev">▾</span></summary>
       <div class="acc-body">
         <div class="chart-wrap">
@@ -1439,39 +1440,128 @@ function renderCanslimButton(ticker, yahooSymbol, name){
   if(!wrap) return;
   wrap.innerHTML = `<button id="canslimbtn" class="deepbtn" onclick="ladeCanslim('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🧬 Tiefere Analyse erstellen</button>`;
 }
+// ─── Darstellung Tiefere Analyse: Dashboard statt Fließtext (seit 2026-09-04) ──
+// Nutzerfeedback zur ersten Version ("nur Text-Files von erfüllten
+// Kriterien"): CAN SLIM/Minervini-Check/Accumulation werden jetzt geparst und
+// als Ampel-Karten im selben fcard/dot-Vokabular wie die übrigen
+// Fundamentaldaten-Kennzahlen (Buffett/Munger/Graham, Innerer Wert) gezeigt -
+// "zusammengeführt" im Sinne derselben visuellen Sprache, nicht nur derselben
+// Überschrift. Jede Karte behält den vollen KI-Begründungstext darunter, das
+// Parsen ergänzt nur eine Ampel/Balken-Zusammenfassung obendrauf - schlägt das
+// Parsen fehl (KI-Format weicht ab), bleibt der Rohtext trotzdem sichtbar,
+// nichts geht verloren.
+const CANSLIM_LABELS = {
+  C: 'Aktuelles Quartalswachstum', A: 'Mehrjähriges Gewinnwachstum', N: 'Neue Produkte/Katalysatoren',
+  S: 'Angebot/Nachfrage', L: 'Führungsposition/rel. Stärke', I: 'Institutionelle Eigentümerschaft', M: 'Marktrichtung',
+};
+function parseCanslim(text){
+  if(!text) return [];
+  const treffer = {};
+  const re = /\b([CANSLIM])\s*:\s*(\d{1,2})\s*\/\s*10\s*[-–:]\s*([\s\S]*?)(?=(?:;\s*[CANSLIM]\s*:\s*\d)|$)/g;
+  let m;
+  while((m = re.exec(text))){
+    const buchstabe = m[1].toUpperCase();
+    if(!CANSLIM_LABELS[buchstabe] || treffer[buchstabe]) continue;
+    treffer[buchstabe] = { buchstabe, label: CANSLIM_LABELS[buchstabe], score: Math.max(0,Math.min(10, parseInt(m[2],10))), begruendung: m[3].replace(/[;.\s]+$/,'').trim() };
+  }
+  return Object.keys(CANSLIM_LABELS).map(b => treffer[b]).filter(Boolean);
+}
+function ampelFuerScore(score){
+  if(score==null || isNaN(score)) return 'na';
+  return score>=7 ? 'gruen' : score>=4 ? 'gelb' : 'rot';
+}
+const AMPEL_FARBE = { gruen:'var(--ok)', gelb:'var(--warn)', rot:'var(--bad)', na:'var(--muted2)' };
+function scoreBar(score, ampel){
+  if(score==null || isNaN(score)) return '';
+  const pct = Math.max(0,Math.min(10,score))*10;
+  return `<div style="height:5px;background:var(--line2);border-radius:3px;margin:6px 0 4px">
+    <div style="height:5px;width:${pct}%;background:${AMPEL_FARBE[ampel]||'var(--muted2)'};border-radius:3px"></div></div>`;
+}
+function canslimCard(item){
+  const ampel = ampelFuerScore(item.score);
+  return `<div class="fcard fcard-${ampel}">${dot(ampel)}<div class="fcard-body">
+    <div class="fcard-head">
+      <span class="fcard-lbl">${item.buchstabe} · ${esc(item.label)}</span>
+      <span class="fcard-wert">${item.score!=null?item.score+'/10':'—'}</span>
+    </div>
+    ${scoreBar(item.score, ampel)}
+    <div class="fcard-detail">${esc(item.begruendung)||'—'}</div>
+  </div></div>`;
+}
+function parseMinerviniVerdikt(text){
+  const m = (text||'').match(/Minervini-tauglich:?\s*(JA|NEIN)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+function parseErsteZahlVonZehn(text){
+  const m = (text||'').match(/(\d{1,2})\s*\/\s*10/);
+  return m ? Math.max(0,Math.min(10, parseInt(m[1],10))) : null;
+}
+function urteilsCard(icon, titel, text, ampel, wertText, score){
+  return `<div class="fcard fcard-${ampel}">${dot(ampel)}<div class="fcard-body">
+    <div class="fcard-head">
+      <span class="fcard-lbl">${icon} ${esc(titel)}</span>
+      ${wertText ? `<span class="fcard-wert">${esc(wertText)}</span>` : ''}
+    </div>
+    ${score!=null ? scoreBar(score, ampel) : ''}
+    <div class="fcard-detail">${esc(text)||'—'}</div>
+  </div></div>`;
+}
 function renderCanslim(d){
   if(!d.kerngeschaeft && !d.these && !d.canslim){
     return `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Keine auswertbare Antwort erhalten.</div></div>
       <button class="deepbtn" onclick="ladeCanslim('${esc(d.ticker)}','${esc(d.ticker)}','${esc(d.name||'')}')">🔄 Erneut versuchen</button>`;
   }
-  const statusFarbe = { BULLISH: 'var(--ok)', BEARISH: 'var(--bad)', NEUTRAL: 'var(--warn)' }[(d.status||'').toUpperCase()] || 'var(--muted)';
-  const srZeilen = (d.sr_tabelle||'').split('\n').map(z=>z.trim()).filter(Boolean);
+  const statusUp = (d.status||'').toUpperCase();
+  const statusAmpel = statusUp==='BULLISH' ? 'gruen' : statusUp==='BEARISH' ? 'rot' : statusUp==='NEUTRAL' ? 'gelb' : 'na';
+  const statusFarbe = AMPEL_FARBE[statusAmpel];
+  const statusIcon = statusAmpel==='gruen' ? '📈' : statusAmpel==='rot' ? '📉' : '➖';
+
+  const canslimItems = parseCanslim(d.canslim);
+  const minerviniVerdikt = parseMinerviniVerdikt(d.minervini_check);
+  const minerviniAmpel = minerviniVerdikt==='JA' ? 'gruen' : minerviniVerdikt==='NEIN' ? 'rot' : 'na';
+  const akkuScore = parseErsteZahlVonZehn(d.accumulation);
+  const akkuAmpel = ampelFuerScore(akkuScore);
+
+  const srZeilen = (d.sr_tabelle||'').split('\n').map(z=>z.trim()).filter(Boolean)
+    .map(z => z.split('|').map(t=>t.trim()).filter(Boolean));
+  const srIstTabelle = srZeilen.length && srZeilen.every(t => t.length>=3);
+  const srRows = srIstTabelle ? srZeilen.map(t => {
+    const typ = (t[1]||'').toLowerCase();
+    const typKlasse = typ.includes('wider') ? 'qneg' : typ.includes('unter') ? 'qpos' : '';
+    return `<tr><td>${esc(t[0]||'—')}</td><td class="${typKlasse}">${esc(t[1]||'—')}</td><td>${esc(t[2]||'—')}</td><td>${esc(t[3]||'—')}</td><td>${esc(t[4]||'—')}</td></tr>`;
+  }).join('') : '';
+
   const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
   return `
     <div class="pivotcard">
       <div class="phead">
-        <span class="badge" style="background:color-mix(in srgb, ${statusFarbe} 18%, transparent);color:${statusFarbe};border-color:${statusFarbe}">${esc(d.status)||'—'}</span>
+        <span class="badge" style="background:color-mix(in srgb, ${statusFarbe} 18%, transparent);color:${statusFarbe};border-color:${statusFarbe};font-size:13px;padding:6px 14px">${statusIcon} ${esc(d.status)||'—'}</span>
         ${d.confidence ? `<span class="badge">Confidence ${esc(d.confidence)}</span>` : ''}
       </div>
-      <div class="pdetail"><b>1 · Kerngeschäft &amp; Geschäftsmodell</b><br>${esc(d.kerngeschaeft)||'—'}</div>
-      <div class="pdetail"><b>2 · Aktuelle Nachrichtenlage</b><br>${esc(d.aktuelle_lage)||'—'}</div>
+      <div class="pdetail"><b>🏢 Kerngeschäft &amp; Geschäftsmodell</b><br>${esc(d.kerngeschaeft)||'—'}</div>
+      <div class="pdetail" style="margin-bottom:0"><b>📰 Aktuelle Nachrichtenlage</b><br>${esc(d.aktuelle_lage)||'—'}</div>
     </div>
-    <div class="pivotcard">
-      <div class="pdetail" style="margin-bottom:0"><b>3 · CAN SLIM</b></div>
-      <div class="pdetail" style="white-space:pre-wrap">${esc(d.canslim)||'—'}</div>
+
+    <div class="subhead" style="margin-top:18px">🧬 CAN SLIM <span class="sub">O'Neil-Kriterien, je Buchstabe 1–10</span></div>
+    <div class="fgrid">${canslimItems.length ? canslimItems.map(canslimCard).join('') : `<div class="pivotcard"><div class="pdetail" style="white-space:pre-wrap">${esc(d.canslim)||'—'}</div></div>`}</div>
+
+    <div class="subhead" style="margin-top:18px">🎯 Minervini-Check &amp; Accumulation</div>
+    <div class="fgrid">
+      ${urteilsCard('📐', 'Minervini-tauglich', d.minervini_check, minerviniAmpel, minerviniVerdikt)}
+      ${urteilsCard('🏦', 'Accumulation / Smart Money', d.accumulation, akkuAmpel, akkuScore!=null?akkuScore+'/10':null, akkuScore)}
     </div>
-    <div class="pivotcard">
-      <div class="pdetail"><b>4 · Minervini-Check</b><br>${esc(d.minervini_check)||'—'}</div>
-      <div class="pdetail"><b>5 · Accumulation / Smart Money</b><br>${esc(d.accumulation)||'—'}</div>
-    </div>
-    <div class="pivotcard">
-      <div class="pdetail" style="margin-bottom:8px"><b>6 · Widerstands-/Unterstützungszonen</b></div>
-      ${srZeilen.length ? srZeilen.map(z=>`<div style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line)">${esc(z)}</div>`).join('') : '<div style="color:var(--muted);font-size:12.5px">—</div>'}
-    </div>
-    <div class="pivotcard">
-      <div class="pdetail"><b>7 · Investment-/Trading-These</b><br>${esc(d.these)||'—'}</div>
-    </div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
+
+    <div class="subhead" style="margin-top:18px">📍 Widerstands-/Unterstützungszonen</div>
+    ${srIstTabelle ? `<div class="pivotcard"><div class="qtable-wrap"><table class="qtable">
+        <thead><tr><th>Preis</th><th>Typ</th><th>Stärke</th><th>Kontext</th><th>Aktion</th></tr></thead>
+        <tbody>${srRows}</tbody>
+      </table></div></div>`
+      : `<div class="pivotcard">${srZeilen.length ? srZeilen.map(t=>`<div style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line)">${esc(t.join(' · '))}</div>`).join('') : '<div style="color:var(--muted);font-size:12.5px">—</div>'}</div>`}
+
+    <div class="subhead" style="margin-top:18px">💡 Investment-/Trading-These</div>
+    <div class="pivotcard"><div class="pdetail" style="margin-bottom:0">${esc(d.these)||'—'}</div></div>
+
+    <div style="font-size:10.5px;color:var(--muted);margin-top:10px">
       ${esc(d.disclaimer)||'Rein informativ, keine Anlageberatung.'} · KI-generiert (${esc(d.modell)||'Workers AI'}${d.edgar_aktiv?' + SEC EDGAR':''}) · Stand ${stand} Uhr
     </div>
     <button class="deepbtn" style="margin-top:8px" onclick="ladeCanslim('${esc(d.ticker)}','${esc(d.ticker)}','${esc(d.name||'')}',true)">🔄 Neu erstellen</button>`;
