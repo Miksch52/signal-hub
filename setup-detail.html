@@ -266,6 +266,7 @@ const FAKTOR_INFO = {
 };
 const VERIFY_EXPLAIN = 'Unabhängige Gegenprüfung des Stage-2-Trend-Templates: berechnet die 8 Kriterien frisch aus eigenen Yahoo-Kursdaten (Cloudflare Worker, sieht die Pipeline-Begründung nicht) und vergleicht sie mit dem gespeicherten Wert. Rein deterministisch, kein KI-Aufruf - Prinzip "wer etwas berechnet hat, prüft es nicht selbst nach".';
 const BUSINESSQUANT_EXPLAIN = 'Institutioneller Besitz (SEC Form 13F), Insider-Transaktionen (SEC Form 4) und Analysten-EPS-Schätzungen von Business Quant - manuell abrufbar, nur für US-börsennotierte Werte. Ergänzt die automatische institutionelle Trendkennzahl der Pipeline um echte Insider-Trades und Analysten-Konsens. Free-Plan (30 Anfragen/Tag insgesamt) - deshalb bewusst nicht automatisch für jedes Setup geladen.';
+const CANSLIM_EXPLAIN = 'KI-Tiefenanalyse nach CAN SLIM (O\'Neil), Minervini-Trend-Template-Check, Smart-Money-Akkumulation, Widerstands-/Unterstützungszonen und Investment-These - nutzt die auf dieser Seite bereits berechneten Werte (Score, Pivot, Fundamentaldaten, Innerer Wert, Institutionelles) als Faktengrundlage, ergänzt um frische Nachrichten/SEC-Filings. Manuell abrufbar, rein informativ, keine Kauf-/Verkaufsempfehlung.';
 const PIVOT_EXPLAIN = 'Pivot-Armed-Detektor (ergänzt den nachlaufenden Score um die Entstehung des Ausbruchs): BREAKOUT = frischer Ausbruch über die Basis auf hohem Volumen. ARMED = enge, ausgetrocknete Basis knapp unter dem Pivot (Pre-Breakout). WATCH = Trend intakt, Basis noch nicht reif. CHEAT = früher Ausbruch vor vollem Trend-Template, klein positionieren.';
 const PA_EXPLAIN = 'Unabhängige Candlestick-Musteranalyse (Trendbar, Breakout, Gap, Bar-Counting) aus dem Price-Action-Hub - positiver Wert = bullisches Chartbild, kein Ersatz für den Score.';
 const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufwärtsphase, Distribution/Declining = Abwärtsphase - gemessen an Kurs gegen den gleitenden 200-Tage-Durchschnitt und dessen Steigung.';
@@ -706,6 +707,11 @@ function fcardWert(icon, label, explain, fairValue, preis, currency){
   </div></div>`;
 }
 let WERT_PREIS = null, WERT_CURRENCY = null, WERT_FX = null, WERT_DIVIDENDE = null;
+// Aktueller Ticker-Rohdatensatz (seit 2026-09-04, fuer den "Tiefere Analyse"-
+// Button) - render() setzt diese bei jedem Ticker-Wechsel neu, damit
+// sammleKontext() (weiter unten) darauf zugreifen kann, ohne die Werte ein
+// zweites Mal aus dem DOM auszulesen.
+let CUR_SIG = null, CUR_PIV = null, CUR_PA = null;
 function renderInnererWert(){
   const el = document.getElementById('wertwrap');
   if(!el) return;
@@ -743,6 +749,7 @@ function earnText(e){
 
 function render(sig, piv, pa, regime){
   const t = sig, p = piv, m = (pa && pa.muster) || null;
+  CUR_SIG = sig; CUR_PIV = piv; CUR_PA = pa;
   // Zustand der "Innerer Wert"-Sektion pro Ticker zuruecksetzen - sonst
   // wuerden bei einem Ticker-Wechsel (siehe wechsleTicker) kurzzeitig die
   // Bewertungsergebnisse des vorherigen Tickers stehen bleiben, bis die neuen
@@ -868,7 +875,10 @@ function render(sig, piv, pa, regime){
     <h2>🔎 Sofort-Überblick <span class="sub">${erfuelltCount} von ${qsAmpeln.length} Kriterien grün erfüllt</span></h2>
     <div class="quickscan">${qsItems.join('')}</div>
 
-    <details class="acc" open>
+    <!-- Die drei Blöcke starten seit 2026-09-04 zugeklappt (Nutzerwunsch, zu
+         viel Scrollen v.a. am iPhone durch die vielen Erweiterungen) - der
+         Sofort-Überblick oben bleibt die einzige immer sichtbare Zusammenfassung. -->
+    <details class="acc">
       <summary>🕯️ Charttechnik <span class="acc-sub">Live-Chart, Pivot-Armed-Detektor, Price-Action</span><span class="chev">▾</span></summary>
       <div class="acc-body">
         <div class="chart-wrap">
@@ -884,7 +894,7 @@ function render(sig, piv, pa, regime){
       </div>
     </details>
 
-    <details class="acc" open>
+    <details class="acc">
       <summary>📈 Technische Analyse <span class="acc-sub">Minervini Trend-Template, relative Stärke, Volumen</span><span class="acc-count">${techErfuellt}/${TECH_KEYS.length} grün</span><span class="chev">▾</span></summary>
       <div class="acc-body">
         <div class="fgrid">${techCards}</div>
@@ -893,7 +903,7 @@ function render(sig, piv, pa, regime){
       </div>
     </details>
 
-    <details class="acc" open>
+    <details class="acc">
       <summary>💵 Fundamentalanalyse <span class="acc-sub">CANSLIM/Code 33, Dividende, Innerer Wert, Buffett/Munger/Graham, Story</span><span class="chev">▾</span></summary>
       <div class="acc-body">
         <div class="fgrid">${fundCards}
@@ -940,6 +950,9 @@ function render(sig, piv, pa, regime){
         <div class="subhead">📰 Story &amp; News <span class="sub">live Yahoo Finance/KI-Zusammenfassung</span></div>
         <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
         <div id="deepwrap" style="margin-top:10px"></div>
+
+        <div class="subhead">🧬 Tiefere Analyse <span class="sub" title="${CANSLIM_EXPLAIN}">CAN SLIM · Minervini-Check · Accumulation · Widerstand/Unterstützung · These — optional, manuell</span></div>
+        <div id="canslimwrap" style="margin-top:10px"></div>
       </div>
     </details>
 
@@ -968,6 +981,7 @@ function render(sig, piv, pa, regime){
   ladeDividenden(t.ticker, t.yahoo_symbol);
   renderDeepButton(t.ticker, t.yahoo_symbol, t.name);
   renderBqButton(t.ticker, t.yahoo_symbol, t.markt);
+  renderCanslimButton(t.ticker, t.yahoo_symbol, t.name);
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
     if(!isNaN(dt)) document.getElementById('stand').textContent =
@@ -1356,6 +1370,144 @@ async function ladeBusinessQuant(ticker, yahooSymbol){
       Business-Quant-Daten gerade nicht verfügbar (${esc((e && e.message) || e)}).
     </div></div>
     <button class="deepbtn" onclick="ladeBusinessQuant('${esc(ticker)}','${esc(symbol)}')">🔄 Erneut versuchen</button>`;
+  }
+}
+
+// ─── Tiefere Analyse: CAN SLIM / Minervini / Accumulation / S&R / These (seit 2026-09-04) ──
+// Manueller Button wie Erweiterter Bericht/BusinessQuant - ruft ein groesseres
+// KI-Modell auf (siehe cloudflare-worker/mts-cors-proxy.js::handleCanslimReport),
+// deshalb bewusst nicht automatisch. sammleKontext() fasst alle auf dieser
+// Seite bereits geladenen/berechneten Systemwerte (Score, Pivot, Price-Action,
+// Fundamentaldaten inkl. Code 33/Quartalsserie, Innerer Wert, ggf. bereits
+// abgerufene Business-Quant-Daten) kompakt zusammen, damit der Worker sie als
+// Faktengrundlage in den Prompt einbetten kann statt sie ein zweites Mal (und
+// potenziell abweichend) selbst zu schaetzen.
+function sammleKontext(){
+  const t = CUR_SIG, p = CUR_PIV, pa = CUR_PA;
+  if(!t) return {};
+  const m = (pa && pa.muster) || null;
+  const fx = WERT_FX || {};
+  const faktoren = {};
+  TECH_KEYS.concat(FUND_KEYS).forEach(k => {
+    const f = t.faktoren && t.faktoren[k];
+    if(f) faktoren[(FAKTOR_INFO[k]||{}).label || k] = { ampel: f.ampel, wert: f.wert };
+  });
+  const fcfProAktie = (fx.freeCashflow!=null && fx.sharesOutstanding) ? fx.freeCashflow/fx.sharesOutstanding : null;
+  const kontext = {
+    ticker: t.ticker, name: t.name, markt: t.markt, sektor: t.sektor, branche: t.branche,
+    preis: t.preis, currency: t.currency, score: t.score, tier: t.tier, einstufung: t.einstufung,
+    faktoren,
+    pivot: p ? { status: p.pivot_status, pivot: p.pivot, dist_pct: p.dist_pct, stop: p.stop,
+      stop_pct: p.stop_pct, chance_risiko: p.chance_risiko, qualitaet: p.qualitaet,
+      supply_score: p.supply_score, dryup: p.dryup, contraction: p.contraction } : null,
+    priceAction: pa ? { pa_score: pa.pa_score, marktstadium: m && m.marktstadium && m.marktstadium.stadium } : null,
+    fundamental: {
+      trailingPE: fx.trailingPE, forwardPE: fx.forwardPE, priceToSales: fx.priceToSales,
+      priceToSalesForward: fx.priceToSalesForward, freeCashflow: fx.freeCashflow,
+      revenueGrowth: fx.revenueGrowth, earningsGrowth: fx.earningsGrowth, grossMargins: fx.grossMargins,
+      returnOnEquity: fx.returnOnEquity, debtToEquity: fx.debtToEquity,
+      code33: fx.code33 && fx.code33.verfuegbar ? {
+        ampel: fx.code33.ampel, eps_yoy_pct: fx.code33.eps_yoy_pct,
+        umsatz_yoy_pct: fx.code33.umsatz_yoy_pct, marge_delta_pp: fx.code33.marge_delta_pp,
+      } : null,
+      quartalsserie: fx.code33 && fx.code33.quartalsserie,
+    },
+    dividende: WERT_DIVIDENDE ? { serie: WERT_DIVIDENDE.serie, trend: WERT_DIVIDENDE.trend } : null,
+    innererWert: {
+      graham: grahamNumber(fx.trailingEps, fx.bookValue),
+      dcf: dcfFairValue(fcfProAktie, fx.earningsGrowth ?? fx.revenueGrowth),
+      kurs: WERT_PREIS,
+    },
+    earnings: t.earnings,
+  };
+  try{
+    const bq = sessionStorage.getItem('bq_' + (t.yahoo_symbol || t.ticker));
+    if(bq){
+      const d = JSON.parse(bq);
+      kontext.institutionell = {
+        anteil_pct: d.institutional && d.institutional.institutions_shares_pct_outstanding,
+        delta_qoq_pct: d.institutional && d.institutional.shares_changed_qoq_pct,
+        insider_transaktionen: (d.insider || []).filter(i => i.shares_bought || i.shares_sold).length,
+      };
+    }
+  }catch(e){ /* kein BusinessQuant-Cache vorhanden - kontext.institutionell bleibt weg */ }
+  return kontext;
+}
+
+function renderCanslimButton(ticker, yahooSymbol, name){
+  const wrap = document.getElementById('canslimwrap');
+  if(!wrap) return;
+  wrap.innerHTML = `<button id="canslimbtn" class="deepbtn" onclick="ladeCanslim('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🧬 Tiefere Analyse erstellen</button>`;
+}
+function renderCanslim(d){
+  if(!d.kerngeschaeft && !d.these && !d.canslim){
+    return `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Keine auswertbare Antwort erhalten.</div></div>
+      <button class="deepbtn" onclick="ladeCanslim('${esc(d.ticker)}','${esc(d.ticker)}','${esc(d.name||'')}')">🔄 Erneut versuchen</button>`;
+  }
+  const statusFarbe = { BULLISH: 'var(--ok)', BEARISH: 'var(--bad)', NEUTRAL: 'var(--warn)' }[(d.status||'').toUpperCase()] || 'var(--muted)';
+  const srZeilen = (d.sr_tabelle||'').split('\n').map(z=>z.trim()).filter(Boolean);
+  const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+  return `
+    <div class="pivotcard">
+      <div class="phead">
+        <span class="badge" style="background:color-mix(in srgb, ${statusFarbe} 18%, transparent);color:${statusFarbe};border-color:${statusFarbe}">${esc(d.status)||'—'}</span>
+        ${d.confidence ? `<span class="badge">Confidence ${esc(d.confidence)}</span>` : ''}
+      </div>
+      <div class="pdetail"><b>1 · Kerngeschäft &amp; Geschäftsmodell</b><br>${esc(d.kerngeschaeft)||'—'}</div>
+      <div class="pdetail"><b>2 · Aktuelle Nachrichtenlage</b><br>${esc(d.aktuelle_lage)||'—'}</div>
+    </div>
+    <div class="pivotcard">
+      <div class="pdetail" style="margin-bottom:0"><b>3 · CAN SLIM</b></div>
+      <div class="pdetail" style="white-space:pre-wrap">${esc(d.canslim)||'—'}</div>
+    </div>
+    <div class="pivotcard">
+      <div class="pdetail"><b>4 · Minervini-Check</b><br>${esc(d.minervini_check)||'—'}</div>
+      <div class="pdetail"><b>5 · Accumulation / Smart Money</b><br>${esc(d.accumulation)||'—'}</div>
+    </div>
+    <div class="pivotcard">
+      <div class="pdetail" style="margin-bottom:8px"><b>6 · Widerstands-/Unterstützungszonen</b></div>
+      ${srZeilen.length ? srZeilen.map(z=>`<div style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line)">${esc(z)}</div>`).join('') : '<div style="color:var(--muted);font-size:12.5px">—</div>'}
+    </div>
+    <div class="pivotcard">
+      <div class="pdetail"><b>7 · Investment-/Trading-These</b><br>${esc(d.these)||'—'}</div>
+    </div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
+      ${esc(d.disclaimer)||'Rein informativ, keine Anlageberatung.'} · KI-generiert (${esc(d.modell)||'Workers AI'}${d.edgar_aktiv?' + SEC EDGAR':''}) · Stand ${stand} Uhr
+    </div>
+    <button class="deepbtn" style="margin-top:8px" onclick="ladeCanslim('${esc(d.ticker)}','${esc(d.ticker)}','${esc(d.name||'')}',true)">🔄 Neu erstellen</button>`;
+}
+async function ladeCanslim(ticker, yahooSymbol, name, erzwingen){
+  const wrap = document.getElementById('canslimwrap');
+  if(!wrap) return;
+  const symbol = yahooSymbol || ticker;
+  const cacheKey = 'canslim_' + symbol;
+  if(!erzwingen){
+    try{
+      const cached = sessionStorage.getItem(cacheKey);
+      if(cached){ wrap.innerHTML = renderCanslim(JSON.parse(cached)); return; }
+    }catch(e){ /* sessionStorage evtl. gesperrt - dann einfach neu laden */ }
+  }
+  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Erstelle Tiefenanalyse (CAN SLIM, Minervini-Check, Accumulation, Widerstand/Unterstützung, These) — kann eine Weile dauern …</div></div>';
+  try{
+    const kontext = sammleKontext();
+    // Bei "Neu erstellen" (erzwingen) einen Cache-Buster anhaengen - sonst
+    // liefert der 30-Minuten-Edge-Cache des Workers (Cache-Key = volle URL
+    // inkl. kontext) exakt dieselbe Antwort wie beim ersten Klick zurueck,
+    // weil sich Ticker und kontext dabei ja nicht geaendert haben.
+    const u = MTS_PROXY + 'canslim-report?ticker=' + encodeURIComponent(symbol)
+      + '&name=' + encodeURIComponent(name || '')
+      + '&kontext=' + encodeURIComponent(JSON.stringify(kontext))
+      + (erzwingen ? '&_r=' + Date.now() : '');
+    const r = await fetch(u, {signal: AbortSignal.timeout(60000)});
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
+    wrap.innerHTML = renderCanslim(d);
+    try{ sessionStorage.setItem(cacheKey, JSON.stringify(d)); }catch(e){ /* Speicher voll/gesperrt - ignorieren */ }
+  }catch(e){
+    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
+      Tiefenanalyse gerade nicht verfügbar (${esc((e && e.message) || e)}).
+    </div></div>
+    <button class="deepbtn" onclick="ladeCanslim('${esc(ticker)}','${esc(symbol)}','${esc(name||'')}',true)">🔄 Erneut versuchen</button>`;
   }
 }
 
