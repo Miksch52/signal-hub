@@ -117,6 +117,24 @@
   .dq i.neg{background:var(--bad)}
   .dq em{font-style:normal;font-size:9.5px;color:var(--muted2);font-variant-numeric:tabular-nums}
 
+  /* Sektor-Kontext: bewusst KEINE vierte Saeule, sondern ein flacher
+     Streifen darunter - er beantwortet eine Frage ueber das Umfeld, nicht
+     ueber die Aktie selbst, und soll die Dreier-Gliederung nicht aufweichen. */
+  .dash-sektor{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow);padding:14px 16px;margin-bottom:12px;border-left:3px solid var(--primary)}
+  .dsk-kopf{font-size:12.5px;font-weight:700;margin-bottom:8px;display:flex;
+    align-items:center;gap:8px;flex-wrap:wrap}
+  .dsk-text{font-size:12.5px;color:var(--muted);line-height:1.5;max-width:70ch}
+  .dsk-text b{color:var(--txt)}
+  .dsk-text .t-ok{color:var(--ok)} .dsk-text .t-warn{color:var(--warn)}
+  .dsk-kennz{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+    gap:8px;font-size:11.5px;margin-top:10px}
+  .dsk-kennz div{background:var(--line2);border-radius:8px;padding:6px 9px}
+  .dsk-kennz b{display:block;font-size:13px;color:var(--txt);font-variant-numeric:tabular-nums}
+  .dsk-kennz b.w-gruen{color:var(--ok)} .dsk-kennz b.w-gelb{color:var(--warn)}
+  .dsk-kennz b.w-rot{color:var(--bad)}
+  .dsk-fuss{font-size:10.5px;color:var(--muted2);margin-top:9px}
+
   .dash-beleg{background:var(--card);border:1px solid var(--line);border-radius:12px;
     box-shadow:var(--shadow);padding:14px 16px}
   .db-kopf{font-size:12.5px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;
@@ -1072,6 +1090,91 @@ function dashBeleg(t, bt, fbt, gewichte){
   </div>`;
 }
 
+// ─── Sektor-Kontext / Narrativ-Bezug (seit 2026-09-06) ─────────────────────
+// Beantwortet die Frage, die keine der drei Engines bisher stellt: laeuft
+// diese Aktie MIT einem fuehrenden Thema oder als Einzelfall gegen ihren
+// eigenen Sektor? O'Neil: "buy leaders in leading groups" - ein starkes
+// Einzelsetup in einem abgehaengten Thema ist etwas anderes als dasselbe
+// Setup im Marktfuehrer-Thema.
+//
+// Reiner Frontend-Join auf Rotation-Dashboard/data/rotation.json (7,8 KB,
+// laengst in der Deploy-Whitelist) - kein neuer Datenabruf, keine KI. Die
+// Startseite macht denselben Join bereits fuer ihr Leader-Badge
+// (index.html::ladeRotationLeaderMap), hier zusaetzlich mit dem RS-Rang des
+// Themas selbst, damit auch Nicht-Leader eingeordnet werden koennen.
+//
+// Zuordnung in zwei Stufen: steht der Ticker in der Leader-Liste, ist sein
+// Thema direkt bekannt; sonst ueber den GICS-Sektor aus signals.json. Die
+// Tabelle ist eine 1:1-Uebernahme von Rotation-Dashboard/src/
+// sektor_mapping.py::SEKTOR_ZU_THEMA - bei Aenderungen dort mitziehen.
+const SEKTOR_ZU_ETF = {
+  // Aliasse fuer neuere GICS-/Yahoo-Schreibweisen - ohne sie liefen 142 von
+  // 496 Treffern trotz bekanntem Sektor ins Leere (2026-09-06 gemessen),
+  // allein "Health Care" 76 Werte. Gleicher Fix in sektor_mapping.py.
+  'Health Care':'XLV','Consumer Discretionary':'XLY','Consumer Staples':'XLP',
+  'Telecommunications':'XLC',
+  'Basic Materials':'XME','Commercial Services':'XLI','Communication Services':'XLC',
+  'Communications':'XLC','Consumer Cyclical':'XLY','Consumer Defensive':'XLP',
+  'Consumer Durables':'XLY','Consumer Non-Durables':'XLP','Consumer Services':'XLY',
+  'Distribution Services':'XLI','Electronic Technology':'XLK','Energy':'XLE',
+  'Energy Minerals':'XOP','Finance':'XLF','Financial Services':'XLF',
+  'Health Services':'XLV','Health Technology':'XLV','Healthcare':'XLV',
+  'Industrial Services':'XLI','Industrials':'XLI','Non-Energy Minerals':'XME',
+  'Process Industries':'XLI','Producer Manufacturing':'XLI','Retail Trade':'XLY',
+  'Technology':'XLK','Technology Services':'IGV','Transportation':'XLI','Utilities':'XLU',
+};
+function dashSektor(t){
+  const rot = ROTATION_CACHE;
+  if(!rot || !Array.isArray(rot.sectors) || !rot.sectors.length) return '';
+  const sektoren = rot.sectors.slice().sort((a,b)=>(b.rs||0)-(a.rs||0));
+  const leader = (rot.leaders||[]).find(l =>
+    (l.ticker||'').toUpperCase() === (t.ticker||'').toUpperCase() ||
+    (l.ticker||'').toUpperCase() === (t.yahoo_symbol||'').toUpperCase());
+  let thema = null;
+  if(leader) thema = sektoren.find(s => s.theme === leader.theme);
+  if(!thema){
+    const etf = SEKTOR_ZU_ETF[(t.sektor||'').trim()];
+    if(etf) thema = sektoren.find(s => s.etf === etf);
+  }
+  if(!thema){
+    return `<div class="dash-sektor">
+      <div class="dsk-kopf">🧭 Sektor-Kontext</div>
+      <div class="dsk-text">Kein Themen-ETF für „${esc(t.sektor)||'unbekannten Sektor'}" hinterlegt — das Rotation-Dashboard deckt 21 US-Themen ab, Nischenbranchen bleiben ohne Gegenstück. Ohne Sektor-Bezug, die Einordnung oben steht für sich.</div>
+    </div>`;
+  }
+  const rang = sektoren.indexOf(thema) + 1;
+  const rs = thema.rs;
+  const ampel = rs>=70 ? 'gruen' : rs>=40 ? 'gelb' : 'rot';
+  const reg = rot.regime || {};
+  // Kernaussage: traegt die Aktie eine Themen-Story oder laeuft sie allein?
+  let satz;
+  if(leader && ampel==='gruen')
+    satz = `<b class="t-ok">Marktführer in einem führenden Thema.</b> ${esc(t.ticker)} steht im Rotation-Dashboard als Leader in „${esc(thema.theme)}", und das Thema selbst rangiert auf Platz ${rang} von ${sektoren.length}. Das ist die Konstellation, die O'Neil meint — starke Aktie in starker Gruppe.`;
+  else if(leader)
+    satz = `<b class="t-warn">Marktführer, aber in einem schwächeren Thema.</b> ${esc(t.ticker)} führt „${esc(thema.theme)}" an — das Thema liegt aber nur auf Platz ${rang} von ${sektoren.length}. Die Stärke kommt aus der Aktie selbst, nicht aus der Gruppe.`;
+  else if(ampel==='gruen')
+    satz = `<b class="t-ok">Rückenwind vom Thema.</b> „${esc(thema.theme)}" liegt auf Platz ${rang} von ${sektoren.length} — die Aktie läuft in einer führenden Gruppe mit, gehört dort aber nicht zu den ausgewiesenen Leadern.`;
+  else
+    satz = `<b class="t-warn">Gegen den eigenen Sektor.</b> „${esc(thema.theme)}" liegt nur auf Platz ${rang} von ${sektoren.length}${thema.above_ma50===false?' und notiert unter der 50-Tage-Linie':''} — ein Einzelläufer ohne Themen-Rückenwind. Nach O'Neil das schwächere Muster.`;
+  const kennz = [
+    ['RS-Rating Thema', rs!=null ? rs+' / 99' : '—', ampel],
+    ['Rang unter den Themen', `${rang} von ${sektoren.length}`, ampel],
+    ['Thema 1 Monat', thema.r1m!=null ? (thema.r1m>0?'+':'')+dzahl(thema.r1m)+' %' : '—',
+       thema.r1m!=null ? (thema.r1m>0?'gruen':'rot') : null],
+    ['Thema über SMA50', thema.above_ma50 ? 'ja' : 'nein', thema.above_ma50?'gruen':'rot'],
+  ];
+  return `<div class="dash-sektor">
+    <div class="dsk-kopf">🧭 Sektor-Kontext
+      <span class="dash-chip c-${ampel}">${esc(thema.theme)} · ${esc(thema.etf)}</span>
+      ${leader ? '<span class="dash-chip c-gruen">🔥 Leader im Thema</span>' : ''}
+    </div>
+    <div class="dsk-text">${satz}</div>
+    <div class="dsk-kennz">${kennz.map(([k,v,a])=>
+      `<div><b class="${a?'w-'+a:''}">${v}</b>${k}</div>`).join('')}</div>
+    ${reg.note ? `<div class="dsk-fuss">Markt-Regime laut Rotation-Dashboard: ${esc(reg.note)}</div>` : ''}
+  </div>`;
+}
+
 function dashboardBlock(t, regime){
   const aMom = saeuleMomentum(t), aGeld = saeuleGeldfluss(t), aSub = saeuleSubstanz(t);
   const ampelVon = html => (html.match(/dash-saeule s-(\w+)/)||[])[1] || 'na';
@@ -1079,6 +1182,7 @@ function dashboardBlock(t, regime){
   const gewichte = (SIGNALS_CACHE && SIGNALS_CACHE.gewichte) || {};
   return v.html
     + `<div class="dash-saeulen">${aMom}${aGeld}${aSub}</div>`
+    + dashSektor(t)
     + dashBeleg(t, SCORE_BT_CACHE, FAKTOR_BT_CACHE, gewichte);
 }
 
@@ -2000,6 +2104,8 @@ let SIGNALS_CACHE = null, PIVOT_CACHE = null, PA_CACHE = null, BASISDATEN_PROMIS
 // liefern das einzige Gegengewicht zum Score. ladeJson() gibt bei Fehler
 // null zurueck, das Dashboard laesst die Belegzeile dann einfach weg.
 let SCORE_BT_CACHE = null, FAKTOR_BT_CACHE = null;
+// Sektor-/Themen-Rotation fuer den Narrativ-Bezug (seit 2026-09-06, 7,8 KB).
+let ROTATION_CACHE = null;
 function ladeBasisdaten(){
   if(!BASISDATEN_PROMISE){
     BASISDATEN_PROMISE = Promise.all([
@@ -2008,7 +2114,11 @@ function ladeBasisdaten(){
       ladeJson('../Price-Action-Hub/data/priceaction.json'),
       ladeJson('data/score_backtest.json'),
       ladeJson('data/score_faktoren_backtest.json'),
-    ]).then(([s,p,pa,sb,fb])=>{ SIGNALS_CACHE=s; PIVOT_CACHE=p; PA_CACHE=pa; SCORE_BT_CACHE=sb; FAKTOR_BT_CACHE=fb; });
+      ladeJson('../Rotation-Dashboard/data/rotation.json'),
+    ]).then(([s,p,pa,sb,fb,rot])=>{
+      SIGNALS_CACHE=s; PIVOT_CACHE=p; PA_CACHE=pa;
+      SCORE_BT_CACHE=sb; FAKTOR_BT_CACHE=fb; ROTATION_CACHE=rot;
+    });
   }
   return BASISDATEN_PROMISE;
 }
