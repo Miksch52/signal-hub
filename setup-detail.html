@@ -58,6 +58,87 @@
   .tier-B{background:rgba(192,138,46,.14);color:var(--warn)}
   .tier-C{background:rgba(107,114,104,.12);color:var(--muted)}
 
+  /* ── Momentum-Dashboard (seit 2026-09-06) ───────────────────────────────
+     Beantwortet die Leitfrage der Seite ("wie aussichtsreich ist der weitere
+     Trendverlauf?") in drei Saeulen, bevor irgendein Block aufgeklappt werden
+     muss: Momentum (Trend fuehrend?), Geldfluss (fliesst grosses Geld zu?),
+     Substanz (keine Eintagsfliege?). Speist sich ausschliesslich aus Feldern,
+     die signals.json ohnehin liefert - mehrere davon (rs_rating,
+     institutional_trend, basis_nr, extended_pct) waren bis dahin auf dieser
+     Seite nirgends sichtbar, obwohl sie genau die Leitfrage beantworten. */
+  .dash-verdikt{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);padding:16px 18px;margin-bottom:12px;border-top:3px solid var(--line)}
+  .dash-verdikt.v-gruen{border-top-color:var(--ok)}
+  .dash-verdikt.v-gelb{border-top-color:var(--warn)}
+  .dash-verdikt.v-rot{border-top-color:var(--bad)}
+  .dash-frage{font-size:12px;color:var(--muted);margin-bottom:7px}
+  .dash-satz{font-size:16.5px;font-weight:650;text-wrap:balance;margin-bottom:11px;line-height:1.35}
+  .dash-satz .t-ok{color:var(--ok)} .dash-satz .t-warn{color:var(--warn)} .dash-satz .t-bad{color:var(--bad)}
+  .dash-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .dash-chip{font-size:11.5px;padding:4px 10px;border-radius:20px;border:1px solid var(--line);
+    background:var(--line2);color:var(--muted);white-space:nowrap}
+  .dash-chip.c-gruen{background:rgba(46,139,87,.10);border-color:rgba(46,139,87,.4);color:var(--ok)}
+  .dash-chip.c-gelb{background:rgba(192,138,46,.12);border-color:rgba(192,138,46,.4);color:var(--warn)}
+  .dash-chip.c-rot{background:rgba(178,58,46,.10);border-color:rgba(178,58,46,.4);color:var(--bad)}
+
+  .dash-saeulen{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+  .dash-saeule{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow);padding:14px 15px 13px;display:flex;flex-direction:column;gap:9px}
+  .dash-saeule.s-gruen{border-color:rgba(46,139,87,.45)}
+  .dash-saeule.s-gelb{border-color:rgba(192,138,46,.4)}
+  .dash-saeule.s-rot,.dash-saeule.s-na{opacity:.62}
+  .ds-kopf{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .ds-titel{font-size:12.5px;font-weight:700}
+  .ds-titel small{display:block;font-weight:400;font-size:10.5px;color:var(--muted2);margin-top:1px}
+  .ds-urteil{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap}
+  .ds-urteil.u-gruen{background:rgba(46,139,87,.12);color:var(--ok)}
+  .ds-urteil.u-gelb{background:rgba(192,138,46,.14);color:var(--warn)}
+  .ds-urteil.u-rot{background:rgba(178,58,46,.12);color:var(--bad)}
+  .ds-urteil.u-na{background:var(--line2);color:var(--muted2)}
+  .ds-zahl{display:flex;align-items:baseline;gap:7px}
+  .ds-zahl b{font-size:29px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+  .ds-zahl b.z-gruen{color:var(--ok)} .ds-zahl b.z-gelb{color:var(--warn)}
+  .ds-zahl b.z-rot{color:var(--bad)} .ds-zahl b.z-na{color:var(--muted2)}
+  .ds-zahl span{font-size:11px;color:var(--muted);line-height:1.25}
+  .dash-bar{height:5px;border-radius:3px;background:var(--line2);overflow:hidden}
+  .dash-bar i{display:block;height:100%;border-radius:3px}
+  .ds-zeilen{display:flex;flex-direction:column;gap:6px;margin-top:1px}
+  .dz{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12px;
+    border-bottom:1px solid var(--line2);padding-bottom:5px}
+  .dz:last-child{border-bottom:none;padding-bottom:0}
+  .dz .dz-k{color:var(--muted)}
+  .dz .dz-v{font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .dz-v.w-gruen{color:var(--ok)} .dz-v.w-gelb{color:var(--warn)} .dz-v.w-rot{color:var(--bad)}
+
+  /* Institutioneller Besitz je Quartal - Mini-Verlauf statt nackter Zahl */
+  .dash-quartale{display:flex;align-items:flex-end;gap:5px;height:34px}
+  .dq{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px;text-align:center}
+  .dq i{display:block;border-radius:2px 2px 0 0;background:var(--ok);min-height:2px}
+  .dq i.neg{background:var(--bad)}
+  .dq em{font-style:normal;font-size:9.5px;color:var(--muted2);font-variant-numeric:tabular-nums}
+
+  .dash-beleg{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow);padding:14px 16px}
+  .db-kopf{font-size:12.5px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;
+    gap:7px;flex-wrap:wrap}
+  .db-pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .db-pill.p-warn{background:rgba(192,138,46,.14);color:var(--warn)}
+  .db-pill.p-ok{background:rgba(46,139,87,.12);color:var(--ok)}
+  .dash-beleg p{margin:0 0 8px;font-size:12.5px;color:var(--muted);max-width:70ch;line-height:1.5}
+  .dash-beleg p:last-child{margin-bottom:0}
+  .dash-beleg b{color:var(--txt)}
+  .dash-evidenz{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:10px 0 9px}
+  .dev{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--line2)}
+  .dev-k{font-size:10.5px;color:var(--muted);margin-bottom:2px}
+  .dev-v{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+  .dev.e-plus .dev-v{color:var(--ok)} .dev.e-minus .dev-v{color:var(--bad)}
+  .dev-s{font-size:10px;color:var(--muted2);margin-top:2px}
+
+  @media (max-width:720px){
+    .dash-saeulen{grid-template-columns:1fr}
+    .dash-satz{font-size:15px}
+  }
+
   .badge{font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap;
          border:1px solid var(--line);color:var(--muted);background:var(--card)}
   .b-armed{background:rgba(192,138,46,.12);color:#8a611f;border-color:rgba(192,138,46,.4)}
@@ -747,6 +828,251 @@ function earnText(e){
   return 'unbekannt (Quelle nicht erreichbar)';
 }
 
+// ─── Momentum-Dashboard (seit 2026-09-06) ──────────────────────────────────
+// Beantwortet die Leitfrage der Seite ("wie aussichtsreich ist der weitere
+// Trendverlauf?") direkt unter dem Hero, ohne dass ein Block aufgeklappt
+// werden muss - in genau den drei Dimensionen, nach denen dieses System
+// sucht: fuehrendes Momentum, institutioneller Zufluss ("wo fliesst das
+// grosse Geld rein"), fundamentale Substanz ("keine Eintagsfliege").
+//
+// Nutzt NUR Felder, die signals.json ohnehin liefert - mehrere davon
+// (rs_rating, institutional, institutional_trend, basis_nr, extended_pct,
+// trend_template) standen bis dahin zwar im Datensatz, wurden auf dieser
+// Seite aber nirgends angezeigt, obwohl sie die Leitfrage am direktesten
+// beantworten. Kein zusaetzlicher Datenabruf, kein KI-Aufruf.
+const dzahl = (v, n) => (v==null || isNaN(v)) ? '—' : Number(v).toFixed(n==null?1:n).replace('.', ',');
+// Zahl aus einem Faktor-Detailtext ziehen ("U/D-Vol 1.27 (50T…)" -> 1.27).
+// Die Detailtexte sind die einzige Stelle, an der diese Rohwerte stehen -
+// faktoren.*.wert ist bereits auf 0-1 normiert und damit nicht mehr lesbar.
+function detailZahl(detail, muster){
+  const m = (detail||'').match(muster);
+  return m ? parseFloat(m[1]) : null;
+}
+function dashUrteil(ampel){
+  return {gruen:'stark', gelb:'gemischt', rot:'schwach', na:'keine Daten'}[ampel] || 'keine Daten';
+}
+function dashBar(pct, ampel){
+  const p = Math.max(0, Math.min(100, pct==null?0:pct));
+  const farbe = {gruen:'var(--ok)', gelb:'var(--warn)', rot:'var(--bad)', na:'var(--muted2)'}[ampel] || 'var(--muted2)';
+  return `<div class="dash-bar"><i style="width:${p}%;background:${farbe}"></i></div>`;
+}
+function dzeile(k, v, ampel){
+  return `<div class="dz"><span class="dz-k">${k}</span><span class="dz-v${ampel?' w-'+ampel:''}">${v}</span></div>`;
+}
+function dashSaeule(icon, titel, frage, ampel, zahlHtml, mitteHtml, zeilen){
+  return `<section class="dash-saeule s-${ampel}">
+    <div class="ds-kopf">
+      <div class="ds-titel">${icon} ${titel}<small>${frage}</small></div>
+      <span class="ds-urteil u-${ampel}">${dashUrteil(ampel)}</span>
+    </div>
+    ${zahlHtml}
+    ${mitteHtml}
+    <div class="ds-zeilen">${zeilen.join('')}</div>
+  </section>`;
+}
+function dashZahl(wert, einheit, ampel){
+  return `<div class="ds-zahl"><b class="z-${ampel}">${wert}</b><span>${einheit}</span></div>`;
+}
+
+// Saeule 1: Momentum. Leitzahl ist das RS-Rating (1-99, IBD-Logik) - die
+// zentrale O'Neil/Minervini-Momentumkennzahl, die im Datensatz steht und
+// bisher nirgends angezeigt wurde.
+function saeuleMomentum(t){
+  const rs = t.rs_rating;
+  const ampel = rs==null ? (t.faktoren && t.faktoren.relative_staerke ? t.faktoren.relative_staerke.ampel : 'na')
+              : rs>=90 ? 'gruen' : rs>=70 ? 'gelb' : 'rot';
+  const tt = t.trend_template || {};
+  const ttTxt = (tt.erfuellt!=null && tt.gesamt) ? `${tt.erfuellt} / ${tt.gesamt}` : '—';
+  const ttAmpel = (tt.erfuellt!=null && tt.gesamt) ? (tt.erfuellt>=tt.gesamt-1 ? 'gruen' : tt.erfuellt>=6 ? 'gelb' : 'rot') : null;
+  const untHoch = detailZahl((t.faktoren&&t.faktoren.naehe_52w_hoch||{}).detail, /([\d.,]+)\s*%\s*unter/);
+  const verengung = detailZahl((t.faktoren&&t.faktoren.basis_konsolidierung||{}).detail, /Verengung\s*([\d.,]+)/);
+  const zeilen = [
+    dzeile('Trend-Template', ttTxt, ttAmpel),
+    dzeile('Abstand 52W-Hoch', untHoch!=null ? '−'+dzahl(untHoch)+' %' : '—',
+           untHoch!=null ? (untHoch<=5?'gruen':untHoch<=15?'gelb':'rot') : null),
+    dzeile('Basis-Verengung', verengung!=null ? dzahl(verengung)+'×' : '—',
+           verengung!=null ? (verengung>=1.5?'gruen':verengung>=1?'gelb':'rot') : null),
+    dzeile('Basis-Nummer', t.basis_nr!=null ? t.basis_nr+'. Basis' : '—',
+           t.basis_nr!=null ? (t.basis_nr<=2?'gruen':t.basis_nr<=3?'gelb':'rot') : null),
+  ];
+  return dashSaeule('🚀', 'Momentum', 'Ist der Trend führend?', ampel,
+    dashZahl(rs!=null ? rs : '—', 'RS-Rating<br>von 99', ampel),
+    dashBar(rs, ampel), zeilen);
+}
+
+// Saeule 2: Geldfluss. Leitzahl ist die juengste Quartalsveraenderung des
+// institutionellen Besitzes - die direkteste vorhandene Antwort auf "fliesst
+// grosses Geld zu". Faellt auf den Chaikin Money Flow zurueck, wenn Yahoo
+// fuer diesen Ticker keine 13F-Zahlen liefert (z.B. viele EU-Werte).
+function saeuleGeldfluss(t){
+  const it = t.institutional_trend || {};
+  const reihe = Array.isArray(it.norm_pct) ? it.norm_pct : [];
+  const letzte = reihe.length ? reihe[reihe.length-1] : null;
+  const folge = it.steigend_folge;
+  const ud = detailZahl((t.faktoren&&t.faktoren.smart_money||{}).detail, /U\/D-Vol\s*([\d.,]+)/);
+  const cmf = detailZahl((t.faktoren&&t.faktoren.cmf||{}).detail, /CMF\(21\)\s*([+-]?[\d.,]+)/);
+  const vol = detailZahl((t.faktoren&&t.faktoren.volumen_bestaetigung||{}).detail, /([\d.,]+)x/);
+  const ampel = it.verfuegbar
+    ? (folge>=2 ? 'gruen' : folge>=1 ? 'gelb' : 'rot')
+    : (cmf!=null ? (cmf>0.05?'gruen':cmf>0?'gelb':'rot') : 'na');
+  // Balkenhoehen relativ zum groessten Betrag der Reihe, damit der Verlauf
+  // auch bei kleinen Prozentwerten lesbar bleibt.
+  const maxAbs = reihe.length ? Math.max(...reihe.map(x=>Math.abs(x)), 1) : 1;
+  const verlauf = reihe.length ? `<div class="dash-quartale" title="Veränderung des institutionellen Besitzes je Quartal (SEC 13F, über Yahoo)">
+      ${reihe.map(x=>`<div class="dq"><i class="${x<0?'neg':''}" style="height:${Math.max(2, Math.round(Math.abs(x)/maxAbs*26))}px"></i><em>${x>0?'+':''}${dzahl(x)}</em></div>`).join('')}
+    </div>` : dashBar(cmf!=null ? Math.min(100, Math.max(0,(cmf+0.2)*250)) : 0, ampel);
+  const anteil = (t.institutional||{}).prozent;
+  const zeilen = [
+    dzeile('Steigend in Folge', folge!=null ? folge+' Quartal'+(folge===1?'':'e') : '—',
+           folge!=null ? (folge>=2?'gruen':folge>=1?'gelb':'rot') : null),
+    // Minervini-Zielband 30-70 %: darunter zu wenig institutionelle Basis,
+    // darueber wenig Luft fuer weitere Zukaeufe.
+    dzeile('Institutioneller Anteil', anteil!=null ? dzahl(anteil)+' %' : '—',
+           anteil!=null ? ((anteil>=30 && anteil<=70) ? 'gruen' : 'gelb') : null),
+    dzeile('Up/Down-Volumen', ud!=null ? dzahl(ud,2) : '—',
+           ud!=null ? (ud>=1.2?'gruen':ud>=1?'gelb':'rot') : null),
+    dzeile('Chaikin Money Flow', cmf!=null ? (cmf>0?'+':'')+dzahl(cmf,2) : '—',
+           cmf!=null ? (cmf>0.05?'gruen':cmf>0?'gelb':'rot') : null),
+    dzeile('Volumen 5T/50T', vol!=null ? dzahl(vol)+'×' : '—',
+           vol!=null ? (vol>=1.4?'gruen':vol>=1?'gelb':'rot') : null),
+  ];
+  return dashSaeule('🏦', 'Geldfluss', 'Fließt großes Geld zu?', ampel,
+    dashZahl(letzte!=null ? (letzte>0?'+':'')+dzahl(letzte) : (cmf!=null ? (cmf>0?'+':'')+dzahl(cmf,2) : '—'),
+             letzte!=null ? '% institutionell<br>letztes Quartal' : 'Chaikin Money Flow<br>(21 Tage)', ampel),
+    verlauf, zeilen);
+}
+
+// Saeule 3: Substanz. Leitzahl ist Code 33 (Minervini/TraderFox: EPS- und
+// Umsatzwachstum plus Margenausweitung) - der vorhandene Beleg dafuer, dass
+// hinter dem Kursanstieg echtes Geschaeft steht und nicht nur Momentum.
+function saeuleSubstanz(t){
+  const c = t.code33 || {};
+  const n = c.verfuegbar ? c.anzahl_erfuellt : null;
+  const f = (t.faktoren && t.faktoren.fundamental) || {};
+  const ampel = n!=null ? (n===3?'gruen':n>=1?'gelb':'rot') : (f.ampel || 'na');
+  const zeilen = [
+    dzeile('EPS ggü. Vorjahr', c.eps_yoy_pct!=null ? (c.eps_yoy_pct>0?'+':'')+dzahl(c.eps_yoy_pct)+' %' : '—',
+           c.eps_erfuellt ? 'gruen' : (c.eps_yoy_pct!=null?'gelb':null)),
+    dzeile('Umsatz ggü. Vorjahr', c.umsatz_yoy_pct!=null ? (c.umsatz_yoy_pct>0?'+':'')+dzahl(c.umsatz_yoy_pct)+' %' : '—',
+           c.umsatz_erfuellt ? 'gruen' : (c.umsatz_yoy_pct!=null?'gelb':null)),
+    dzeile('Nettomarge', c.marge_aktuell_pct!=null
+             ? dzahl(c.marge_aktuell_pct)+' %'+(c.marge_delta_pp!=null?` (${c.marge_delta_pp>0?'+':''}${dzahl(c.marge_delta_pp)} pp)`:'')
+             : '—',
+           c.marge_erfuellt ? 'gruen' : (c.marge_aktuell_pct!=null?'gelb':null)),
+    dzeile('Quartal', c.quartal ? esc(c.quartal) : (f.detail ? esc(String(f.detail).slice(0,28)) : '—'), null),
+  ];
+  return dashSaeule('💵', 'Substanz', 'Keine Eintagsfliege?', ampel,
+    dashZahl(n!=null ? n+' / 3' : '—', 'Code 33<br>Kriterien', ampel),
+    dashBar(n!=null ? n/3*100 : 0, ampel), zeilen);
+}
+
+// Verdikt-Satz + Risiko-Chips: fasst die drei Saeulen zu einer Aussage
+// zusammen und nennt im selben Atemzug, was dagegen spricht (spaete Basis,
+// weit ueber SMA50) - genau die Punkte, die ein hoher Score sonst uebertoent.
+function dashVerdikt(t, aMom, aGeld, aSub, regime){
+  const gruen = [aMom,aGeld,aSub].filter(a=>a==='gruen').length;
+  const rot = [aMom,aGeld,aSub].filter(a=>a==='rot').length;
+  const spaet = (t.basis_nr!=null && t.basis_nr>=3) || (t.extended_pct!=null && t.extended_pct>10);
+  const gesamt = rot>=2 ? 'rot' : gruen===3 ? (spaet?'gelb':'gruen') : gruen>=2 ? 'gelb' : rot>=1 ? 'rot' : 'gelb';
+  const namen = {0:'Momentum',1:'Geldfluss',2:'Substanz'};
+  const schwach = [aMom,aGeld,aSub].map((a,i)=>a==='rot'||a==='na' ? namen[i] : null).filter(Boolean);
+  let satz;
+  if(gruen===3) satz = `Alle drei Kernkriterien erfüllt — <span class="t-ok">Momentum führend, Geld fließt zu, Substanz belegt</span>`;
+  else if(gruen===2) satz = `Zwei von drei Kernkriterien erfüllt — <span class="t-warn">${schwach.length?schwach.join(' und ')+' schwächer':'ein Kriterium schwächer'}</span>`;
+  else if(gruen===1) satz = `Nur ein Kernkriterium klar erfüllt — <span class="t-warn">${schwach.length?schwach.join(' und ')+' tragen nicht':'die übrigen tragen nicht'}</span>`;
+  else satz = `<span class="t-bad">Kein Kernkriterium klar erfüllt</span> — Momentum, Geldfluss und Substanz tragen dieses Setup derzeit nicht`;
+  if(spaet){
+    const teile = [];
+    if(t.basis_nr!=null && t.basis_nr>=3) teile.push(`${t.basis_nr}. Basis`);
+    if(t.extended_pct!=null && t.extended_pct>10) teile.push(`${dzahl(t.extended_pct)} % über der SMA50`);
+    satz += `, aber <span class="t-warn">spät im Zyklus</span>: ${teile.join(' und ')}.`;
+  } else satz += '.';
+
+  const chips = [];
+  const rAmpel = regime && t.markt && regime[t.markt] && regime[t.markt].ampel;
+  if(rAmpel) chips.push(`<span class="dash-chip c-${rAmpel}">Markt-Regime ${({gruen:'grün',gelb:'gelb',rot:'rot'})[rAmpel]||rAmpel}</span>`);
+  const e = t.earnings || {};
+  if(e.status==='termin' && e.tage!=null) chips.push(`<span class="dash-chip c-rot">Earnings in ${e.tage} Tagen</span>`);
+  else if(e.status==='kein_termin') chips.push('<span class="dash-chip c-gruen">Keine Earnings-Sperre</span>');
+  chips.push(t.klimax_warnung
+    ? '<span class="dash-chip c-rot">50/80-Klimax-Warnung</span>'
+    : '<span class="dash-chip c-gruen">Kein 50/80-Risiko</span>');
+  if(t.basis_nr!=null) chips.push(`<span class="dash-chip ${t.basis_nr>=3?'c-gelb':'c-gruen'}">${t.basis_nr}. Basis</span>`);
+  if(t.extended_pct!=null) chips.push(`<span class="dash-chip ${t.extended_pct>10?'c-gelb':'c-gruen'}">${dzahl(t.extended_pct)} % über SMA50</span>`);
+  return {gesamt, html: `<div class="dash-verdikt v-${gesamt}">
+    <div class="dash-frage">Wie aussichtsreich ist ${esc(t.ticker)} für den weiteren Trendverlauf?</div>
+    <div class="dash-satz">${satz}</div>
+    <div class="dash-chips">${chips.join('')}</div>
+  </div>` };
+}
+
+// Belegzeile: was der unverzerrte Forward-Test ueber genau diese Auswahl
+// sagt. Bewusst auch dann sichtbar, wenn er dem Score widerspricht - ein
+// Score ohne Trefferquote daneben liest sich sonst wie ein Versprechen.
+// Quellen: data/score_backtest.json (Tier-Kohorten gegen Index) und
+// data/score_faktoren_backtest.json (Vorhersagewert je Einzelfaktor).
+function dashBeleg(t, bt, fbt, gewichte){
+  if(!bt && !fbt) return '';
+  const tier = t.tier;
+  const k = bt && bt.ergebnis && bt.ergebnis[tier] && bt.ergebnis[tier]['4W'];
+  const kacheln = [];
+  let kernsatz = '';
+  if(k && k.n){
+    const schlechter = k.edge_idx_avg!=null && k.edge_idx_avg < 0;
+    kacheln.push(`<div class="dev ${schlechter?'e-minus':'e-plus'}">
+      <div class="dev-k">Tier ${esc(tier)} · 4 Wochen</div>
+      <div class="dev-v">${dzahl(k.win)} %${k.edge_idx_avg!=null?` · ${k.edge_idx_avg>0?'+':'−'}${dzahl(Math.abs(k.edge_idx_avg))} pp`:''}</div>
+      <div class="dev-s">n = ${k.n} gegen Index</div>
+    </div>`);
+    kernsatz = `Der Score stuft ${esc(t.ticker)} als <b>Tier ${esc(tier)}</b> ein. Über ${k.n} gereifte Tier-${esc(tier)}-Nennungen liegt die Trefferquote nach 4 Wochen bei <b>${dzahl(k.win)} %</b>` +
+      (k.edge_idx_avg!=null ? ` und damit <b>${dzahl(Math.abs(k.edge_idx_avg))} Prozentpunkte ${k.edge_idx_avg<0?'hinter':'vor'}</b> dem Markt-Index im selben Zeitraum.` : '.');
+  }
+  // Faktoren nach gemessenem Vorhersagewert (edge_win) sortieren: zeigt, ob
+  // die Score-Gewichte noch zu dem passen, was tatsaechlich vorhersagt.
+  let faktorSatz = '';
+  if(fbt && fbt.ergebnis){
+    const liste = Object.entries(fbt.ergebnis)
+      .map(([name,v])=>({name, edge:(v['4W']||{}).edge_win, gewicht:(gewichte||{})[name]}))
+      .filter(x=>x.edge!=null);
+    liste.sort((a,b)=>b.edge-a.edge);
+    const label = n => (FAKTOR_INFO[n]||{}).label || n;
+    const best = liste[0];
+    const schwer = liste.slice().sort((a,b)=>(b.gewicht||0)-(a.gewicht||0))[0];
+    if(best) kacheln.push(`<div class="dev e-plus">
+      <div class="dev-k">Bester Einzelfaktor</div>
+      <div class="dev-v">${esc(label(best.name))} · ${best.edge>0?'+':''}${dzahl(best.edge)} pp</div>
+      <div class="dev-s">Gewicht im Score: ${best.gewicht!=null?best.gewicht:'—'}</div>
+    </div>`);
+    if(schwer) kacheln.push(`<div class="dev ${schwer.edge<0?'e-minus':'e-plus'}">
+      <div class="dev-k">Höchstes Gewicht</div>
+      <div class="dev-v">${esc(label(schwer.name))} · ${schwer.edge>0?'+':''}${dzahl(schwer.edge)} pp</div>
+      <div class="dev-s">Gewicht im Score: ${schwer.gewicht!=null?schwer.gewicht:'—'}</div>
+    </div>`);
+    if(best && schwer && best.gewicht===0 && schwer.edge<0){
+      faktorSatz = `Auffällig: <b>${esc(label(best.name))}</b> hat aktuell den höchsten gemessenen Vorhersagewert (${best.edge>0?'+':''}${dzahl(best.edge)} pp) und zählt im Score mit <b>Gewicht 0</b>, während der schwerste Faktor <b>${esc(label(schwer.name))}</b> (Gewicht ${schwer.gewicht}) bei ${dzahl(schwer.edge)} pp liegt. Kurze Messreihe${fbt.logbuch_tage?` (${fbt.logbuch_tage} Tage Logbuch, nur 4-Wochen-Horizont gereift)`:''} — eine Indikation, kein Beweis.`;
+    }
+  }
+  if(!kacheln.length) return '';
+  const warnt = k && k.edge_idx_avg!=null && k.edge_idx_avg < 0;
+  return `<div class="dash-beleg">
+    <div class="db-kopf">📊 Wie belastbar ist dieses Urteil?
+      <span class="db-pill ${warnt?'p-warn':'p-ok'}">${warnt?'Forward-Test warnt':'Forward-Test gegengeprüft'}</span></div>
+    ${kernsatz?`<p>${kernsatz}</p>`:''}
+    <div class="dash-evidenz">${kacheln.join('')}</div>
+    ${faktorSatz?`<p>${faktorSatz}</p>`:''}
+  </div>`;
+}
+
+function dashboardBlock(t, regime){
+  const aMom = saeuleMomentum(t), aGeld = saeuleGeldfluss(t), aSub = saeuleSubstanz(t);
+  const ampelVon = html => (html.match(/dash-saeule s-(\w+)/)||[])[1] || 'na';
+  const v = dashVerdikt(t, ampelVon(aMom), ampelVon(aGeld), ampelVon(aSub), regime);
+  const gewichte = (SIGNALS_CACHE && SIGNALS_CACHE.gewichte) || {};
+  return v.html
+    + `<div class="dash-saeulen">${aMom}${aGeld}${aSub}</div>`
+    + dashBeleg(t, SCORE_BT_CACHE, FAKTOR_BT_CACHE, gewichte);
+}
+
 function render(sig, piv, pa, regime){
   const t = sig, p = piv, m = (pa && pa.muster) || null;
   CUR_SIG = sig; CUR_PIV = piv; CUR_PA = pa;
@@ -871,6 +1197,8 @@ function render(sig, piv, pa, regime){
     </div>
 
     ${t.klimax_warnung ? `<div class="klimax-warn">⚠️ <b>Minervini 50/80-Klimax-Warnung:</b> ${(t.faktoren.minervini_5080||{}).detail||''} Späte Basis (≥3) + frischer Gap-down auf hohem Volumen ist das klassische Topmuster — nicht als „billig" nachkaufen.</div>` : ''}
+
+    ${dashboardBlock(t, regime)}
 
     <h2>🔎 Sofort-Überblick <span class="sub">${erfuelltCount} von ${qsAmpeln.length} Kriterien grün erfüllt</span></h2>
     <div class="quickscan">${qsItems.join('')}</div>
@@ -1657,13 +1985,21 @@ async function ladeVerify(ticker, yahooSymbol, claimedWert){
 // haelt die URL (und damit Lesezeichen/Teilen-Link sowie den Zurueck-Button)
 // mit dem sichtbaren Ticker synchron.
 let SIGNALS_CACHE = null, PIVOT_CACHE = null, PA_CACHE = null, BASISDATEN_PROMISE = null;
+// Forward-Test-Kohorten fuer die Belegzeile des Dashboards (seit 2026-09-06).
+// Beide Dateien sind winzig (zusammen ~9 KB gegen 4,5 MB signals.json) und
+// stehen laengst in der Deploy-Whitelist - sie kosten praktisch nichts und
+// liefern das einzige Gegengewicht zum Score. ladeJson() gibt bei Fehler
+// null zurueck, das Dashboard laesst die Belegzeile dann einfach weg.
+let SCORE_BT_CACHE = null, FAKTOR_BT_CACHE = null;
 function ladeBasisdaten(){
   if(!BASISDATEN_PROMISE){
     BASISDATEN_PROMISE = Promise.all([
       ladeJson('data/signals.json'),
       ladeJson('data/pivot.json'),
       ladeJson('../Price-Action-Hub/data/priceaction.json'),
-    ]).then(([s,p,pa])=>{ SIGNALS_CACHE=s; PIVOT_CACHE=p; PA_CACHE=pa; });
+      ladeJson('data/score_backtest.json'),
+      ladeJson('data/score_faktoren_backtest.json'),
+    ]).then(([s,p,pa,sb,fb])=>{ SIGNALS_CACHE=s; PIVOT_CACHE=p; PA_CACHE=pa; SCORE_BT_CACHE=sb; FAKTOR_BT_CACHE=fb; });
   }
   return BASISDATEN_PROMISE;
 }
