@@ -343,7 +343,11 @@ const FAKTOR_INFO = {
   minervini_5080:      {icon:'⚠️', label:'50/80-Klimax-Check', explain:
     'Minervini 50/80-Regel: nach einem scharfen Kurs-Gap auf hohem Volumen (typische Gewinnwarnung) besteht laut Minervini für rund 8 Monate erhöhtes Risiko eines Rückfalls unter das Gap-Tief.'},
   fundamental:         {icon:'💵', label:'Fundamental (EPS/Umsatz)', explain:
-    'CANSLIM/SEPA-Bestätigung: Gewinn- und Umsatzwachstum gegenüber Vorjahr. Minervini bevorzugt Aktien mit beschleunigtem Gewinnwachstum, nicht nur charttechnische Stärke.'},
+    'CANSLIM/SEPA-Bestätigung: Gewinn- und Umsatzwachstum gegenüber Vorjahr. Minervini bevorzugt Aktien mit beschleunigtem Gewinnwachstum, nicht nur charttechnische Stärke. Seit 2026-09-06 mit Gewicht 0 im Score (in Code 33 aufgegangen, das dieselben Zahlen plus die Margenausweitung prüft) - bleibt als Zweitmeinung sichtbar, weil er bei fehlender Quartalsreihe auf den Finviz-SEPA-Screener zurückfallen kann.'},
+  institutional_trend: {icon:'🏦', label:'Institutioneller Zufluss (13F)', explain:
+    'Veränderung des institutionellen Besitzes über mehrere Quartale aus echten SEC-13F-Meldungen. Minervini/O\'Neil: Kursanstiege ohne institutionelle Käufer tragen selten weit - hier steht, ob große Adressen tatsächlich aufstocken, statt es nur über Kursfluss-Kennzahlen (CMF, Up/Down-Volumen) zu schätzen. Seit 2026-09-06 Score-Faktor. Nicht-US-Werte sind in 13F systematisch nicht enthalten und werden neutral gewertet, nie mit Malus.'},
+  code33:              {icon:'🥇', label:'Code 33 (EPS/Umsatz/Marge)', explain:
+    'Minervini/TraderFox: EPS-Wachstum über 40 %, Umsatzwachstum über 7 % und um mehr als 2 Prozentpunkte verbesserte Nettomarge - jeweils Quartal gegen Vorjahresquartal. Strenger als der Fundamental-Faktor, weil die Marge mitgeprüft wird: Wachstum muss beim Gewinn ankommen, nicht nur beim Umsatz. Seit 2026-09-06 Score-Faktor. Ohne verfügbare Quartalsreihe neutral gewertet, kein Malus.'},
 };
 const VERIFY_EXPLAIN = 'Unabhängige Gegenprüfung des Stage-2-Trend-Templates: berechnet die 8 Kriterien frisch aus eigenen Yahoo-Kursdaten (Cloudflare Worker, sieht die Pipeline-Begründung nicht) und vergleicht sie mit dem gespeicherten Wert. Rein deterministisch, kein KI-Aufruf - Prinzip "wer etwas berechnet hat, prüft es nicht selbst nach".';
 const BUSINESSQUANT_EXPLAIN = 'Institutioneller Besitz (SEC Form 13F), Insider-Transaktionen (SEC Form 4) und Analysten-EPS-Schätzungen von Business Quant - manuell abrufbar, nur für US-börsennotierte Werte. Ergänzt die automatische institutionelle Trendkennzahl der Pipeline um echte Insider-Trades und Analysten-Konsens. Free-Plan (30 Anfragen/Tag insgesamt) - deshalb bewusst nicht automatisch für jedes Setup geladen.';
@@ -390,9 +394,14 @@ const KENNZ_EXPLAIN = {
   'Ziel (informativ)': 'Technische Measured-Move-Projektion: Basis-Höhe ab Pivot nochmal aufgesetzt. Rein informativ - Minervini tradet ohne festes Kursziel, sondern trailt den Stop und verkauft in Stärke. Keine Kauf-/Verkaufsregel.',
   'Chance/Risiko (informativ)': 'Verhältnis von (Ziel − Kurs) zu (Kurs − Stop), bezogen auf das rein informative Kursziel oben - keine Score- oder Kaufauswirkung.',
 };
+// institutional_trend steht bei den technischen/Fluss-Faktoren, weil es
+// dieselbe Frage beantwortet wie smart_money/cmf (fliesst Geld zu?), nur aus
+// echten 13F-Meldungen statt aus dem Kursverlauf. code33 gehoert zu den
+// fundamentalen Faktoren, wo es seit 2026-09-06 den fundamental-Faktor als
+// gewichteten Beleg abgeloest hat.
 const TECH_KEYS = ['stage2_trend','relative_staerke','naehe_52w_hoch','basis_konsolidierung',
-                    'volumen_bestaetigung','smart_money','cmf','sektor_staerke','quellen_konsens','minervini_5080'];
-const FUND_KEYS = ['fundamental'];
+                    'volumen_bestaetigung','institutional_trend','smart_money','cmf','sektor_staerke','quellen_konsens','minervini_5080'];
+const FUND_KEYS = ['code33','fundamental'];
 const flagge = m => m === 'USA' ? '🇺🇸' : m === 'Europa' ? '🇪🇺' : '🏳️';
 const dot = ampel => `<span class="dot d-${ampel||'na'}"></span>`;
 // Karten nach Erfüllungsgrad sortieren (seit 2026-08-16): grün zuerst, dann

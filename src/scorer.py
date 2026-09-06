@@ -546,10 +546,27 @@ def yahoo_code33(symbol, op, crumb):
     except Exception:
         return None
 
-def f_code33(ergebnisse, yop, ycrumb, schwellen):
+def f_code33(ergebnisse, yop, ycrumb, schwellen, gew, gew_summe):
     """Post-Pass: fuellt e['code33'] fuer Treffer ab Beobachten-Schwelle,
     gecacht/ratenlimitiert wie f_fundamental() (7-Tage-TTL, 300 Abrufe/Lauf -
-    Rest folgt beim naechsten Lauf). Kein Score-Einfluss, siehe Modulkommentar."""
+    Rest folgt beim naechsten Lauf).
+
+    Seit 2026-09-06 zusaetzlich SCORE-FAKTOR (vorher reines Messfeld). Grund:
+    der bisherige "fundamental"-Faktor misst nur EPS-/Umsatzwachstum des
+    juengsten Quartals, Code 33 zusaetzlich die Margenausweitung - also die
+    Frage, ob das Wachstum wirklich beim Gewinn ankommt und nicht nur beim
+    Umsatz. Eine Simulation gegen den damaligen Bestand (496 Treffer) zeigte:
+    Code 33 und institutioneller Zufluss als eigene Faktoren heben den Anteil
+    der Top-20-Werte, die BEIDE Systemziele erfuellen, von 10 % auf 35 % -
+    waehrend ein blosses Hochgewichten der Fluss-Proxys (CMF/Up-Down-Volumen)
+    ihn auf 5 % SENKT (die messen kurzfristigen Kursfluss, nicht echten
+    institutionellen Zufluss). Backtest-Pflicht bleibt: die neue Gewichtung
+    muss sich im Forward-Test (score_faktoren_backtest.py) erst bewaehren.
+
+    Wert = erfuellte Kriterien / 3. Ohne Daten (Yahoo liefert fuer viele
+    Nicht-US-Werte keine Quartalsreihe) bewusst neutral 0.5 statt eines
+    Malus - sonst kippt der Score systematisch gegen Europa, wo die
+    Datenluecke keine Aussage ueber das Unternehmen ist."""
     cache = {}
     if os.path.exists(pfade.CODE33_CACHE):
         try:
@@ -582,8 +599,31 @@ def f_code33(ergebnisse, yop, ycrumb, schwellen):
                 "verfuegbar", "ampel", "eps_erfuellt", "umsatz_erfuellt", "marge_erfuellt",
                 "anzahl_erfuellt", "eps_yoy_pct", "umsatz_yoy_pct", "marge_delta_pp",
                 "marge_aktuell_pct", "quartal", "vorjahresquartal") if k in c}
+        # Score-Faktor (seit 2026-09-06, siehe Docstring). Delta gegen den
+        # 0.5-Platzhalter aus dem Haupt-Loop, exakt wie f_fundamental().
+        c33 = e.get("code33") or {}
+        if c33.get("verfuegbar"):
+            n_erf = c33.get("anzahl_erfuellt") or 0
+            wert = n_erf / 3
+            detail = (f"{n_erf}/3 Kriterien: EPS {_fmt_pct((c33.get('eps_yoy_pct') or 0)/100)}, "
+                      f"Umsatz {_fmt_pct((c33.get('umsatz_yoy_pct') or 0)/100)}, "
+                      f"Marge {c33.get('marge_delta_pp')} Pp. (Quartal {c33.get('quartal')})")
+        else:
+            wert = 0.5
+            detail = "keine Quartalsreihe verfügbar (neutral gewertet, kein Malus)"
+        e["faktoren"]["code33"] = {
+            "wert": round(wert, 2), "ampel": ampel(wert),
+            "gewicht": gew.get("code33", 0), "detail": detail}
+        delta = gew.get("code33", 0) * (wert - 0.5) / gew_summe * 100
+        score = e["score"] + delta
+        e["score"] = round(score, 1)
+        e["tier"] = ("A" if score >= schwellen["kauf_kandidat"]
+                     else "B" if score >= schwellen["beobachten"] else "C")
+        e["einstufung"] = ("Kauf-Kandidat" if score >= schwellen["kauf_kandidat"]
+                           else "Beobachten" if score >= schwellen["beobachten"] else "—")
     pfade.schreibe_json_atomar(pfade.CODE33_CACHE, cache, ensure_ascii=False)
-    print(f"Code 33: {verfuegbar} verfuegbar, {gruen} davon 3/3 grün, {abrufe} Abrufe")
+    print(f"Code 33: {verfuegbar} verfuegbar, {gruen} davon 3/3 grün, {abrufe} Abrufe "
+          f"(Gewicht {gew.get('code33', 0)})")
 
 # --- Institutioneller Besitzanteil (Minervini/SEPA-Kriterium) ---------------
 # Minervini nennt einen optimalen Bereich von 30-70% institutionellem Besitz
@@ -716,19 +756,32 @@ def f_institutional(ergebnisse, yop, ycrumb, schwellen):
 # und der Grund, warum ROHE 13F-Summen als Trendsignal unbrauchbar sind).
 TREND_FOLGE_MIN = 2   # Minervini: "ueber aufeinanderfolgende Quartale" -> >= 2
 
-def f_institutional_trend(ergebnisse):
+def f_institutional_trend(ergebnisse, gew, gew_summe, schwellen):
     """Post-Pass: fuellt e['institutional_trend'] aus der 13F-Quartalstabelle.
 
-    Reines Messfeld ohne Score-Einfluss, wie f_institutional/f_code33 -
-    Backtest-Pflicht. Fehlt die Tabelle (noch nie gebaut) oder ein Ticker
-    (nicht-US-Werte sind in 13F systematisch nicht enthalten), steht
-    ausdruecklich "nicht verfuegbar" statt einer 0 oder eines fehlenden
-    Feldes."""
+    Seit 2026-09-06 zusaetzlich SCORE-FAKTOR (vorher reines Messfeld). Das ist
+    die direkteste vorhandene Messung des Systemziels "wo fliesst das grosse
+    Geld rein": echte 13F-Meldungen ueber mehrere Quartale statt der bisher
+    einzigen Naeherung ueber Kursfluss-Proxys (CMF, Up/Down-Volumen), die nur
+    21 bzw. 50 Handelstage abdecken. Begruendung und Simulationsergebnis siehe
+    Docstring von f_code33().
+
+    Wertskala bewusst grob, weil die Datenlage grob ist (ein Wert je Quartal):
+      >= TREND_FOLGE_MIN Quartale in Folge steigend -> 1.0 (Akkumulation)
+      genau 1 Quartal steigend                      -> 0.6 (Ansatz)
+      kein steigendes Quartal                       -> 0.15 (Abgabe)
+      keine 13F-Daten (alle Nicht-US-Werte)         -> 0.5 (neutral)
+    Die 0.5 fuer fehlende Daten ist Absicht: 13F gilt nur fuer US-meldepflichtige
+    Institutionelle, ein fehlender Eintrag sagt nichts ueber das Unternehmen -
+    ein Malus wuerde den Score systematisch gegen Europa kippen."""
     tab = institutional_13f.lade()
     werte = (tab or {}).get("werte") or {}
     if not werte:
         for e in ergebnisse:
             e["institutional_trend"] = {"verfuegbar": False, "hinweis": "13F-Tabelle fehlt"}
+            e["faktoren"]["institutional_trend"] = {
+                "wert": 0.5, "ampel": ampel(0.5), "gewicht": gew.get("institutional_trend", 0),
+                "detail": "13F-Tabelle fehlt (neutral gewertet, kein Malus)"}
         print("Institutioneller Trend: keine 13F-Tabelle -> uebersprungen "
               "(src/institutional_13f.py --bauen)")
         return
@@ -743,22 +796,44 @@ def f_institutional_trend(ergebnisse):
             e["institutional_trend"] = {
                 "verfuegbar": False,
                 "hinweis": "nicht in 13F (nur US-meldepflichtige Institutionelle)"}
-            continue
-        treffer += 1
-        folge = v.get("steigend_folge") or 0
-        erfuellt = folge >= TREND_FOLGE_MIN
-        if erfuellt:
-            steigend += 1
-        e["institutional_trend"] = {
-            "verfuegbar": True,
-            "norm_pct": v.get("norm_pct"),
-            "steigend_folge": folge,
-            "erfuellt": erfuellt,
-            "uebergaenge": tab.get("uebergaenge"),
-            "stand": tab.get("erstellt"),
-        }
+            wert, detail = 0.5, "nicht in 13F gemeldet (neutral gewertet, kein Malus)"
+        else:
+            treffer += 1
+            folge = v.get("steigend_folge") or 0
+            erfuellt = folge >= TREND_FOLGE_MIN
+            if erfuellt:
+                steigend += 1
+            e["institutional_trend"] = {
+                "verfuegbar": True,
+                "norm_pct": v.get("norm_pct"),
+                "steigend_folge": folge,
+                "erfuellt": erfuellt,
+                "uebergaenge": tab.get("uebergaenge"),
+                "stand": tab.get("erstellt"),
+            }
+            wert = 1.0 if erfuellt else (0.6 if folge == 1 else 0.15)
+            # norm_pct kann einzelne None-Quartale enthalten (Ticker, der in
+            # einem Quartal in keiner 13F-Meldung auftaucht) - die ueberspringen
+            # statt am Formatstring zu scheitern.
+            reihe = [x for x in (v.get("norm_pct") or []) if x is not None]
+            verlauf = ", ".join(f"{x:+.1f}%" for x in reihe) if reihe else "?"
+            detail = (f"{folge} Quartal(e) in Folge steigend (Schwelle {TREND_FOLGE_MIN}) · "
+                      f"Verlauf {verlauf}")
+        # Score-Faktor seit 2026-09-06 (siehe Docstring): Delta gegen den
+        # 0.5-Platzhalter aus dem Haupt-Loop, wie bei f_fundamental/f_code33.
+        e["faktoren"]["institutional_trend"] = {
+            "wert": round(wert, 2), "ampel": ampel(wert),
+            "gewicht": gew.get("institutional_trend", 0), "detail": detail}
+        delta = gew.get("institutional_trend", 0) * (wert - 0.5) / gew_summe * 100
+        score = e["score"] + delta
+        e["score"] = round(score, 1)
+        e["tier"] = ("A" if score >= schwellen["kauf_kandidat"]
+                     else "B" if score >= schwellen["beobachten"] else "C")
+        e["einstufung"] = ("Kauf-Kandidat" if score >= schwellen["kauf_kandidat"]
+                           else "Beobachten" if score >= schwellen["beobachten"] else "—")
     print(f"Institutioneller Trend (13F): {treffer} mit Daten, "
-          f"{steigend} davon >= {TREND_FOLGE_MIN} Quartale in Folge steigend")
+          f"{steigend} davon >= {TREND_FOLGE_MIN} Quartale in Folge steigend "
+          f"(Gewicht {gew.get('institutional_trend', 0)})")
 
 def lade_depot_namen(datei):
     """Namen offener Positionen (status 'Offen'). Lokal aus mts_data.json;
@@ -2154,12 +2229,21 @@ def score_alle(limit=None):
         # nach dem Haupt-Loop nachgetragen (f_sektor_staerke/f_fundamental).
         f["sektor_staerke"] = 0.5
         f["fundamental"] = 0.5
+        # Seit 2026-09-06 ebenfalls Score-Faktoren statt reiner Messfelder
+        # (siehe f_code33/f_institutional_trend): sie bilden die beiden
+        # Systemziele ab, die der Score bis dahin kaum gewichtet hat -
+        # institutioneller Zufluss ("wo fliesst das grosse Geld rein") und
+        # fundamentale Substanz ueber drei Kriterien statt nur EPS/Umsatz.
+        f["institutional_trend"] = 0.5
+        f["code33"] = 0.5
         details = {"stage2_trend": faktoren_detail_s2, "relative_staerke": d_rs,
                    "naehe_52w_hoch": d_nh, "basis_konsolidierung": d_ba,
                    "volumen_bestaetigung": d_vo, "smart_money": d_sm,
                    "cmf": d_cmf, "quellen_konsens": d_ko, "minervini_5080": d_50,
                    "sektor_staerke": "wird nach Sektor-Zuordnung berechnet",
-                   "fundamental": "wird nach der Bewertung geholt"}
+                   "fundamental": "wird nach der Bewertung geholt",
+                   "institutional_trend": "wird aus der 13F-Quartalstabelle nachgetragen",
+                   "code33": "wird nach der Bewertung geholt"}
 
         score = sum(gew[k] * f[k] for k in gew) / gew_summe * 100
         for k in f:
@@ -2266,8 +2350,8 @@ def score_alle(limit=None):
     f_rs_marktweit(ergebnisse)
     f_sektor_staerke(ergebnisse, etf_rang, gew, gew_summe, schwellen)
     f_fundamental(ergebnisse, gew, gew_summe, schwellen, yop, ycrumb)
-    f_code33(ergebnisse, yop, ycrumb, schwellen)
-    f_institutional_trend(ergebnisse)
+    f_code33(ergebnisse, yop, ycrumb, schwellen, gew, gew_summe)
+    f_institutional_trend(ergebnisse, gew, gew_summe, schwellen)
     f_institutional(ergebnisse, yop, ycrumb, schwellen)
     f_marktampel_dynamik(ergebnisse, regime, cfg.get("marktregime", {}), schwellen)
     # BEWUSST ALS LETZTER Post-Pass: f_sektor_staerke/f_fundamental/

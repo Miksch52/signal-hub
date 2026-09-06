@@ -44,6 +44,12 @@ FAKTOR_NAMEN = [
     "stage2_trend", "relative_staerke", "naehe_52w_hoch", "basis_konsolidierung",
     "volumen_bestaetigung", "quellen_konsens", "smart_money", "cmf",
     "sektor_staerke", "minervini_5080", "fundamental",
+    # Seit 2026-09-06 eigene Score-Faktoren (vorher reine Messfelder, siehe
+    # scorer.py::f_code33/f_institutional_trend). Genau deshalb gehoeren sie
+    # hier hinein: die Umgewichtung wurde auf einer Struktur-Simulation
+    # begruendet ("welche Aktien landen oben"), nicht auf realisierten
+    # Kursen - erst diese Kohorte zeigt, ob sie auch traegt.
+    "institutional_trend", "code33",
 ]
 
 
