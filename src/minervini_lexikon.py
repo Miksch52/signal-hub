@@ -33,24 +33,37 @@ Bekannte Restluecke: die Lexikon-JSON selbst (data/minervini-lexikon/) liegt
 in iCloud (DATA), nicht in R2 - ein Cloud-Runner hat sie nicht im frischen
 Checkout und ueberspringt --backfill dann sauber (kein Fehler, aber auch
 kein Fortschritt auf diesem Host). Neue Eintraege entstehen ohnehin nur
-manuell auf einem der beiden Macs (siehe Modul-Docstring oben) - die
-Cloud-Seite wird erst relevant, wenn die Lexikon-Daten wie geplant zusaetzlich
-per Gist synchronisiert werden (Coach-Anbindung, naechste Phase). Bis dahin
-backfillt der Mac mini bei jedem seiner taeglichen Laeufe zuverlaessig nach.
+manuell auf einem der beiden Macs (siehe Modul-Docstring oben), und der Mac
+mini backfillt bei jedem seiner taeglichen Laeufe zuverlaessig nach. Die
+beiden Wege AUS dieser Datei heraus existieren inzwischen beide (Gist fuer
+den Coach, R2 fuer den Pages-Deploy - siehe naechster Absatz); offen bleibt
+nur der Weg HINEIN auf einem Cloud-Runner, den es mangels Datei dort nicht
+gibt und mangels automatischer Erfassung auch nicht braucht.
 
 ANZEIGE-Pfad in die Cloud (seit 2026-09-07): setup-detail.html zeigt den
 neuesten Marktkommentar unter der Minervini-Analyse an und laedt dafuer
 data/minervini-lexikon/minervini_lexikon.json. Damit das auch auf
 mts-hub.pages.dev funktioniert, steht die Datei jetzt in der Deploy-Whitelist
-(cloudflare-pages/deploy.command) und muss NACH JEDER PFLEGE einmal manuell
-nach R2 geschoben werden - der Pipeline-Upload kann das nicht, weil der
-Cloud-Runner die Datei gar nicht hat:
+(cloudflare-pages/deploy.command) und wird AUTOMATISCH nach R2 geschoben:
+run.py haengt sie an den lokalen upload_to_r2.sh-Aufruf direkt nach dem
+--backfill oben an. Der Pipeline-Upload im Cloud-Lauf kann das nicht (der
+Runner hat die Datei gar nicht), der Mac-mini-Lauf dagegen hat sie immer -
+also passiert es dort, ohne einen Extra-Schritt nach jeder Pflege, den man
+verlaesslich vergessen wuerde. Bei Bedarf von Hand:
 
   Signal-Hub/scripts/upload_to_r2.sh minervini-lexikon/minervini_lexikon.json
 
-Wird das vergessen, friert nur die Zitat-Karte in der Cloud auf dem alten
-Stand ein (kein Fehler, keine Auswirkung auf den Regelabgleich darueber).
-Der --backfill-Pfad oben bleibt davon unberuehrt.
+Laeuft der Mac mini laengere Zeit nicht, friert nur die Zitat-Karte in der
+Cloud auf dem letzten hochgeladenen Stand ein (kein Fehler, keine Auswirkung
+auf den Regelabgleich darueber). Der --backfill-Pfad oben ist unberuehrt.
+
+NICHT ZU VERWECHSELN mit dem Coach-Knopf "Lokalen Stand hochladen"
+(minervini-coach-2.html::lexikonUploadLocal): der liest dieselbe Datei, legt
+sie aber in den privaten GIST-Sync, damit der Coach das Lexikon auf jedem
+Geraet zeigen kann. Zwei Ziele, zwei Zwecke - Gist fuer den Coach, R2 fuer
+den Pages-Deploy der Setup-Analyse. Keiner ersetzt den anderen; der Knopf
+bleibt weiterhin der Weg, den Coach-Stand sofort zu aktualisieren, ohne auf
+den naechsten Mac-mini-Lauf zu warten.
 
 Kein Netzabruf (wie ohlc_history.py) - reine Verarbeitung vorhandener Dateien.
 

@@ -177,10 +177,25 @@ def pipeline(c, push=False):
             # scripts/weekly_backtest_upload.sh laedt dieselben zwei Dateien
             # weiterhin hoch (dort nach dem teuren RETRO-Lauf) - doppelt
             # hochladen schadet nicht, upload_to_r2.sh ist idempotent.
+            # minervini-lexikon/ (seit 2026-09-07) faellt inhaltlich aus der
+            # Reihe: keine Backtest-Ausgabe, sondern die manuell gepflegte
+            # Zitat-Sammlung, die setup-detail.html unter der
+            # Minervini-Analyse anzeigt. Sie MUSS hier mit hoch, weil sie
+            # gitignored ist und im Cloud-Lauf gar nicht existiert - ohne
+            # diesen Upload gaebe es keinen Weg, wie ein neuer Eintrag je auf
+            # mts-hub.pages.dev landet. Genau der richtige Ort dafuer: direkt
+            # nach --backfill oben, auf derselben Maschine, die die Datei als
+            # einzige hat. Ein manueller Extra-Schritt nach jeder Pflege waere
+            # etwas, das man verlaesslich vergisst.
+            # Die Bilder (minervini-lexikon/bilder/) bleiben bewusst aussen
+            # vor: upload_to_r2.sh nimmt nur einzelne Dateien, keine Ordner -
+            # und die Setup-Analyse zeigt ohnehin nur den Text. Der Coach
+            # zeigt Bilder nur lokal am Mac mini.
             subprocess.run([os.path.join(PROJEKT, "scripts", "upload_to_r2.sh"),
                             "score_backtest.json", "score_faktoren_backtest.json",
                             "regime_backtest.json", "regime_backtest.js",
-                            "pivot_backtest.json", "pivot_backtest.js"])
+                            "pivot_backtest.json", "pivot_backtest.js",
+                            "minervini-lexikon/minervini_lexikon.json"])
     sync_logbuch_lokal("sync_logbuch_push.sh")
     return scorer_ok
 
