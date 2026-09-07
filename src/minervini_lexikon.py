@@ -38,6 +38,20 @@ Cloud-Seite wird erst relevant, wenn die Lexikon-Daten wie geplant zusaetzlich
 per Gist synchronisiert werden (Coach-Anbindung, naechste Phase). Bis dahin
 backfillt der Mac mini bei jedem seiner taeglichen Laeufe zuverlaessig nach.
 
+ANZEIGE-Pfad in die Cloud (seit 2026-09-07): setup-detail.html zeigt den
+neuesten Marktkommentar unter der Minervini-Analyse an und laedt dafuer
+data/minervini-lexikon/minervini_lexikon.json. Damit das auch auf
+mts-hub.pages.dev funktioniert, steht die Datei jetzt in der Deploy-Whitelist
+(cloudflare-pages/deploy.command) und muss NACH JEDER PFLEGE einmal manuell
+nach R2 geschoben werden - der Pipeline-Upload kann das nicht, weil der
+Cloud-Runner die Datei gar nicht hat:
+
+  Signal-Hub/scripts/upload_to_r2.sh minervini-lexikon/minervini_lexikon.json
+
+Wird das vergessen, friert nur die Zitat-Karte in der Cloud auf dem alten
+Stand ein (kein Fehler, keine Auswirkung auf den Regelabgleich darueber).
+Der --backfill-Pfad oben bleibt davon unberuehrt.
+
 Kein Netzabruf (wie ohlc_history.py) - reine Verarbeitung vorhandener Dateien.
 
 Aufruf:

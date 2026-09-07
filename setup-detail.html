@@ -152,9 +152,52 @@
   .dev.e-plus .dev-v{color:var(--ok)} .dev.e-minus .dev-v{color:var(--bad)}
   .dev-s{font-size:10px;color:var(--muted2);margin-top:2px}
 
+  /* Minervini-Analyse (seit 2026-09-07): die fuenf Gates sind bewusst eine
+     nummerierte, vertikale Liste und kein Kachelraster - die Reihenfolge IST
+     die Aussage (erste verletzte Stufe = Ausschlussgrund). Stufen hinter dem
+     ersten Stopper werden abgeblendet, weil sie fuer die Entscheidung dann
+     keine Rolle mehr spielen. */
+  .mv-wrap{margin-bottom:12px}
+  .mv-verdikt{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow);padding:16px 18px;border-left:3px solid var(--muted2);margin-bottom:10px}
+  .mv-verdikt.mv-v-gruen{border-left-color:var(--ok)}
+  .mv-verdikt.mv-v-gelb{border-left-color:var(--warn)}
+  .mv-verdikt.mv-v-rot{border-left-color:var(--bad)}
+  .mv-satz{font-size:14px;line-height:1.55;color:var(--muted);max-width:74ch}
+  .mv-satz b{color:var(--txt)}
+  .mv-satz .t-ok{color:var(--ok)} .mv-satz .t-warn{color:var(--warn)} .mv-satz .t-bad{color:var(--bad)}
+  .mv-stufen{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow);overflow:hidden}
+  .mv-stufe{display:flex;gap:11px;padding:11px 16px;border-bottom:1px solid var(--line2)}
+  .mv-stufe:last-child{border-bottom:none}
+  .mv-stufe.mv-danach{opacity:.45}
+  .mv-ikon{flex:0 0 20px;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;
+    justify-content:center;font-size:11px;font-weight:700;margin-top:1px;
+    background:var(--line2);color:var(--muted2)}
+  .mv-ok .mv-ikon{background:rgba(46,139,87,.14);color:var(--ok)}
+  .mv-warn .mv-ikon{background:rgba(192,138,46,.16);color:var(--warn)}
+  .mv-stop .mv-ikon{background:rgba(178,58,46,.14);color:var(--bad)}
+  .mv-body{min-width:0;flex:1}
+  .mv-kopf{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12.5px}
+  .mv-kopf b{color:var(--txt)}
+  .mv-wert{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .mv-ok .mv-wert{color:var(--ok)} .mv-warn .mv-wert{color:var(--warn)} .mv-stop .mv-wert{color:var(--bad)}
+  .mv-regel{font-size:11.5px;color:var(--muted2);line-height:1.45;margin-top:3px;max-width:72ch}
+
+  .mv-lexikon{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow);padding:14px 16px;margin-top:10px;border-left:3px solid var(--primary)}
+  .mv-lx-kopf{font-size:12.5px;font-weight:700;margin-bottom:9px;display:flex;
+    align-items:center;gap:8px;flex-wrap:wrap}
+  .mv-zitat{margin:0;padding:0 0 0 12px;border-left:2px solid var(--line);
+    font-size:13px;line-height:1.55;color:var(--txt);max-width:72ch}
+  .mv-orig{font-size:11px;color:var(--muted2);line-height:1.45;margin-top:7px;
+    padding-left:12px;max-width:72ch;font-style:italic}
+  .mv-lx-fuss{font-size:10.5px;color:var(--muted2);margin-top:10px;line-height:1.45;max-width:72ch}
+
   @media (max-width:720px){
     .dash-saeulen{grid-template-columns:1fr}
     .dash-satz{font-size:15px}
+    .mv-satz{font-size:13.5px}
   }
 
   .badge{font-size:10.5px;padding:3px 9px;border-radius:20px;font-weight:700;white-space:nowrap;
@@ -1175,6 +1218,194 @@ function dashSektor(t){
   </div>`;
 }
 
+// ─── Minervini-Analyse (seit 2026-09-07) ───────────────────────────────────
+// Bildet BEWUSST seine Entscheidungsreihenfolge ab, nicht eine Punktesumme:
+// Minervini kauft nicht bei "7 von 10 Kriterien", sondern durchlaeuft Gates
+// in fester Folge - Marktphase, Trend-Template, Basisreife, Einstiegspunkt,
+// Risiko. Die ERSTE verletzte Stufe ist der Grund, warum er nicht kauft;
+// alles danach ist dann gar nicht mehr die Frage. Genau das macht diese
+// Karte sichtbar, statt Kriterien gleichwertig nebeneinanderzustellen.
+//
+// Rein regelbasiert aus Feldern, die ohnehin vorliegen - kein KI-Aufruf,
+// kein Netzabruf, reproduzierbar. Bewusst NICHT als Zitat oder simulierte
+// Aussage formuliert: das waere eine erfundene Auesserung einer realen,
+// lebenden Person zu einer konkreten Aktie. Ueberschrift und Text sagen
+// deshalb durchgehend "nach seinen publizierten Regeln", nie "er sagt".
+// Seine echten Aussagen stehen getrennt darunter (minerviniLexikonKarte).
+const MINERVINI_GATES = [
+  {
+    id: 'markt', label: 'Marktphase',
+    regel: 'Im Abwärtsmarkt keine neuen Positionen — rund drei Viertel aller Aktien folgen dem Gesamtmarkt.',
+    pruef: (t, regime) => {
+      const a = regime && t.markt && regime[t.markt] && regime[t.markt].ampel;
+      if(!a) return {stand:'na', wert:'kein Regime-Datensatz'};
+      return {stand: a==='gruen'?'ok':a==='gelb'?'warn':'stop',
+              wert: 'Markt-Ampel ' + ({gruen:'grün',gelb:'gelb',rot:'rot'})[a]};
+    },
+  },
+  {
+    id: 'trend', label: 'Trend-Template',
+    regel: 'Alle 8 Kriterien müssen sitzen (Kurs über SMA150/200, SMA-Reihenfolge, steigende SMA200, ≥30 % über 52W-Tief, ≤25 % unter 52W-Hoch, RS-Rating ≥70).',
+    pruef: (t) => {
+      const tt = t.trend_template || {};
+      if(tt.erfuellt==null || !tt.gesamt) return {stand:'na', wert:'nicht berechnet'};
+      // Kriterium 8 (RS-Rating) gilt laut scorer.py ausdruecklich als NICHT
+      // BEWERTBAR, solange rs_quelle nur "pool" ist (Rang im heutigen
+      // Kandidatenpool statt marktweit) - nicht als durchgefallen. Es hier
+      // trotzdem als Minuspunkt zu zaehlen wuerde eine Datenluecke in eine
+      // Aktienschwaeche umdeuten und liesse kein Setup je alle Stufen
+      // bestehen. Also gegen die messbaren Kriterien pruefen und die
+      // Luecke offen benennen.
+      const bewertbar = tt.pass != null;
+      if(!bewertbar){
+        const offen = (tt.gesamt - 1) - (tt.erfuellt - (tt.kriterien && tt.kriterien['8_rs_rating'] ? 1 : 0));
+        return {stand: offen===0 ? 'ok' : offen===1 ? 'warn' : 'stop',
+                wert: `${tt.gesamt-1-offen}/${tt.gesamt-1} messbaren Kriterien`
+                    + (offen ? ` · ${offen} offen` : '') + ' · RS-Rating nicht marktweit bewertbar'};
+      }
+      const fehlt = tt.gesamt - tt.erfuellt;
+      return {stand: fehlt===0 ? 'ok' : fehlt===1 ? 'warn' : 'stop',
+              wert: `${tt.erfuellt}/${tt.gesamt} Kriterien` + (fehlt ? ` · ${fehlt} offen` : '')};
+    },
+  },
+  {
+    id: 'basis', label: 'Basisreife (VCP)',
+    regel: 'Enge, austrocknende Konsolidierung — und möglichst eine frühe Basis: ab der 3. Basis steigt das Rückschlagrisiko deutlich.',
+    pruef: (t, regime, p) => {
+      const teile = [];
+      let stand = 'ok';
+      if(p && p.eng_pct!=null){
+        teile.push(`Range ${dzahl(p.eng_pct)} %`);
+        if(p.contraction!=null) teile.push(`Verengung ${dzahl(p.contraction, 2)}×`);
+        // dryup ist Vol 10T/50T: <1 heisst Austrocknung. "Dry-up 0,7x" wurde
+        // als "7-mal" missverstanden - deshalb ausgeschrieben.
+        if(p.dryup!=null) teile.push(p.dryup<1
+          ? `Volumen trocknet aus (${dzahl(p.dryup, 2)}× Basis)`
+          : `Volumen ${dzahl(p.dryup, 2)}× Basis (kein Dry-up)`);
+      } else {
+        const d = (t.faktoren && t.faktoren.basis_konsolidierung) || {};
+        if(d.ampel==='rot') stand = 'stop';
+        else if(d.ampel!=='gruen') stand = 'warn';
+        teile.push(d.detail ? String(d.detail).slice(0,42) : 'keine Basisdaten');
+      }
+      if(t.basis_nr!=null){
+        teile.unshift(`${t.basis_nr}. Basis`);
+        if(t.basis_nr>=5) stand = 'stop';
+        else if(t.basis_nr>=3 && stand==='ok') stand = 'warn';
+      }
+      // Klimax muss BENANNT werden, nicht nur die Ampel auf Rot drehen -
+      // sonst steht ein unerklaertes ✕ neben lauter unauffaelligen Zahlen.
+      if(t.klimax_warnung){ stand = 'stop'; teile.push('50/80-Klimax-Warnung'); }
+      return {stand, wert: teile.join(' · ') || '—'};
+    },
+  },
+  {
+    id: 'einstieg', label: 'Einstiegspunkt',
+    regel: 'Gekauft wird am Pivot, nicht irgendwo im Trend — und nie mehr als ~25 % über der SMA50 („extended").',
+    pruef: (t, regime, p) => {
+      const teile = [];
+      let stand = 'warn';
+      if(p && p.pivot_status){
+        teile.push(p.pivot_status + (p.dist_pct!=null ? ` (${p.dist_pct>0?'+':''}${dzahl(p.dist_pct)} % zum Pivot)` : ''));
+        stand = (p.pivot_status==='ARMED' || p.pivot_status==='BREAKOUT') ? 'ok' : 'warn';
+      } else {
+        teile.push('kein Pivot-Setup aktiv');
+      }
+      if(t.extended_pct!=null){
+        teile.push(t.extended_pct<0
+          ? `${dzahl(Math.abs(t.extended_pct))} % unter SMA50`
+          : `${dzahl(t.extended_pct)} % über SMA50`);
+        if(t.extended_pct>25) stand = 'stop';
+        else if(t.extended_pct>10 && stand==='ok') stand = 'warn';
+      }
+      return {stand, wert: teile.join(' · ')};
+    },
+  },
+  {
+    id: 'risiko', label: 'Risiko & Timing',
+    regel: 'Stop eng genug für ein sauberes VCP (5–8 %), und nicht unmittelbar vor Zahlen kaufen — das Gap-Risiko ist nicht kalkulierbar.',
+    pruef: (t, regime, p) => {
+      const teile = [];
+      let stand = 'ok';
+      if(p && p.stop_pct!=null){
+        teile.push(`Stop ${dzahl(Math.abs(p.stop_pct))} %`);
+        if(Math.abs(p.stop_pct)>10) stand = 'stop';
+        else if(Math.abs(p.stop_pct)>8) stand = 'warn';
+      } else teile.push('kein Stop-Vorschlag');
+      const e = t.earnings || {};
+      if(e.status==='termin' && e.tage!=null){
+        teile.push(`Earnings in ${e.tage} T`);
+        if(e.tage<=10) stand = 'stop';
+      } else if(e.status==='kein_termin') teile.push('keine Earnings-Sperre');
+      return {stand, wert: teile.join(' · ')};
+    },
+  },
+];
+function minerviniVerdikt(t, regime, p){
+  const stufen = MINERVINI_GATES.map(g => Object.assign({}, g, g.pruef(t, regime, p) || {}));
+  const stopper = stufen.find(s => s.stand==='stop');
+  const warner = stufen.filter(s => s.stand==='warn');
+  const ampel = stopper ? 'rot' : warner.length ? 'gelb' : 'gruen';
+  let satz;
+  if(stopper)
+    satz = `<b class="t-bad">Nach seinen Regeln kein Kauf.</b> Erste harte Hürde: <b>${esc(stopper.label)}</b> — ${esc(stopper.wert)}. Für Minervini ist das ein Ausschluss, nicht eine Abwägung; was danach kommt, stellt sich damit gar nicht mehr.`;
+  else if(warner.length)
+    satz = `<b class="t-warn">Nach seinen Regeln allenfalls beobachten.</b> Keine harte Hürde, aber ${warner.length===1?'ein Punkt liegt':'mehrere Punkte liegen'} außerhalb seines Ideals: ${warner.map(w=>`<b>${esc(w.label)}</b> (${esc(w.wert)})`).join(', ')}.`;
+  else
+    satz = `<b class="t-ok">Nach seinen Regeln ein sauberes Setup.</b> Alle fünf Stufen erfüllt — Marktphase, Trend-Template, Basisreife, Einstiegspunkt und Risiko. Das ist die Konstellation, bei der er zugreift.`;
+  const zeilen = stufen.map((s,i) => {
+    const ikon = {ok:'✓', warn:'!', stop:'✕', na:'–'}[s.stand] || '–';
+    const nachStop = stopper && i > stufen.indexOf(stopper);
+    return `<div class="mv-stufe mv-${s.stand}${nachStop?' mv-danach':''}">
+      <span class="mv-ikon">${ikon}</span>
+      <div class="mv-body">
+        <div class="mv-kopf"><b>${i+1}. ${esc(s.label)}</b><span class="mv-wert">${esc(s.wert)}</span></div>
+        <div class="mv-regel">${esc(s.regel)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  return {ampel, html: `<div class="mv-verdikt mv-v-${ampel}">
+      <div class="mv-satz">${satz}</div>
+    </div>
+    <div class="mv-stufen">${zeilen}</div>`};
+}
+
+// Ergaenzung: seine ECHTEN, datierten Aussagen aus dem Minervini-Lexikon
+// (manuell erfasste X-Posts, src/minervini_lexikon.py). Bewusst getrennt vom
+// Regelurteil oben und klar als Aussage ZUM GESAMTMARKT gekennzeichnet - er
+// hat sich nie zu diesem konkreten Ticker geaeussert, und ein Zitat neben
+// einer Einzelaktie darf nicht so aussehen, als haette er es getan.
+function minerviniLexikonKarte(){
+  const lex = LEXIKON_CACHE;
+  const eintraege = (lex && lex.eintraege) || [];
+  const mk = eintraege.filter(e => e.typ==='marktkommentar' && e.text_de)
+    .sort((a,b) => (b.datum+(b.zeit||'')).localeCompare(a.datum+(a.zeit||'')));
+  if(!mk.length) return '';
+  const e = mk[0];
+  const tage = Math.round((Date.now() - Date.parse(e.datum)) / 86400000);
+  const alt = isNaN(tage) ? '' : tage<=1 ? 'heute' : `vor ${tage} Tagen`;
+  const frisch = !isNaN(tage) && tage<=7;
+  return `<div class="mv-lexikon">
+    <div class="mv-lx-kopf">💬 Was er zuletzt zum Markt gesagt hat
+      <span class="dash-chip ${frisch?'c-gruen':''}">${esc(e.datum)}${alt?' · '+esc(alt):''}</span></div>
+    <blockquote class="mv-zitat">${esc(e.text_de)}</blockquote>
+    ${e.text_original && e.text_original!==e.text_de
+      ? `<div class="mv-orig">Original: „${esc(e.text_original)}"</div>` : ''}
+    <div class="mv-lx-fuss">Aussage zum <b>Gesamtmarkt</b>, nicht zu ${esc(TICKER)} — aus dem manuell gepflegten Minervini-Lexikon (X-Posts). Der Regelabgleich oben stammt dagegen aus den Daten dieser Seite.</div>
+  </div>`;
+}
+
+function minerviniBlock(t, regime, p){
+  const v = minerviniVerdikt(t, regime, p);
+  return `<h2>🎓 Minervini-Analyse <span class="sub">seine Kaufregeln, auf diesen Wert angewandt</span></h2>
+    <div class="mv-wrap">
+      ${v.html}
+      ${minerviniLexikonKarte()}
+      <div class="subhead" style="margin-top:16px">🧬 Vertiefung <span class="sub" title="${CANSLIM_EXPLAIN}">CAN SLIM · Minervini-Check · Accumulation · Widerstand/Unterstützung · These — optional, manuell</span></div>
+      <div id="canslimwrap"></div>
+    </div>`;
+}
+
 function dashboardBlock(t, regime){
   const aMom = saeuleMomentum(t), aGeld = saeuleGeldfluss(t), aSub = saeuleSubstanz(t);
   const ampelVon = html => (html.match(/dash-saeule s-(\w+)/)||[])[1] || 'na';
@@ -1313,6 +1544,8 @@ function render(sig, piv, pa, regime){
 
     ${dashboardBlock(t, regime)}
 
+    ${minerviniBlock(t, regime, p)}
+
     <h2>🔎 Sofort-Überblick <span class="sub">${erfuelltCount} von ${qsAmpeln.length} Kriterien grün erfüllt</span></h2>
     <div class="quickscan">${qsItems.join('')}</div>
 
@@ -1392,9 +1625,6 @@ function render(sig, piv, pa, regime){
         <div class="subhead">📰 Story &amp; News <span class="sub">live Yahoo Finance/KI-Zusammenfassung</span></div>
         <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
         <div id="deepwrap" style="margin-top:10px"></div>
-
-        <div class="subhead">🧬 Tiefere Analyse <span class="sub" title="${CANSLIM_EXPLAIN}">CAN SLIM · Minervini-Check · Accumulation · Widerstand/Unterstützung · These — optional, manuell</span></div>
-        <div id="canslimwrap" style="margin-top:10px"></div>
       </div>
     </details>
 
@@ -2106,6 +2336,11 @@ let SIGNALS_CACHE = null, PIVOT_CACHE = null, PA_CACHE = null, BASISDATEN_PROMIS
 let SCORE_BT_CACHE = null, FAKTOR_BT_CACHE = null;
 // Sektor-/Themen-Rotation fuer den Narrativ-Bezug (seit 2026-09-06, 7,8 KB).
 let ROTATION_CACHE = null;
+// Minervini-Lexikon fuer die Ergaenzung unter dem Regel-Verdikt (seit
+// 2026-09-07, ~42 KB): manuell erfasste, datierte X-Posts. Fehlt die Datei,
+// bleibt die Zitat-Karte einfach weg - der Regelabgleich darueber ist der
+// Kern und funktioniert ohne sie vollstaendig.
+let LEXIKON_CACHE = null;
 function ladeBasisdaten(){
   if(!BASISDATEN_PROMISE){
     BASISDATEN_PROMISE = Promise.all([
@@ -2115,9 +2350,10 @@ function ladeBasisdaten(){
       ladeJson('data/score_backtest.json'),
       ladeJson('data/score_faktoren_backtest.json'),
       ladeJson('../Rotation-Dashboard/data/rotation.json'),
-    ]).then(([s,p,pa,sb,fb,rot])=>{
+      ladeJson('data/minervini-lexikon/minervini_lexikon.json'),
+    ]).then(([s,p,pa,sb,fb,rot,lex])=>{
       SIGNALS_CACHE=s; PIVOT_CACHE=p; PA_CACHE=pa;
-      SCORE_BT_CACHE=sb; FAKTOR_BT_CACHE=fb; ROTATION_CACHE=rot;
+      SCORE_BT_CACHE=sb; FAKTOR_BT_CACHE=fb; ROTATION_CACHE=rot; LEXIKON_CACHE=lex;
     });
   }
   return BASISDATEN_PROMISE;
