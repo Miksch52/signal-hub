@@ -1218,6 +1218,96 @@ function dashSektor(t){
   </div>`;
 }
 
+// ─── Katalysator: "Warum gerade jetzt?" (seit 2026-09-09) ─────────────────
+// Stufe 2 des Narrativ-Fahrplans (Stufe 1 = Sektor-Kontext oben, reiner
+// JSON-Join). Prueft zuerst den kostenlosen Tages-Batch der Top-Setups
+// (Price-Action-Hub/src/katalysator.py, laeuft taeglich in der Cloud-
+// Pipeline, window.TOP_SETUPS_KATALYSATOR - derselbe Ladepfad wie auf der
+// Startseite) - ist der Ticker heute ohnehin unter den Top-Setups, kostet
+// die Anzeige hier nichts extra. Erst wenn dort nichts vorliegt, zeigt sich
+// ein manueller Button (wie "Tiefere Analyse"): ein Klick ruft den
+// Cloudflare-Worker /katalysator auf (Perplexity-Sonar-Websuche,
+// ~5$/1000 Anfragen) - deshalb bewusst NIE automatisch.
+const KAT_KLASSE_LABEL = {
+  zahlen: 'Quartalszahlen', guidance: 'Prognose-Änderung', auftrag: 'Großauftrag',
+  zulassung: 'Behördliche Zulassung', analyst: 'Analysten-Rating', index: 'Indexaufnahme',
+  uebernahme: 'Übernahme/Fusion', keiner: 'Kein Anlass gefunden',
+};
+function ladeTopSetupsKatalysatorJs(){
+  return new Promise(resolve => {
+    if(window.TOP_SETUPS_KATALYSATOR){ resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'data/top_setups_katalysator.js';
+    s.onload = resolve; s.onerror = resolve;
+    document.head.appendChild(s);
+  });
+}
+async function renderKatalysatorButton(ticker, yahooSymbol, name, markt){
+  const wrap = document.getElementById('katwrap');
+  if(!wrap) return;
+  await ladeTopSetupsKatalysatorJs();
+  const batch = window.TOP_SETUPS_KATALYSATOR && window.TOP_SETUPS_KATALYSATOR[ticker];
+  if(batch){
+    wrap.innerHTML = renderKatalysatorCard({ ticker, name, markt, klasse: batch.klasse, text: batch.text, quellen: batch.quellen, erstellt: batch.stand }, false);
+    return;
+  }
+  wrap.innerHTML = `<button id="katbtn" class="deepbtn" onclick="ladeKatalysator('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}','${esc(markt||'')}')">⚡ Warum gerade jetzt? <span style="opacity:.7;font-weight:400">(kostenpflichtige Websuche)</span></button>`;
+}
+async function ladeKatalysator(ticker, yahooSymbol, name, markt, erzwingen){
+  const wrap = document.getElementById('katwrap');
+  if(!wrap) return;
+  const symbol = yahooSymbol || ticker;
+  const cacheKey = 'kat_' + symbol;
+  if(!erzwingen){
+    try{
+      const cached = sessionStorage.getItem(cacheKey);
+      if(cached){ wrap.innerHTML = renderKatalysatorCard(JSON.parse(cached), true); return; }
+    }catch(e){ /* sessionStorage evtl. gesperrt - dann einfach neu laden */ }
+  }
+  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Suche nach einem fundamentalen Anlass der letzten 7 Tage …</div></div>';
+  try{
+    const u = MTS_PROXY + 'katalysator?ticker=' + encodeURIComponent(symbol)
+      + '&name=' + encodeURIComponent(name || '')
+      + '&markt=' + encodeURIComponent(markt || '')
+      + (erzwingen ? '&_r=' + Date.now() : '');
+    const r = await fetch(u, {signal: AbortSignal.timeout(45000)});
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
+    d.markt = markt;
+    wrap.innerHTML = renderKatalysatorCard(d, true);
+    try{ sessionStorage.setItem(cacheKey, JSON.stringify(d)); }catch(e){ /* Speicher voll/gesperrt - ignorieren */ }
+  }catch(e){
+    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
+      Katalysator-Abfrage gerade nicht verfügbar (${esc((e && e.message) || e)}).
+    </div></div>
+    <button class="deepbtn" onclick="ladeKatalysator('${esc(ticker)}','${esc(symbol)}','${esc(name||'')}','${esc(markt||'')}',true)">🔄 Erneut versuchen</button>`;
+  }
+}
+// Hostname robust aus einer Fremd-URL ziehen - Quellen-Links sind FREMDINHALT
+// AUS DEM NETZ (Perplexity-Citations), new URL() darf hier nie hart crashen.
+function katHostname(q){
+  try{ return new URL(q).hostname.replace(/^www\./,''); }catch(e){ return q; }
+}
+// klasse/text/quellen sind FREMDINHALT AUS DEM NETZ (Perplexity-Sonar-
+// Suchergebnis) - immer ueber esc() escapen, nie als rohes HTML einfuegen,
+// nie in einen weiteren Prompt zurueckspeisen (siehe Sicherheitshinweis in
+// Price-Action-Hub/src/katalysator.py).
+function renderKatalysatorCard(d, kannErneuern){
+  const gefunden = d.klasse && d.klasse !== 'keiner';
+  const label = KAT_KLASSE_LABEL[d.klasse] || d.klasse || '—';
+  const stand = d.erstellt ? new Date(d.erstellt).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+  const quellen = (d.quellen||[]).filter(Boolean);
+  return `<div class="dash-sektor">
+    <div class="dsk-kopf">⚡ Katalysator <span class="sub">warum gerade jetzt?</span>
+      <span class="dash-chip${gefunden?' c-gruen':''}">${esc(label)}</span>
+    </div>
+    <div class="dsk-text">${esc(d.text) || '—'}</div>
+    ${quellen.length ? `<div class="dsk-fuss">Quellen: ${quellen.map(q=>`<a href="${esc(q)}" target="_blank" rel="noopener noreferrer">${esc(katHostname(q))}</a>`).join(' · ')}</div>` : ''}
+    ${stand ? `<div class="dsk-fuss">Stand ${esc(stand)} Uhr${kannErneuern?'':' · aus dem täglichen Top-Setups-Lauf, kostenlos'}</div>` : ''}
+  </div>
+  ${kannErneuern ? `<button class="deepbtn" style="margin-top:8px" onclick="ladeKatalysator('${esc(d.ticker)}','${esc(d.ticker)}','${esc(d.name||'')}','${esc(d.markt||'')}',true)">🔄 Erneut versuchen</button>` : ''}`;
+}
+
 // ─── Minervini-Analyse (seit 2026-09-07) ───────────────────────────────────
 // Bildet BEWUSST seine Entscheidungsreihenfolge ab, nicht eine Punktesumme:
 // Minervini kauft nicht bei "7 von 10 Kriterien", sondern durchlaeuft Gates
@@ -1410,6 +1500,7 @@ function dashboardBlock(t, regime){
   return v.html
     + `<div class="dash-saeulen">${aMom}${aGeld}${aSub}</div>`
     + dashSektor(t)
+    + `<div id="katwrap"></div>`
     + dashBeleg(t, SCORE_BT_CACHE, FAKTOR_BT_CACHE, gewichte);
 }
 
@@ -1650,6 +1741,7 @@ function render(sig, piv, pa, regime){
   renderDeepButton(t.ticker, t.yahoo_symbol, t.name);
   renderBqButton(t.ticker, t.yahoo_symbol, t.markt);
   renderCanslimButton(t.ticker, t.yahoo_symbol, t.name);
+  renderKatalysatorButton(t.ticker, t.yahoo_symbol, t.name, t.markt);
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
     if(!isNaN(dt)) document.getElementById('stand').textContent =
