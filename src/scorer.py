@@ -1734,14 +1734,34 @@ def f_trend_template(ergebnisse, cfg, schwellen):
         marktweit = rs_quelle in ("markets360", "kalibriert")
         if not marktweit:
             rs_rating = None
-        krit["8_rs_rating"] = bool(rs_rating is not None and rs_rating >= rs_min)
-        erfuellt = sum(1 for v in krit.values() if v)
+        # None statt False, wenn Kriterium 8 nicht bewertbar ist (kein
+        # marktweites RS-Rating). Bugfix 2026-09-07: es stand hier bis dahin
+        # bool(...) -> False, waehrend derselbe Fall zwei Zeilen tiefer
+        # ausdruecklich als "nicht bewertbar" (pass=None) behandelt wurde.
+        # Der Zaehler widersprach damit der eigenen Semantik: erfuellt konnte
+        # nie gesamt erreichen, "Trend Template vollstaendig" war systemweit
+        # unerreichbar, sobald der RS-Post-Pass einmal ausfiel - und zwar
+        # still, weil 7/8 nach einem knapp verfehlten Kriterium aussieht und
+        # nicht nach einer fehlenden Datenquelle. Aufgefallen am 2026-09-07,
+        # als ein lokaler Lauf 495 von 495 Treffern auf den Pool-Rang
+        # zurueckfallen liess. Drei Zustaende, sauber getrennt:
+        # True = erfuellt, False = geprueft und durchgefallen, None = nicht
+        # bewertbar (zaehlt weder als erfuellt noch gegen die Gesamtzahl).
+        krit["8_rs_rating"] = (bool(rs_rating >= rs_min)
+                               if rs_rating is not None else None)
+        erfuellt = sum(1 for v in krit.values() if v is True)
+        bewertbar = sum(1 for v in krit.values() if v is not None)
         technisch = all(v for k, v in krit.items() if not k.startswith("8_"))
         bestanden_flag = None if rs_rating is None else bool(technisch and krit["8_rs_rating"])
         e["trend_template"] = {
             "kriterien": krit,
             "erfuellt": erfuellt,
-            "gesamt": len(krit),
+            # gesamt = die tatsaechlich BEWERTBAREN Kriterien, damit
+            # erfuellt == gesamt weiterhin "alles erfuellt" heisst. Die volle
+            # Zahl bleibt als kriterien_gesamt erhalten, damit sichtbar
+            # bleibt, dass eines fehlt statt stillschweigend zu verschwinden.
+            "gesamt": bewertbar,
+            "kriterien_gesamt": len(krit),
             "rs_rating": rs_rating,
             "rs_quelle": rs_quelle,
             "rs_min": rs_min,
@@ -1814,26 +1834,45 @@ def lade_markt_rs():
     lokal schreibt Markets 360 direkt hin, im Cloud-Lauf existiert nur der
     per rclone gezogene _magazine-Pfad. Einen davon zu vergessen fuehrt zu
     leisem Datenverlust (Rating faellt auf den Pool zurueck), nicht zu einem
-    Fehler - siehe CLAUDE.md."""
-    pfad = pfade.LOKAL_MARKETS360 if os.path.exists(pfade.LOKAL_MARKETS360) else pfade.EXTERN_MARKETS360
-    if not os.path.exists(pfad):
-        return {}
+    Fehler - siehe CLAUDE.md.
+
+    Haertung 2026-09-07: beide Pfade werden NACHEINANDER probiert statt per
+    Entweder-Oder ausgewaehlt. Vorher entschied allein os.path.exists() -
+    war die erste Datei zwar da, aber unlesbar oder ohne verwertbare
+    RS-Spalte, fiel die Funktion auf {} zurueck, OHNE den zweiten Pfad
+    ueberhaupt anzusehen. Genau dieser Fall ist auf einem Mac realistisch:
+    die Datei liegt in einem zweiten iCloud-Ordner, und CLAUDE.md
+    dokumentiert gleich zwei Faelle, in denen ein Hintergrundprozess eine
+    vorhandene iCloud-Datei zeitweise nicht lesen konnte. Der Grund wird
+    jetzt ausserdem genannt statt verschluckt - ein stilles {} sah im Log
+    identisch aus zu "Datei gar nicht vorhanden"."""
     import csv
-    out = {}
-    try:
-        with open(pfad, encoding="utf-8-sig", newline="") as f:
-            for row in csv.DictReader(f, delimiter=";"):
-                sym = (row.get("Symbol") or "").strip().upper()
-                roh = (row.get("RS") or "").strip().replace(",", ".")
-                if not sym or not roh:
-                    continue
-                try:
-                    out[sym] = float(roh)
-                except ValueError:
-                    continue
-    except Exception:
-        return {}
-    return out
+    gruende = []
+    for pfad in (pfade.LOKAL_MARKETS360, pfade.EXTERN_MARKETS360):
+        if not os.path.exists(pfad):
+            gruende.append(f"{pfad}: nicht vorhanden")
+            continue
+        out = {}
+        try:
+            with open(pfad, encoding="utf-8-sig", newline="") as f:
+                for row in csv.DictReader(f, delimiter=";"):
+                    sym = (row.get("Symbol") or "").strip().upper()
+                    roh = (row.get("RS") or "").strip().replace(",", ".")
+                    if not sym or not roh:
+                        continue
+                    try:
+                        out[sym] = float(roh)
+                    except ValueError:
+                        continue
+        except Exception as ex:
+            gruende.append(f"{pfad}: nicht lesbar ({ex})")
+            continue
+        if out:
+            return out
+        gruende.append(f"{pfad}: gelesen, aber 0 verwertbare RS-Werte")
+    for g in gruende:
+        print(f"Marktweites RS: {g}")
+    return {}
 
 def _markt_rs_fuer(e, markt_rs):
     """Markets-360-Rating fuer einen Treffer - Ticker ODER Yahoo-Symbol,
@@ -1899,7 +1938,14 @@ def f_rs_marktweit(ergebnisse):
     Trend Templates auswertet."""
     markt_rs = lade_markt_rs()
     if not markt_rs:
-        print("Marktweites RS: Markets-360-Export nicht gefunden -> Pool-Rang bleibt.")
+        # Kein stiller Rueckfall mehr: faellt der Post-Pass komplett aus,
+        # verliert JEDER Treffer Kriterium 8 des Trend Templates - das ist
+        # ein Datenausfall, kein Randfall. Wortlaut bewusst deutlich, damit
+        # es im Lauf-Log nicht wie eine Routinemeldung aussieht (die
+        # Einzelgruende hat lade_markt_rs() direkt davor ausgegeben).
+        print("Marktweites RS: AUSFALL - kein Markets-360-Rating verfuegbar. "
+              f"Alle {len(ergebnisse)} Treffer behalten den Pool-Rang, "
+              "Kriterium 8 des Trend Templates ist fuer diesen Lauf nicht bewertbar.")
         return
     paare = [(e["rs_gewichtet"], r) for e in ergebnisse
              if e.get("rs_gewichtet") is not None
@@ -1920,6 +1966,14 @@ def f_rs_marktweit(ergebnisse):
             pool += 1   # rs_rating/-quelle bleiben auf dem Pool-Wert stehen
     print(f"Marktweites RS-Rating: {direkt} direkt aus Markets 360, "
           f"{geschaetzt} kalibriert ({len(paare)} Stuetzpaare), {pool} nur Pool-Rang")
+    # Teil-Ausfall sichtbar machen: einzelne Treffer ohne Rating sind normal
+    # (Ticker nicht im Markets-360-Universum, kein rs_gewichtet). Ein
+    # grosser Anteil heisst dagegen, dass der Join grundsaetzlich nicht
+    # greift - z.B. weil der Export ein anderes Symbolformat verwendet.
+    if ergebnisse and pool / len(ergebnisse) > 0.5:
+        print(f"Marktweites RS: WARNUNG - {pool} von {len(ergebnisse)} Treffern "
+              f"({pool/len(ergebnisse)*100:.0f} %) ohne marktweites Rating. "
+              f"Markets-360-Export hat {len(markt_rs)} Symbole - Ticker-Zuordnung pruefen.")
 
 def f_sektor_staerke(ergebnisse, etf_rang, gew, gew_summe, schwellen):
     """Branchenstaerke gegen den GANZEN Markt statt (wie bis 2026-07-24) nur

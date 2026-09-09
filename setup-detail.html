@@ -1249,23 +1249,19 @@ const MINERVINI_GATES = [
     pruef: (t) => {
       const tt = t.trend_template || {};
       if(tt.erfuellt==null || !tt.gesamt) return {stand:'na', wert:'nicht berechnet'};
-      // Kriterium 8 (RS-Rating) gilt laut scorer.py ausdruecklich als NICHT
-      // BEWERTBAR, solange rs_quelle nur "pool" ist (Rang im heutigen
-      // Kandidatenpool statt marktweit) - nicht als durchgefallen. Es hier
-      // trotzdem als Minuspunkt zu zaehlen wuerde eine Datenluecke in eine
-      // Aktienschwaeche umdeuten und liesse kein Setup je alle Stufen
-      // bestehen. Also gegen die messbaren Kriterien pruefen und die
-      // Luecke offen benennen.
-      const bewertbar = tt.pass != null;
-      if(!bewertbar){
-        const offen = (tt.gesamt - 1) - (tt.erfuellt - (tt.kriterien && tt.kriterien['8_rs_rating'] ? 1 : 0));
-        return {stand: offen===0 ? 'ok' : offen===1 ? 'warn' : 'stop',
-                wert: `${tt.gesamt-1-offen}/${tt.gesamt-1} messbaren Kriterien`
-                    + (offen ? ` · ${offen} offen` : '') + ' · RS-Rating nicht marktweit bewertbar'};
-      }
+      // scorer.py liefert seit 2026-09-07 saubere Zahlen: `gesamt` sind die
+      // tatsaechlich BEWERTBAREN Kriterien, `kriterien_gesamt` alle acht.
+      // Faellt der marktweite RS-Post-Pass aus, ist Kriterium 8 nicht
+      // bewertbar (null statt false) und zaehlt weder als erfuellt noch
+      // gegen die Gesamtzahl - eine Datenluecke darf nicht als Schwaeche
+      // der Aktie erscheinen. `erfuellt/gesamt` ist damit direkt lesbar.
+      const alle = tt.kriterien_gesamt || tt.gesamt;
+      const luecke = alle - tt.gesamt;   // >0 = nicht bewertbare Kriterien
       const fehlt = tt.gesamt - tt.erfuellt;
       return {stand: fehlt===0 ? 'ok' : fehlt===1 ? 'warn' : 'stop',
-              wert: `${tt.erfuellt}/${tt.gesamt} Kriterien` + (fehlt ? ` · ${fehlt} offen` : '')};
+              wert: `${tt.erfuellt}/${tt.gesamt} Kriterien`
+                  + (fehlt ? ` · ${fehlt} offen` : '')
+                  + (luecke ? ' · RS-Rating nicht marktweit bewertbar' : '')};
     },
   },
   {
