@@ -290,6 +290,13 @@
   .klimax-warn{background:rgba(178,58,46,.08);border:1px solid rgba(178,58,46,.35);border-radius:12px;
                padding:10px 14px;font-size:12.5px;color:var(--bad);margin-bottom:12px}
 
+  /* Direktanalyse (seit 2026-09-10): Hinweisbox fuer Ticker ohne Signal-Hub-
+     Treffer - bewusst neutral/informativ (Teal statt Rot wie .klimax-warn),
+     das ist keine Warnung, sondern eine Erklaerung fehlender Abschnitte. */
+  .direkt-hinweis{background:var(--teal-dim);border:1px solid rgba(31,110,102,.35);border-radius:12px;
+               padding:12px 16px;font-size:12.5px;line-height:1.55;color:var(--txt);margin-bottom:16px}
+  .direkt-hinweis a{color:var(--primary);font-weight:600}
+
   .pivotcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;
              margin-bottom:12px;box-shadow:var(--shadow)}
   .pivotcard .phead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
@@ -345,15 +352,16 @@
   <a class="back" id="backlink" href="signal-hub.html">← Signal Hub</a>
   <h1 id="headtitle">🎯 Setup-Analyse</h1>
   <input type="search" id="tickerswitch" placeholder="Ticker wechseln …"
-    title="Anderen Ticker direkt in dieser Ansicht öffnen, ohne die Seite zu verlassen"
+    title="Anderen Ticker direkt in dieser Ansicht öffnen, ohne die Seite zu verlassen. Auch Ticker außerhalb der aktuellen Kandidatenliste möglich (Direktanalyse mit Live-Kurs statt Scan-Daten)."
     onkeydown="if(event.key==='Enter') wechsleTicker(this.value)">
   <span class="stand" id="stand"></span>
 </header>
 <main>
   <div id="loading">Lädt Technik-, Fundamental- und Chartdaten …</div>
   <div id="notfound" style="display:none">
-    Kein Treffer für <b id="nf-ticker"></b> gefunden — entweder kein aktueller Signal-Hub-Kandidat
-    (Score unter „Beobachten") oder noch nicht von Price-Action-Hub/Pivot-Detektor bewertet.
+    Kein Treffer für <b id="nf-ticker"></b> gefunden — weder ein aktueller Signal-Hub-Kandidat
+    noch ein gültiger Live-Kurs bei Yahoo Finance. Ticker vermutlich falsch geschrieben, delistet,
+    oder braucht bei nicht-US-Werten das Yahoo-Börsenkürzel (z.&nbsp;B. „SAP.DE" statt „SAP").
     <div style="margin-top:14px"><a href="signal-hub.html">→ zum Signal Hub</a></div>
   </div>
   <div id="content" style="display:none"></div>
@@ -518,6 +526,187 @@ function finde(liste, ticker){
   const t = ticker.toUpperCase();
   return liste.find(e => (e.ticker||'').toUpperCase() === t
                        || (e.yahoo_symbol||'').toUpperCase() === t) || null;
+}
+
+// ─── Direktanalyse: Ticker ohne Signal-Hub-Treffer (seit 2026-09-10) ───────
+// Bisher endete ein manuell eingegebener oder per Link geoeffneter Ticker,
+// der (noch) kein Kauf-Kandidat im taeglichen Scan ist, in "Kein Treffer" -
+// eine Sackgasse, obwohl fast der ganze Rest der Seite (Chart, Fundamental-
+// daten, Code 33, Quartalszahlen, Dividendenkontinuitaet, Innerer Wert,
+// KI-Vertiefung) ohnehin schon live und PRO TICKER laeuft, unabhaengig von
+// signals.json (ladeStory/ladeDividenden/renderCanslimButton/renderBqButton/
+// renderKatalysatorButton nehmen nur ticker/yahoo_symbol/name/markt entgegen -
+// keiner davon liest t.faktoren o.ae.). Nur Score/Tier, Pivot-Armed-Status,
+// Price-Action-Muster, das Momentum-Dashboard und die Minervini-Regel-Gates
+// sind untrennbar an den taeglichen Scan ueber das GANZE Universum gebunden
+// (relative Kennzahlen wie RS-Rating/Branchenrang brauchen den Vergleich
+// gegen alle anderen Treffer) - die lassen sich fuer einen Einzelticker on
+// demand nicht nachbauen, ohne den ganzen Scan client-seitig zu duplizieren
+// (widerspraeche "Entflechtung", siehe CLAUDE.md).
+//
+// Direktanalyse schliesst die Luecke mit einem eigenen, schlankeren Pfad:
+// echter Live-Kurs direkt von Yahoo (v8/finance/chart, kein Worker-Endpunkt
+// noetig fuer Preis/Name/Waehrung/Boerse), danach renderDirekt() statt
+// render() - dieselben Fundamental-/Vertiefungs-Bausteine, aber ohne die
+// scan-gebundenen Abschnitte, mit klarer Erklaerung warum.
+const US_EXCHANGES = new Set(['NMS','NYQ','NGM','ASE','PCX','BTS','NCM','NSI','SNP','DJI']);
+function marktVonMeta(meta){
+  // 1:1-Portierung von scorer.py::markt_von_meta - dieselbe Logik, damit
+  // "USA"/"Europa" ueberall im System identisch bedeutet (z.B. gated
+  // renderBqButton() Business Quant auf markt==='USA').
+  const exch = ((meta && (meta.exchangeName || meta.fullExchangeName)) || '').toUpperCase();
+  const cur = ((meta && meta.currency) || '').toUpperCase();
+  return (US_EXCHANGES.has(exch) || cur === 'USD') ? 'USA' : 'Europa';
+}
+async function ladeDirektkurs(ticker){
+  const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+  // Erst direkt (Yahoos Chart-Endpunkt erlaubt CORS oft, siehe Hauptapp
+  // _yahooFetchChart), sonst ueber den generischen ?url=-Proxy des Workers
+  // (query1.finance.yahoo.com steht in dessen ALLOW-Liste) - funktioniert
+  // damit auch dort, wo der Direktzugriff blockiert ist.
+  for(const url of [target, MTS_PROXY + '?url=' + encodeURIComponent(target)]){
+    try{
+      const r = await fetch(url, {signal: AbortSignal.timeout(8000)});
+      if(!r.ok) continue;
+      const d = await r.json();
+      const res = d && d.chart && d.chart.result && d.chart.result[0];
+      const meta = res && res.meta;
+      if(!meta || meta.regularMarketPrice==null) continue;
+      return {
+        ticker: (meta.symbol || ticker).toUpperCase(),
+        name: meta.longName || meta.shortName || null,
+        preis: meta.regularMarketPrice,
+        currency: meta.currency || null,
+        exchange: meta.fullExchangeName || meta.exchangeName || null,
+        markt: marktVonMeta(meta),
+      };
+    }catch(e){ /* naechste URL versuchen */ }
+  }
+  return null;
+}
+function renderDirekt(t){
+  // Globale Zustaende wie render() setzen, damit die wiederverwendeten
+  // Bausteine (Innerer Wert, Dividende, sammleKontext fuer die KI-Vertiefung)
+  // exakt so funktionieren wie bei einem echten Signal-Hub-Treffer.
+  CUR_SIG = t; CUR_PIV = null; CUR_PA = null;
+  WERT_PREIS = t.preis; WERT_CURRENCY = t.currency; WERT_FX = null; WERT_DIVIDENDE = null;
+  const tvSym = encodeURIComponent(t.ticker);
+  const tvChartSym = encodeURIComponent(tvSymbol(t.ticker));
+  document.getElementById('headtitle').textContent = `🎯 ${t.ticker} — Direktanalyse`;
+  document.title = `🎯 ${t.ticker} — Direktanalyse`;
+
+  document.getElementById('content').innerHTML = `
+    <div class="hero">
+      <div class="hero-id">
+        <div class="eyebrow">Direktanalyse${t.exchange?' · '+esc(t.exchange):''}</div>
+        <div class="hero-tick">${esc(t.ticker)} ${flagge(t.markt)}</div>
+        <div class="hero-name">${esc(t.name||'')}</div>
+        <div class="hero-px">${t.preis} ${esc(t.currency||'')}</div>
+        <div class="hero-badges"><span class="badge" style="background:var(--teal-dim);color:var(--primary);border-color:rgba(31,110,102,.35)" title="Kein aktueller Signal-Hub-Kandidat - Live-Kursabruf statt Scan-Ergebnis.">🔎 Direktanalyse</span></div>
+      </div>
+    </div>
+
+    <div class="direkt-hinweis">
+      <b>Kein Signal-Hub-Treffer für ${esc(t.ticker)}.</b> Score, Tier, Pivot-Armed-Status, Price-Action-Muster,
+      das Momentum-Dashboard und die 🎓 Minervini-Analyse (fünf Regel-Gates) entstehen im täglichen Scan über
+      das ganze Aktienuniversum — relative Kennzahlen wie RS-Rating oder Branchenrang brauchen den Vergleich
+      gegen alle anderen Treffer und lassen sich für einen Einzeltitel nicht nachbauen. Das sagt nichts über
+      die Qualität dieses Werts aus, nur dass er (noch) kein Kandidat im Scan ist. Alles Übrige unten (Chart,
+      Fundamentaldaten, Quartalszahlen, Code 33, Dividendenkontinuität, Innerer Wert, optionale KI-Analysen)
+      läuft live und unabhängig vom Scan — genau wie bei jedem erfassten Ticker.
+      <a href="signal-hub.html">→ zum Signal Hub</a>
+    </div>
+
+    <details class="acc" open>
+      <summary>🕯️ Chart <span class="acc-sub">Live-Chart</span><span class="chev">▾</span></summary>
+      <div class="acc-body">
+        <div class="chart-wrap">
+          <div id="tv-chart" class="tv-box"></div>
+          ${t.markt !== 'USA' ? '<div class="chart-cap">Zeigt der Chart keine Kerzen (manche nicht-US-Börsen sind im kostenlosen TradingView-Embed gesperrt, TradingView selbst meldet dann „Symbol nur bei TradingView verfügbar") → „Vollbild auf TradingView" nutzen.</div>' : ''}
+          <div class="chart-links">
+            <a href="https://www.tradingview.com/chart/?symbol=${tvChartSym}" target="_blank" rel="noopener">📊 Vollbild auf TradingView</a>
+            <a href="https://finviz.com/quote.ashx?t=${tvSym}" target="_blank" rel="noopener">🔍 Finviz-Chart öffnen</a>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="acc" open>
+      <summary>💵 Fundamentalanalyse <span class="acc-sub">CANSLIM/Code 33, Dividende, Innerer Wert, Buffett/Munger/Graham, Story</span><span class="chev">▾</span></summary>
+      <div class="acc-body">
+        <div class="fgrid">
+          <div class="fcard fcard-na" id="code33wrap"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl" title="${CODE33_EXPLAIN}">🥇 Code 33</span></div>
+            <div class="fcard-detail" style="color:var(--muted)">Lädt Quartalsdaten …</div>
+          </div></div>
+        </div>
+
+        <div class="subhead">📊 Quartalsergebnisse <span class="sub" title="${QUARTAL_EXPLAIN}">Umsatz &amp; Gewinn je Aktie je Quartal, Veränderung ggü. Vorquartal - ~5 Quartale, kostenlose Yahoo-Route liefert nicht mehr</span></div>
+        <div id="quartalwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Quartalsdaten …</div></div></div>
+
+        <div class="subhead">💰 Dividendenkontinuität</div>
+        <div class="fgrid" id="divwrap">
+          <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl">📅 Dividendenhistorie</span></div>
+            <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
+          </div></div>
+        </div>
+
+        <div class="subhead">🏛️ Buffett/Munger/Graham-Kennzahlen <span class="sub">Qualität &amp; Sicherheitsmarge, kein Score-Bestandteil</span></div>
+        <div class="fgrid" id="funddeepwrap">
+          <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl">💹 Kennzahlen</span></div>
+            <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
+          </div></div>
+        </div>
+
+        <div class="subhead">🎯 Innerer Wert <span class="sub">Graham Number, Owner-Earnings-DCF, DDM - Sicherheitsmarge ≥20% grün, 0–20% gelb, Kurs über Schätzwert rot</span></div>
+        <div class="fgrid" id="wertwrap">
+          <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
+            <div class="fcard-head"><span class="fcard-lbl">📐 Bewertungsmodelle</span></div>
+            <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
+          </div></div>
+        </div>
+
+        <div class="subhead">🏦 Institutionelle Daten, Insider &amp; Analysten-Schätzungen <span class="sub" title="${BUSINESSQUANT_EXPLAIN}">optional, manuell abrufbar (Business Quant, Free-Plan mit begrenztem Tageskontingent)</span></div>
+        <div id="bqwrap"></div>
+
+        <div class="subhead">🧬 Vertiefung <span class="sub" title="${CANSLIM_EXPLAIN}">CAN SLIM · Minervini-Check · Accumulation · Widerstand/Unterstützung · These — optional, manuell</span></div>
+        <div id="canslimwrap"></div>
+
+        <div class="subhead">📰 Story &amp; News <span class="sub">live Yahoo Finance/KI-Zusammenfassung</span></div>
+        <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
+        <div id="deepwrap" style="margin-top:10px"></div>
+      </div>
+    </details>
+
+    <div class="extlinks">
+      <a href="https://finance.yahoo.com/quote/${tvSym}" target="_blank" rel="noopener">💹 Yahoo Finance</a>
+      <a href="signal-hub.html">📈 im Signal Hub öffnen</a>
+      <a href="../minervini-coach-2.html?ticker=${tvSym}">🎓 SEPA-Analyse im Coach</a>
+    </div>
+
+    <div class="disclaimer">
+      Direktanalyse: Live-Kurs und Fundamentaldaten direkt von Yahoo Finance, keine Signal-Hub-Berechnung -
+      siehe Hinweisbox oben. Ampel-Farben sind Heuristiken, keine Kauf-/Verkaufsempfehlung. Eigene Prüfung
+      vor jedem Trade bleibt nötig.
+    </div>
+  `;
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = '';
+  tvWidget('tv-chart', tvSymbol(t.ticker));
+  ladeStory(t.ticker, t.ticker, t.name);
+  ladeDividenden(t.ticker, t.ticker);
+  renderDeepButton(t.ticker, t.ticker, t.name);
+  renderBqButton(t.ticker, t.ticker, t.markt);
+  renderCanslimButton(t.ticker, t.ticker, t.name);
+  // KEIN renderKatalysatorButton() hier: dessen Container #katwrap gehoert
+  // im Original zum dashboardBlock() (Momentum-Dashboard-Karte "Warum
+  // gerade jetzt?"), nicht zur Fundamentalanalyse - und das Dashboard
+  // braucht institutional_trend/Score/Sektor-Rang aus dem Scan, die es hier
+  // nicht gibt. Ein Aufruf ohne passenden Container waere nur ein
+  // wirkungsloser Blindgriff.
+  document.getElementById('stand').textContent = 'Live-Kurs · kein Signal-Hub-Scan';
 }
 
 // ─── TradingView-Widget (Port aus Minervini/Minervini Dashboard.html::tvWidget) ──
@@ -2460,15 +2649,26 @@ async function zeigeTicker(ticker){
   document.getElementById('loading').style.display = '';
   await ladeBasisdaten();
   const treffer = finde(SIGNALS_CACHE && SIGNALS_CACHE.treffer, TICKER);
-  if(!treffer){
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('notfound').style.display = '';
+  if(treffer){
+    treffer.__erstellt = SIGNALS_CACHE.erstellt;
+    const pivTreffer = finde(PIVOT_CACHE && PIVOT_CACHE.treffer, TICKER);
+    const paTreffer = finde(PA_CACHE && PA_CACHE.treffer, TICKER);
+    render(treffer, pivTreffer, paTreffer, SIGNALS_CACHE.marktregime);
     return;
   }
-  treffer.__erstellt = SIGNALS_CACHE.erstellt;
-  const pivTreffer = finde(PIVOT_CACHE && PIVOT_CACHE.treffer, TICKER);
-  const paTreffer = finde(PA_CACHE && PA_CACHE.treffer, TICKER);
-  render(treffer, pivTreffer, paTreffer, SIGNALS_CACHE.marktregime);
+  // Kein Signal-Hub-Treffer: Direktanalyse statt Sackgasse (seit
+  // 2026-09-10, siehe ladeDirektkurs/renderDirekt oben) - gilt sowohl fuer
+  // die manuelle Ticker-Eingabe (wechsleTicker) als auch fuer einen direkt
+  // per URL geoeffneten Ticker, da beide Wege hier zusammenlaufen. Nebeneffekt:
+  // funktioniert auch, wenn signals.json gerade nicht erreichbar ist - Live-
+  // Yahoo-Abruf ist davon unabhaengig.
+  const direkt = await ladeDirektkurs(TICKER);
+  if(direkt){
+    renderDirekt(direkt);
+    return;
+  }
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('notfound').style.display = '';
 }
 function wechsleTicker(neu){
   const t = (neu||'').trim().toUpperCase();
