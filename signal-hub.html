@@ -758,9 +758,15 @@ async function ladeVolleMarktampel(){
 async function ladeMarktCheck(){
   const el=document.getElementById('marktchip'); if(!el) return;
   const hatRegime=zeigeMarktRegime();
+  // Auf HTTPS (Cloudflare Pages, Tailscale) blockt der Browser jedes
+  // http://…:8080 als Mixed Content, bevor es das Netz erreicht - die Liste
+  // bleibt dort leer, die Ampel kommt aus MTSAmpel/signals.json (Befund B6
+  // der Systempruefung 2026-09-10).
   const kandidaten=[];
-  if(location.hostname && location.hostname!=='localhost' && location.hostname!=='127.0.0.1') kandidaten.push(location.hostname);
-  kandidaten.push('Mac-mini-von-Maick.local','localhost');
+  if(location.protocol!=='https:'){
+    if(location.hostname && location.hostname!=='localhost' && location.hostname!=='127.0.0.1') kandidaten.push(location.hostname);
+    kandidaten.push('Mac-mini-von-Maick.local','localhost');
+  }
   const zeit=ms=>AbortSignal.timeout?AbortSignal.timeout(ms):(()=>{const c=new AbortController();setTimeout(()=>c.abort(),ms);return c.signal;})();
   for(const host of kandidaten){
     try{
@@ -1621,6 +1627,10 @@ function initControls(){
    funktionieren frische Daten, Aktualisieren und Speichern auf allen Geraeten. */
 async function zumLiveServer(){
   if(location.port==='8091') return false;   // schon auf dem Hub-Server
+  // Von einer HTTPS-Seite aus ist ein Wechsel auf http://…:8091 zwecklos:
+  // der Abruf ist Mixed-Content-blockiert, und die Cloud-Version hat mit
+  // ihren deployten Daten ohnehin den vollwertigen Ersatz.
+  if(location.protocol==='https:') return false;
   const kandidaten=[];
   if(location.hostname && location.hostname!=='localhost' && location.hostname!=='127.0.0.1') kandidaten.push(location.hostname);
   kandidaten.push('Mac-mini-von-Maick.local','localhost');

@@ -14,16 +14,29 @@ name: Signal-Hub Cloud-Pipeline
 # Cron-Zeilen pro Slot fuer CET/CEST. run.py --scheduled entscheidet selbst
 # (ueber TZ=Europe/Berlin + persistiertem state.json aus R2), welcher der
 # acht taeglichen Anstoesse tatsaechlich den Lauf ausloest.
+#
+# Cron-Minuten bewusst KRUMM (:37 / :07 statt :30 / :00) - Befund der
+# Systempruefung 2026-09-10: auf runde und halbe Stunden terminierte Laeufe
+# standen in GitHubs globaler Warteschlange und starteten real 2-5 Stunden
+# zu spaet (Morgen-Slot 07:30 -> tatsaechlich 11:56 an drei Messtagen in
+# Folge). Der Morgenlauf lieferte damit erst mittags Daten. Krumme Minuten
+# treffen ein deutlich leereres Zeitfenster.
+#
+# WICHTIG - die Cron-Zeit muss NACH der jeweiligen Slot-Zeit aus der
+# config.json liegen, nie davor: faellige_slots() in run.py feuert nur, wenn
+# jetzt >= slot_dt. Ein Cron um 07:07 wuerde den 07:30-Slot also gar nicht
+# ausloesen, sondern erst der naechste Anstoss mittags. Deshalb konsequent
+# +7 Minuten hinter den Slot gelegt, nicht davor.
 on:
   schedule:
-    - cron: '30 5 * * *'   # 07:30 Europe/Berlin (CEST, Sommer)
-    - cron: '30 6 * * *'   # 07:30 Europe/Berlin (CET, Winter)
-    - cron: '0 13 * * *'   # 15:00 Europe/Berlin (CEST, Sommer)
-    - cron: '0 14 * * *'   # 15:00 Europe/Berlin (CET, Winter)
-    - cron: '0 15 * * *'   # 17:00 Europe/Berlin (CEST, Sommer)
-    - cron: '0 16 * * *'   # 17:00 Europe/Berlin (CET, Winter)
-    - cron: '30 19 * * *'  # 21:30 Europe/Berlin (CEST, Sommer)
-    - cron: '30 20 * * *'  # 21:30 Europe/Berlin (CET, Winter)
+    - cron: '37 5 * * *'   # 07:37 Europe/Berlin (CEST, Sommer) -> Slot 07:30
+    - cron: '37 6 * * *'   # 07:37 Europe/Berlin (CET, Winter)  -> Slot 07:30
+    - cron: '7 13 * * *'   # 15:07 Europe/Berlin (CEST, Sommer) -> Slot 15:00
+    - cron: '7 14 * * *'   # 15:07 Europe/Berlin (CET, Winter)  -> Slot 15:00
+    - cron: '7 15 * * *'   # 17:07 Europe/Berlin (CEST, Sommer) -> Slot 17:00
+    - cron: '7 16 * * *'   # 17:07 Europe/Berlin (CET, Winter)  -> Slot 17:00
+    - cron: '37 19 * * *'  # 21:37 Europe/Berlin (CEST, Sommer) -> Slot 21:30
+    - cron: '37 20 * * *'  # 21:37 Europe/Berlin (CET, Winter)  -> Slot 21:30
   workflow_dispatch: {}    # manueller Testlauf / Cloud-Trigger-Button
 
 env:
