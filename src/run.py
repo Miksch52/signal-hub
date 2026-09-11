@@ -213,11 +213,11 @@ def state_save(s):
     with open(STATE, "w", encoding="utf-8") as f:
         json.dump(s, f, ensure_ascii=False, indent=2)
 
-def faellige_slots(c, state):
+def faellige_slots(c, state, jetzt=None):
     """Zeit-Slots, deren Uhrzeit heute erreicht und noch nicht gesendet wurde."""
-    heute = datetime.now().strftime("%Y-%m-%d")
+    jetzt = jetzt or datetime.now()
+    heute = jetzt.strftime("%Y-%m-%d")
     erledigt = set(state.get("gesendet", {}).get(heute, []))
-    jetzt = datetime.now()
     faellig = []
     for slot in c["benachrichtigung"].get("zeiten", []):
         try:
@@ -229,13 +229,18 @@ def faellige_slots(c, state):
             faellig.append(slot)
     return faellig
 
-def markiere_gesendet(state, slots):
-    heute = datetime.now().strftime("%Y-%m-%d")
+def markiere_gesendet(state, slots, tag):
+    # tag = der Tag, fuer den die Slots faellig waren - NICHT datetime.now()
+    # am Laufende (Fix 2026-09-11): der verspaetete 21:30-Lauf vom 10.09.
+    # erkannte um 23:50 die Slots 15:00/17:00/21:30, war aber erst um 00:20
+    # fertig und verbuchte sie unter dem 11.09. Dort galten sie dann als
+    # erledigt, und alle Cloud-Laeufe des 11.09. nach 07:30 endeten ohne
+    # Pipeline und ohne Push.
     g = state.setdefault("gesendet", {})
-    g.setdefault(heute, [])
+    g.setdefault(tag, [])
     for s in slots:
-        if s not in g[heute]:
-            g[heute].append(s)
+        if s not in g[tag]:
+            g[tag].append(s)
     for tag in sorted(g)[:-7]:   # nur letzte 7 Tage behalten
         del g[tag]
     state_save(state)
@@ -249,17 +254,20 @@ def main():
         if not c["benachrichtigung"].get("aktiv"):
             return
         state = state_load()
-        slots = faellige_slots(c, state)
+        jetzt = datetime.now()  # ein Zeitpunkt fuer Pruefung UND Verbuchung, siehe markiere_gesendet
+        slots = faellige_slots(c, state, jetzt)
         if not slots:
+            print(f"[{jetzt:%Y-%m-%d %H:%M}] Keine faelligen Slots - bereits erledigt: "
+                  f"{state.get('gesendet', {}).get(jetzt.strftime('%Y-%m-%d'), [])}")
             return  # ausserhalb der Sendezeiten -> still beenden
-        print(f"[{datetime.now():%Y-%m-%d %H:%M}] Faellige Slots {slots} -> Lauf + Push")
+        print(f"[{jetzt:%Y-%m-%d %H:%M}] Faellige Slots {slots} -> Lauf + Push")
         ok = pipeline(c, push=True)
         # Erster konfigurierter Slot des Tages (zeiten[0], typischerweise
         # 07:30) wird als Morning Brief gepusht (Marktampel-Status vorweg,
         # siehe notify.py::baue_nachricht) statt der normalen Top-Liste.
         morgens_slot = (c["benachrichtigung"].get("zeiten") or [None])[0]
         lauf("notify.py", "--morgens") if morgens_slot in slots else lauf("notify.py")
-        markiere_gesendet(state, slots)
+        markiere_gesendet(state, slots, jetzt.strftime("%Y-%m-%d"))
         # Fehlschlag sichtbar machen (z.B. CI-Job als "failed" statt gruen) -
         # sonst schluckt lauf() den Fehler und ein kompletter Ausfall des
         # Scorers sieht von aussen wie ein normaler, erfolgreicher Lauf aus.
