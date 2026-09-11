@@ -185,6 +185,22 @@ jobs:
           SIGNALHUB_CONFIG_JSON: ${{ secrets.SIGNALHUB_CONFIG_JSON }}
         run: printf '%s' "$SIGNALHUB_CONFIG_JSON" > config.json
 
+      # OHLC-Historie: juengste Tage aus R2 zurueckholen (seit 2026-09-11,
+      # Befund B10). src/ohlc_history.py haengt seitdem nur noch an und datiert
+      # jede Zeile nach ihrem echten Bar-Datum. Auf dem frischen Runner waere
+      # der Ordner sonst leer - der Upload unten wuerde dann eine Tagesdatei mit
+      # nur den Titeln DIESES Laufs ueber den vollstaendigeren R2-Stand legen.
+      # Die Markierungsdatei entscheidet unten, ob ueberhaupt ueberschrieben
+      # werden darf. --max-age 21d: aeltere Tage bekommen keine neuen Bars mehr.
+      - name: OHLC-Historie (juengste Tage) aus R2 holen - Basis fuers Anhaengen
+        run: |
+          mkdir -p data/ohlc-history
+          if rclone copy r2:signalhub-magazine/ohlc-history/ data/ohlc-history/ --max-age 21d --exclude "_*"; then
+            touch data/ohlc-history/.r2_bestand_geholt
+          else
+            echo "::warning::OHLC-Bestand nicht aus R2 geholt - der Upload schreibt heute nur neue Tage."
+          fi
+
       - name: "Pipeline laufen lassen (Cron: nur faellige Slots pushen, manueller Trigger: sofort ohne Push)"
         env:
           SIGNALHUB_IMAP_PASSWORD: ${{ secrets.SIGNALHUB_IMAP_PASSWORD }}
@@ -221,10 +237,18 @@ jobs:
       # jeder Tag eine eigene, kleine Datei statt eines Zustands, der
       # ueberschrieben wird. "|| true": kein faelliger Slot -> keine Datei ->
       # kein Fehler.
+      # Seit 2026-09-11: nur mit vorher geholtem R2-Bestand duerfen bestehende
+      # Tagesdateien ersetzt werden (dann ist die lokale Datei eine Obermenge).
+      # Ohne ihn nur neue Tage (--ignore-existing). Punkt- und Unterstrich-
+      # Dateien (Markierung, Aenderungsliste, Korrektur-Protokoll) bleiben lokal.
       - name: OHLC-Tagessnapshot nach R2 sichern (persistente Kurshistorie)
         if: always()
         run: |
-          rclone copy data/ohlc-history/ r2:signalhub-magazine/ohlc-history/ || true
+          if [ -f data/ohlc-history/.r2_bestand_geholt ]; then
+            rclone copy data/ohlc-history/ r2:signalhub-magazine/ohlc-history/ --exclude ".*" --exclude "_*" || true
+          else
+            rclone copy data/ohlc-history/ r2:signalhub-magazine/ohlc-history/ --ignore-existing --exclude ".*" --exclude "_*" || true
+          fi
 
       # Platzhalter, falls kein faelliger Slot lief (data/ existiert dann gar
       # nicht - run.py kehrt vor dem ersten os.makedirs(DATA) zurueck, siehe

@@ -98,8 +98,13 @@ def yahoo_chart(symbol):
         dates.append(datetime.fromtimestamp(ts[i]).strftime("%Y-%m-%d") if i < len(ts) and ts[i] else None)
     if len(closes) < 60:
         return None
+    # Abrufzeitpunkt (seit 2026-09-11, Befund B10): ohlc_history.py entscheidet
+    # damit, ob der letzte Bar beim ABRUF schon ein abgeschlossener Handelstag war.
+    # Der Lauf-Zeitpunkt reicht dafuer nicht - der Tages-Cache kann einen am
+    # Nachmittag geholten Intraday-Bar bis in einen spaeteren Lauf weitertragen.
     return {"meta": meta, "closes": closes, "volumes": volumes,
-            "highs": highs, "lows": lows, "opens": opens, "dates": dates}
+            "highs": highs, "lows": lows, "opens": opens, "dates": dates,
+            "abgerufen": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")}
 
 def lade_earnings_kalender(tage):
     """Nasdaq-Earnings-Kalender fuer die naechsten `tage` Tage -> {SYMBOL: 'YYYY-MM-DD'}.
@@ -2061,7 +2066,8 @@ def _sma_reihe(closes, n, fenster):
             out.append(round(sum(closes[i - n + 1:i + 1]) / n, 2))
     return out
 
-def _chartdaten(closes, volumes, opens=None, highs=None, lows=None, fenster=126):
+def _chartdaten(closes, volumes, opens=None, highs=None, lows=None, fenster=126,
+                dates=None, abgerufen=None):
     """Mini-Chart-Daten fuer ~6 Monate: seit 2026-07-24 volles OHLC (Kerzen-
     Darstellung im Dashboard wie im Price-Action-Hub) + Volumen + SMA50/150/200.
     o/h/l sind optional - fehlen sie, rendert das Dashboard weiter die
@@ -2082,6 +2088,14 @@ def _chartdaten(closes, volumes, opens=None, highs=None, lows=None, fenster=126)
         out["o"] = [round(x, 2) for x in opens[-fenster:]]
         out["h"] = [round(x, 2) for x in highs[-fenster:]]
         out["l"] = [round(x, 2) for x in lows[-fenster:]]
+    # Datum des letzten Bars + Abrufzeit (seit 2026-09-11, Befund B10 der
+    # Systempruefung): ohlc_history.py datiert jede Zeile der Kurshistorie nach
+    # dem echten Handelstag statt nach dem Laufdatum. Bewusst nur der LETZTE
+    # Bar - die volle Datumsreihe wuerde signals.js um ~870 KB aufblaehen.
+    if dates and dates[-1]:
+        out["d"] = dates[-1]
+    if abgerufen:
+        out["abg"] = abgerufen
     return out
 
 # ---------------------------------------------------------------------------
@@ -2384,7 +2398,8 @@ def score_alle(limit=None):
             # unGErundeter RS-Faktorwert fuer den Pool-Rang-Post-Pass
             # (f_rs_pool_rang entfernt das Feld wieder, bleibt nicht im JSON)
             "_rs_wert": f["relative_staerke"],
-            "chart": _chartdaten(closes, volumes, chart.get("opens"), highs, lows),
+            "chart": _chartdaten(closes, volumes, chart.get("opens"), highs, lows,
+                                 dates=chart.get("dates"), abgerufen=chart.get("abgerufen")),
         })
         if i % 10 == 0:
             print(f"  ... {i}/{len(rang)}")
