@@ -1,4 +1,5 @@
 name: Signal-Hub Cloud-Pipeline
+run-name: ${{ inputs.geplant && 'Signal-Hub Cloud-Pipeline (Worker-Cron)' || 'Signal-Hub Cloud-Pipeline' }}
 
 # Ersetzt den fruehen Mac-mini-LaunchAgent (com.maick.signalhub) UND das
 # frühere signal-hub.yml im Repo Miksch52/maick-trading-system. Ausgelagert
@@ -27,6 +28,13 @@ name: Signal-Hub Cloud-Pipeline
 # jetzt >= slot_dt. Ein Cron um 07:07 wuerde den 07:30-Slot also gar nicht
 # ausloesen, sondern erst der naechste Anstoss mittags. Deshalb konsequent
 # +7 Minuten hinter den Slot gelegt, nicht davor.
+#
+# Seit 2026-09-11 ist der Cloudflare-Worker-Cron der puenktliche Ausloeser
+# (mts-cors-proxy.js, CRON_ZEITPLAN): er startet diesen Workflow um 07:37,
+# 15:07, 17:07 und 21:37 Berlin per workflow_dispatch mit geplant=true. Die
+# Cron-Zeilen unten bleiben als verspaeteter Fallback - run.py --scheduled
+# erkennt den bereits erledigten Slot ueber state.json aus R2 und endet nach
+# ~2 Minuten, ohne ein zweites Mal zu pushen.
 on:
   schedule:
     - cron: '37 5 * * *'   # 07:37 Europe/Berlin (CEST, Sommer) -> Slot 07:30
@@ -37,7 +45,12 @@ on:
     - cron: '7 16 * * *'   # 17:07 Europe/Berlin (CET, Winter)  -> Slot 17:00
     - cron: '37 19 * * *'  # 21:37 Europe/Berlin (CEST, Sommer) -> Slot 21:30
     - cron: '37 20 * * *'  # 21:37 Europe/Berlin (CET, Winter)  -> Slot 21:30
-  workflow_dispatch: {}    # manueller Testlauf / Cloud-Trigger-Button
+  workflow_dispatch:       # manueller Testlauf / Cloud-Trigger-Button / Worker-Cron
+    inputs:
+      geplant:
+        description: 'Wie ein Cron-Lauf behandeln (nur faellige Push-Slots) - setzt der Worker-Cron'
+        type: boolean
+        default: false
 
 env:
   TZ: Europe/Berlin
@@ -206,7 +219,10 @@ jobs:
           SIGNALHUB_IMAP_PASSWORD: ${{ secrets.SIGNALHUB_IMAP_PASSWORD }}
           SIGNALHUB_DEPOT_NAMEN: ${{ secrets.SIGNALHUB_DEPOT_NAMEN }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # Worker-Cron (geplant=true) verhaelt sich wie ein GitHub-Cron: nur
+          # faellige Slots, mit Push. Der Cloud-Button ohne Eingabe bleibt beim
+          # sofortigen Lauf ohne Push.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.geplant }}" != "true" ]; then
             python3 src/run.py
           else
             python3 src/run.py --scheduled
