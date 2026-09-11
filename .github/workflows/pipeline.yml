@@ -209,7 +209,8 @@ jobs:
         run: |
           mkdir -p data/ohlc-history
           if rclone copy r2:signalhub-magazine/ohlc-history/ data/ohlc-history/ --max-age 21d --exclude "_*"; then
-            touch data/ohlc-history/.r2_bestand_geholt
+            # Liste der geholten Tage: nur diese darf der Upload unten ersetzen.
+            ls data/ohlc-history | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}\.csv$' > data/ohlc-history/.aus_r2_geholt || true
           else
             echo "::warning::OHLC-Bestand nicht aus R2 geholt - der Upload schreibt heute nur neue Tage."
           fi
@@ -253,17 +254,20 @@ jobs:
       # jeder Tag eine eigene, kleine Datei statt eines Zustands, der
       # ueberschrieben wird. "|| true": kein faelliger Slot -> keine Datei ->
       # kein Fehler.
-      # Seit 2026-09-11: nur mit vorher geholtem R2-Bestand duerfen bestehende
-      # Tagesdateien ersetzt werden (dann ist die lokale Datei eine Obermenge).
-      # Ohne ihn nur neue Tage (--ignore-existing). Punkt- und Unterstrich-
-      # Dateien (Markierung, Aenderungsliste, Korrektur-Protokoll) bleiben lokal.
+      # Seit 2026-09-11 in zwei Schritten: (1) neue Tage nur ANLEGEN, nie
+      # ueberschreiben; (2) ERSETZT werden ausschliesslich Tagesdateien, die
+      # oben aus R2 geholt wurden - nur fuer sie ist die lokale Datei sicher
+      # eine Obermenge (angehaengt, nie gekuerzt). Vorher reichte ein
+      # erfolgreicher Abruf als Freibrief fuer alles: ein Nachtrag fuer einen
+      # alten, nicht geholten Tag ersetzte am 11.09. die vollstaendige
+      # 2026-07-17.csv durch eine Datei mit einer Zeile. Punkt- und
+      # Unterstrich-Dateien (Listen, Korrektur-Protokoll) bleiben lokal.
       - name: OHLC-Tagessnapshot nach R2 sichern (persistente Kurshistorie)
         if: always()
         run: |
-          if [ -f data/ohlc-history/.r2_bestand_geholt ]; then
-            rclone copy data/ohlc-history/ r2:signalhub-magazine/ohlc-history/ --exclude ".*" --exclude "_*" || true
-          else
-            rclone copy data/ohlc-history/ r2:signalhub-magazine/ohlc-history/ --ignore-existing --exclude ".*" --exclude "_*" || true
+          rclone copy data/ohlc-history/ r2:signalhub-magazine/ohlc-history/ --ignore-existing --exclude ".*" --exclude "_*" || true
+          if [ -s data/ohlc-history/.aus_r2_geholt ]; then
+            rclone copy data/ohlc-history/ r2:signalhub-magazine/ohlc-history/ --files-from data/ohlc-history/.aus_r2_geholt || true
           fi
 
       # Platzhalter, falls kein faelliger Slot lief (data/ existiert dann gar

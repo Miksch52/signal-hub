@@ -66,6 +66,13 @@ BERLIN = ZoneInfo("Europe/Berlin")
 NEW_YORK = ZoneInfo("America/New_York")
 # Deutsche Regionalboersen handeln bis 20:00 (Frankfurt) bzw. 22:00 Uhr
 SPAETE_REGIONALBOERSEN = {"F", "HM", "DU", "MU", "SG", "BE", "HA"}
+# Bars, die beim Abruf aelter sind, werden nicht geschrieben (seit 2026-09-11).
+# Ein Titel, dessen letzter Bar Wochen zurueckliegt (ausgesetzt, delistet,
+# Yahoo-Luecke), ist kein Tagesstand - und ein solcher Nachtrag hat am
+# 2026-09-11 die vollstaendige 2026-07-17.csv in R2 durch eine Datei mit einer
+# einzigen Zeile ersetzt: die Pipeline holt nur die juengsten Tage aus R2
+# zurueck, die alte Tagesdatei fehlte lokal und wurde neu angelegt.
+MAX_BAR_ALTER_TAGE = 7
 
 
 def handelsschluss_mit_puffer(ticker, markt, tag):
@@ -89,7 +96,8 @@ def _abrufzeit(chart, ersatz):
 
 def zeilen_nach_handelstag(signals, jetzt):
     """-> ({'JJJJ-MM-TT': [(ticker, close, volume), ...]}, zaehler)"""
-    tage, zaehler = {}, {"ohne_kurs": 0, "ohne_bar_datum": 0, "laufender_handelstag": 0}
+    tage, zaehler = {}, {"ohne_kurs": 0, "ohne_bar_datum": 0, "laufender_handelstag": 0,
+                         "veralteter_bar": 0}
     for t in signals.get("treffer") or []:
         chart = t.get("chart") or {}
         closes = chart.get("c") or []
@@ -106,7 +114,11 @@ def zeilen_nach_handelstag(signals, jetzt):
             zaehler["ohne_bar_datum"] += 1
             continue
         markt = t.get("markt") or ("Europa" if "." in ticker else "USA")
-        if _abrufzeit(chart, jetzt) < handelsschluss_mit_puffer(ticker, markt, tag):
+        abruf = _abrufzeit(chart, jetzt)
+        if (abruf.date() - tag).days > MAX_BAR_ALTER_TAGE:
+            zaehler["veralteter_bar"] += 1
+            continue
+        if abruf < handelsschluss_mit_puffer(ticker, markt, tag):
             zaehler["laufender_handelstag"] += 1
             continue
         vols = chart.get("v") or []
@@ -151,6 +163,7 @@ def schreibe(signals_pfad=None, out_dir=None, jetzt=None):
         f.write("\n".join(geaendert))
     print(f"OHLC-Historie: {neu_gesamt} neue Schlusskurse in {len(geaendert)} Tagesdatei(en) "
           f"{geaendert or ''} - ausgelassen: {zaehler['laufender_handelstag']} laufender Handelstag, "
+          f"{zaehler['veralteter_bar']} Bar aelter als {MAX_BAR_ALTER_TAGE} Tage, "
           f"{zaehler['ohne_bar_datum']} ohne Bar-Datum, {zaehler['ohne_kurs']} ohne Kurs.")
     return True
 
