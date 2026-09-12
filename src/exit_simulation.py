@@ -184,10 +184,29 @@ def aggregiere(sims):
     n = len(sims)
     strategie = _stats([s["strategie_return"] for s in sims])
     hold = _stats([s["hold_return"] for s in sims])
+    ergebnis_extra = {}
+    # Index-Bezug (seit 2026-09-12, Systempruefung Punkt 5): der Aufrufer kann
+    # je Episode "index_return" mitgeben - die Rendite des Leitindex ueber
+    # GENAU dasselbe feste Fenster (index_vergleich.index_return_fenster).
+    # Ohne diesen Abzug sagt auch die Strategie-Spur nur, wie der Markt lief.
+    mit_idx = [s for s in sims if s.get("index_return") is not None]
+    if mit_idx:
+        ergebnis_extra["vs_index"] = {
+            "n": len(mit_idx),
+            "index_avg": round(sum(s["index_return"] for s in mit_idx) / len(mit_idx), 2),
+            "strategie_edge_avg": round(
+                sum(s["strategie_return"] - s["index_return"] for s in mit_idx) / len(mit_idx), 2),
+            "hold_edge_avg": round(
+                sum(s["hold_return"] - s["index_return"] for s in mit_idx) / len(mit_idx), 2),
+            "strategie_schlaegt_index_pct": round(
+                sum(1 for s in mit_idx if s["strategie_return"] > s["index_return"])
+                / len(mit_idx) * 100, 1),
+        }
     return {
         "n": n,
         "strategie": strategie,
         "hold": hold,
+        **ergebnis_extra,
         "vorsprung_avg": round(strategie["avg"] - hold["avg"], 2),
         "gestoppt_pct": round(sum(1 for s in sims if s["gestoppt"]) / n * 100, 1),
         "t1_pct": round(sum(1 for s in sims if s["t1"]) / n * 100, 1),

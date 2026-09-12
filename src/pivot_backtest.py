@@ -69,6 +69,7 @@ import sys
 from datetime import datetime, timezone
 
 import exit_simulation
+import index_vergleich
 import pfade
 import pivot
 
@@ -371,6 +372,16 @@ def _warn_tage():
         return 10
 
 
+def _ablegen(eimer, eimer_edge, kohorte, bk, ret, edge):
+    """Legt einen Pick in seine Kohorte - und, wenn der Index-Zeitraum
+    bestimmbar war, denselben Pick zusaetzlich in die Edge-Kohorte. Bewusst
+    eine Funktion statt zweier Aufrufe an jeder der ~20 Ablagestellen: sonst
+    waere frueher oder spaeter eine Kohorte ohne Index-Zahl geblieben."""
+    eimer[kohorte][bk].append(ret)
+    if edge is not None:
+        eimer_edge[kohorte][bk].append(edge)
+
+
 def evaluate():
     try:
         import scorer
@@ -384,6 +395,11 @@ def evaluate():
     cache = scorer.lade_cache()
     heute = datetime.now().date()
     warn = _warn_tage()
+    # Index-Vergleich (seit 2026-09-12, Systempruefung Punkt 5): jede Kohorte
+    # bekommt parallel zum Absolut-Return den Vorsprung gegenueber dem
+    # Leitindex ihres Marktes - ohne den sagt eine Trefferquote nur, wie der
+    # Markt im selben Zeitraum lief.
+    idx_charts = index_vergleich.lade_index_charts(scorer.hole_chart_cached, cache)
     # Qualitaets-Split (seit 2026-07-24): Basis fuer die Kalibrierung von
     # config.pivot.armed_schwelle - zeigt, ob hohe qualitaet-Werte forward
     # tatsaechlich besser laufen (erst ab ~8 Picks je Kohorte aussagekraeftig).
@@ -425,6 +441,12 @@ def evaluate():
     ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")   # Folgevolumen nur bei Ausbruechen sinnvoll
     eimer = {s: {h: [] for h, _ in HORIZONTE}
              for s in basis_stati + qual_stati + earn_stati + exit_stati + sepa_stati}
+    # Parallelstruktur fuer den Index-Vorsprung, gleiche Schluessel (siehe
+    # _ablegen). Die beiden exit_-Kohorten bleiben bewusst leer: sie messen
+    # gegen einen festen Stichtag, ihr Index-Bezug steckt in score_backtest.py
+    # (strategie_sim.vs_index) und waere hier eine andere Rechnung.
+    eimer_edge = {s: {h: [] for h, _ in HORIZONTE}
+                  for s in basis_stati + qual_stati + earn_stati + exit_stati + sepa_stati}
     # Einzelfaelle (seit 2026-08): dieselben Belege wie eimer, aber ticker-
     # scharf statt aggregiert - Basis fuer die "Fundstellen"-Ansicht im
     # Backtest-Report (dashboard.html hat sonst keinen Zugriff auf das lokale,
@@ -449,14 +471,15 @@ def evaluate():
         if not kurs or not e.get("preis_signal"):
             continue
         ret = kurs / e["preis_signal"] - 1
+        edge = index_vergleich.edge_fuer(idx_charts, e.get("markt"), e["datum"], tage, ret)
         e["realisiert"] = {"horizont": bk, "return_pct": round(ret * 100, 2),
                            "stand": heute.strftime("%Y-%m-%d")}
-        eimer[e["status"]][bk].append(ret)
+        _ablegen(eimer, eimer_edge, e["status"], bk, ret, edge)
         if e["status"] == "ARMED" and e.get("qualitaet") is not None:
-            eimer["ARMED_q70+" if e["qualitaet"] >= 70 else "ARMED_q<70"][bk].append(ret)
+            _ablegen(eimer, eimer_edge, "ARMED_q70+" if e["qualitaet"] >= 70 else "ARMED_q<70", bk, ret, edge)
         et = e.get("earnings_tage")
         nah = et is not None and 0 <= et <= warn
-        eimer[f"{e['status']}_earnings_{'nah' if nah else 'fern'}"][bk].append(ret)
+        _ablegen(eimer, eimer_edge, f"{e['status']}_earnings_{'nah' if nah else 'fern'}", bk, ret, edge)
 
         # --- SEPA-Kriterien (2026-08-29) --------------------------------
         # Fehlt ein Feld (Eintrag von vor diesem Umbau), wird NICHT einsortiert
@@ -470,26 +493,26 @@ def evaluate():
         kt = e.get("kontraktionen")
         if kt is not None:
             eng = kt >= pivot.KONTRAKTION_MIN
-            eimer[f"{e['status']}_vcp_{'ge2' if eng else 'lt2'}"][bk].append(ret)
+            _ablegen(eimer, eimer_edge, f"{e['status']}_vcp_{'ge2' if eng else 'lt2'}", bk, ret, edge)
             streng = kt >= pivot.KONTRAKTION_MIN_STRENG
-            eimer[f"{e['status']}_vcp_{'ge3' if streng else 'lt3'}"][bk].append(ret)
+            _ablegen(eimer, eimer_edge, f"{e['status']}_vcp_{'ge3' if streng else 'lt3'}", bk, ret, edge)
         ep = e.get("eng_pct")
         if ep is not None:
             schmal = ep <= pivot.ENG_MAX_STRENG * 100     # eng_pct ist in Prozent
-            eimer[f"{e['status']}_eng_{'le5' if schmal else 'gt5'}"][bk].append(ret)
+            _ablegen(eimer, eimer_edge, f"{e['status']}_eng_{'le5' if schmal else 'gt5'}", bk, ret, edge)
         bw = e.get("basis_wochen")
         if bw is not None:
             lang = bw >= pivot.BASIS_MIN_WOCHEN
-            eimer[f"{e['status']}_basis_{'ge7w' if lang else 'lt7w'}"][bk].append(ret)
+            _ablegen(eimer, eimer_edge, f"{e['status']}_basis_{'ge7w' if lang else 'lt7w'}", bk, ret, edge)
         tt = e.get("tt_pass")
         if tt is not None:
-            eimer[f"{e['status']}_tt_{'pass' if tt else 'fail'}"][bk].append(ret)
+            _ablegen(eimer, eimer_edge, f"{e['status']}_tt_{'pass' if tt else 'fail'}", bk, ret, edge)
         it = e.get("inst_trend")
         if it is not None:
-            eimer[f"{e['status']}_insttrend_{'ja' if it else 'nein'}"][bk].append(ret)
+            _ablegen(eimer, eimer_edge, f"{e['status']}_insttrend_{'ja' if it else 'nein'}", bk, ret, edge)
         ft = e.get("follow_through_vol")
         if ft is not None and e["status"] == "BREAKOUT":
-            eimer["BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach"][bk].append(ret)
+            _ablegen(eimer, eimer_edge, "BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach", bk, ret, edge)
 
         # Exit-Regel-Backtest: einmalig berechnen und dauerhaft im Logbuch-
         # Eintrag cachen (wie "realisiert") - kein erneutes Nachrechnen bei
@@ -511,6 +534,7 @@ def evaluate():
             "qualitaet": e.get("qualitaet"), "datum": e["datum"],
             "preis_signal": e["preis_signal"], "horizont": bk,
             "return_pct": round(ret * 100, 2),
+            "edge_idx_pct": round(edge * 100, 2) if edge is not None else None,
             "earnings_tage": et,
             "exit_sim": e.get("exit_sim"),
             "kontraktionen": kt, "basis_wochen": bw,
@@ -519,7 +543,8 @@ def evaluate():
         })
     scorer.speichere_cache(cache)
     _logbuch_save(lb)
-    fr = {st: {h: _stats(eimer[st][h]) for h, _ in HORIZONTE} for st in eimer}
+    fr = {st: {h: index_vergleich.ergaenze_edge(_stats(eimer[st][h]), eimer_edge[st][h])
+               for h, _ in HORIZONTE} for st in eimer}
     return fr, einzelfaelle
 
 
@@ -590,9 +615,18 @@ def _schreibe_backtest(out):
 
 # ---------------------------------------------------------------------------
 def _druck_tabelle(titel, block, mit_edge=False):
+    """mit_edge: Delta gegen die RETRO-BASELINE (zufaelliger Uptrend-Tag).
+    Davon streng zu unterscheiden sind die Spalten ØvsIdx/>Idx% - der
+    Vorsprung gegenueber dem MARKT-INDEX (edge_idx_*, seit 2026-09-12,
+    Systempruefung Punkt 5). Sie erscheinen automatisch, sobald eine Kohorte
+    einen Index-Bezug hat, und gelten fuer den Forward-Test."""
     print(f"\n{titel}")
-    print(f"{'Status':10s}{'Hor':5s}{'n':>6s}{'Win%':>7s}{'Ø%':>7s}{'ØR':>6s}"
-          + ("   ΔWin   ΔØ%    ΔR" if mit_edge else ""))
+    hat_idx = any(("edge_idx_avg" in block[st][h])
+                  for st in block if st != "baseline"
+                  for h, _ in HORIZONTE)
+    print(f"{'Status':26s}{'Hor':5s}{'n':>6s}{'Win%':>7s}{'Ø%':>7s}{'ØR':>6s}"
+          + ("   ΔWin   ΔØ%    ΔR" if mit_edge else "")
+          + ("   ØvsIdx  >Idx%" if hat_idx else ""))
     for st in block:
         if st == "baseline":
             continue
@@ -600,11 +634,14 @@ def _druck_tabelle(titel, block, mit_edge=False):
             s = block[st][label]
             if not s["n"]:
                 continue
-            zeile = (f"{st:10s}{label:5s}{s['n']:6d}{(s['win'] or 0):7.1f}"
+            zeile = (f"{st:26s}{label:5s}{s['n']:6d}{(s['win'] or 0):7.1f}"
                      f"{(s['avg'] or 0):7.2f}{(s.get('avg_R') or 0):6.2f}")
             if mit_edge and "edge_win" in s:
                 zeile += (f"  {s['edge_win']:+6.1f}{s['edge_avg']:+7.2f}"
                           f"{(s.get('edge_R') or 0):+6.2f}")
+            if hat_idx:
+                ia, iw = s.get("edge_idx_avg"), s.get("edge_idx_win")
+                zeile += (f"{ia:+9.2f}{iw:7.1f}" if ia is not None else f"{'–':>9s}{'–':>7s}")
             print(zeile)
     if "baseline" in block:
         print("  Baseline (alle Uptrend-Tage):")

@@ -56,6 +56,7 @@ import sys
 from datetime import datetime, timezone
 
 import exit_simulation
+import index_vergleich
 import pfade
 
 HORIZONTE = [("4W", 21), ("8W", 50), ("12W", 78)]   # Mindest-KALENDERtage je Kohorte
@@ -125,11 +126,10 @@ def evaluiere(picks):
     cache = scorer.lade_cache()
     heute = datetime.now().date()
 
-    # Index-Charts einmal holen (fuer edge_idx)
-    idx_closes = {}
-    for markt, sym in INDEX.items():
-        d = scorer.hole_chart_cached(sym, cache)
-        idx_closes[markt] = d["closes"] if d else []
+    # Index-Charts einmal holen (fuer edge_idx und die Index-Bereinigung der
+    # Strategie-Spur, die das feste 78-Tage-Fenster braucht statt "bis heute")
+    idx_charts = index_vergleich.lade_index_charts(scorer.hole_chart_cached, cache)
+    idx_closes = {m: (c.get("closes") or []) for m, c in idx_charts.items()}
 
     kurs = {}       # symbol -> aktueller Schlusskurs (oder None)
     charts = {}     # symbol -> volles Chart-Dict (fuer die Strategie-Simulation)
@@ -173,6 +173,14 @@ def evaluiere(picks):
             charts.get(sym) or {}, p["datum"], p["preis"],
             exit_simulation.stop_aus_prozent(p["preis"]))
         if sim:
+            # Index ueber GENAU dasselbe feste Fenster - nur so ist der
+            # Strategie-Return als Leistung des Signals lesbar und nicht als
+            # Abbild der Marktphase (Systempruefung Punkt 5).
+            idx_markt = p.get("markt") if p.get("markt") in idx_charts else "USA"
+            idx_ret = index_vergleich.index_return_fenster(
+                idx_charts.get(idx_markt), p["datum"], exit_simulation.HORIZONT_TAGE)
+            if idx_ret is not None:
+                sim["index_return"] = round(idx_ret * 100, 2)
             sims[p["tier"]].append(sim)
 
     scorer.speichere_cache(cache)
@@ -258,6 +266,11 @@ def main():
               f"T1 {sim['t1_pct']} % / T2 {sim['t2_pct']} % / T3 {sim['t3_pct']} %")
         print(f"  MFE-Median {sim['mfe_median']:+.2f} % | MAE-Median {sim['mae_median']:+.2f} % | "
               f"ausgestoppt und spaeter >= +8 %: {sim['gestoppt_mfe_ge_t1_pct']} %")
+        vi = sim.get("vs_index")
+        if vi:
+            print(f"  vs. Index (gleiches Fenster, n={vi['n']}): Index {vi['index_avg']:+.2f} % | "
+                  f"Strategie {vi['strategie_edge_avg']:+.2f} Pp | Halten {vi['hold_edge_avg']:+.2f} Pp | "
+                  f"schlaegt Index: {vi['strategie_schlaegt_index_pct']} %")
 
     print(f"\nGespeichert: {pfade.SCORE_BACKTEST}")
 
