@@ -66,8 +66,9 @@ Ausgabe: data/pivot_backtest.json (+ Konsolentabelle).
 import json
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
+import exit_simulation
 import pfade
 import pivot
 
@@ -75,12 +76,10 @@ HORIZONTE = [("4W", 20), ("8W", 40), ("12W", 60)]   # Forward-Fenster in Handels
 RETRO_STEP = 2                                       # jeden 2. Tag (weniger Autokorrelation)
 GATE_GRUENDE = {"kein Aufwaertstrend (Stage 2)", "zu wenig Historie"}
 
-# Exit-Regel-Backtest (seit 2026-08-21, siehe Modul-Docstring): dieselbe
-# Staffel wie Maick's Trading System.html Trade-Planner ("Minervini T1/T2/T3").
-T1_PCT, T1_ANTEIL = 0.08, 0.50
-T2_PCT, T2_ANTEIL = 0.20, 0.25
-T3_PCT, T3_ANTEIL = 0.40, 0.25
-EXIT_HORIZONT_TAGE = 78   # deckt sich mit dem 12W-Bucket oben (Kalendertage)
+# Exit-Regel-Backtest (seit 2026-08-21): Staffel und Horizont liegen seit
+# 2026-09-12 in exit_simulation.py, damit score_backtest.py (und kuenftige
+# Engines) dieselbe Konvention nutzen statt je eine eigene zu definieren.
+EXIT_HORIZONT_TAGE = exit_simulation.HORIZONT_TAGE
 
 
 # ---------------------------------------------------------------------------
@@ -355,78 +354,13 @@ def _bucket(elapsed_tage):
     return None
 
 
-def _finde_start_index(dates, entry_datum):
-    """Erster Chart-Index mit dates[i] >= entry_datum - der Entry gilt zum
-    Signalkurs am Signaltag, die Simulation beobachtet ab diesem Tag."""
-    for i, d in enumerate(dates):
-        if d and d >= entry_datum:
-            return i
-    return None
-
-
 def _simulate_exit(chart, entry_datum, entry_preis, stop):
-    """Simuliert die Minervini-Ausstiegsstaffel (T1/T2/T3, siehe Modul-
-    Docstring) Tag fuer Tag gegen den echten Kursverlauf. Nutzt Hoch/Tief je
-    Tag statt nur Schluss - ein Stop/Target kann intraday ausgeloest werden,
-    ohne dass der Schlusskurs das zeigt. Gibt None zurueck, wenn der
-    Signaltag im Chart fehlt, kein plausibler Stop vorliegt, oder der
-    12-Wochen-Horizont (EXIT_HORIZONT_TAGE) im verfuegbaren Chart noch nicht
-    erreicht ist (sonst waere der Hold-Vergleich unfair fruehzeitig
-    abgeschnitten - ein spaeterer Lauf mit mehr Kalenderzeit holt das nach)."""
-    dates = chart.get("dates") or []
-    highs, lows, closes = chart.get("highs") or [], chart.get("lows") or [], chart.get("closes") or []
-    if not dates or entry_preis is None or stop is None or stop >= entry_preis:
-        return None
-    start = _finde_start_index(dates, entry_datum)
-    if start is None:
-        return None
-    try:
-        grenze = (datetime.strptime(entry_datum, "%Y-%m-%d")
-                  + timedelta(days=EXIT_HORIZONT_TAGE)).strftime("%Y-%m-%d")
-    except ValueError:
-        return None
-    horizont_idx = None
-    for i in range(start, len(dates)):
-        if dates[i] and dates[i] >= grenze:
-            horizont_idx = i
-            break
-    if horizont_idx is None:
-        return None   # Chart deckt den 78-Tage-Horizont noch nicht ab
-    hold_close = closes[horizont_idx]
-
-    t1_preis = entry_preis * (1 + T1_PCT)
-    t2_preis = entry_preis * (1 + T2_PCT)
-    t3_preis = entry_preis * (1 + T3_PCT)
-    rest, erloese = 1.0, 0.0
-    t1_ok = t2_ok = t3_ok = gestoppt = False
-    for i in range(start, horizont_idx + 1):
-        if rest <= 0:
-            break
-        if lows[i] <= stop:
-            erloese += rest * stop
-            rest = 0.0
-            gestoppt = True
-            break
-        if not t1_ok and highs[i] >= t1_preis:
-            erloese += T1_ANTEIL * t1_preis
-            rest -= T1_ANTEIL
-            t1_ok = True
-        if not t2_ok and highs[i] >= t2_preis:
-            verkauf = min(T2_ANTEIL, rest)
-            erloese += verkauf * t2_preis
-            rest -= verkauf
-            t2_ok = True
-        if not t3_ok and highs[i] >= t3_preis:
-            erloese += rest * t3_preis
-            rest = 0.0
-            t3_ok = True
-    if rest > 0:
-        erloese += rest * hold_close   # zum Horizont noch offene Restposition, mark-to-market
-
-    blended = erloese / entry_preis - 1.0
-    hold = hold_close / entry_preis - 1.0
-    return {"blended_return": round(blended * 100, 2), "hold_return": round(hold * 100, 2),
-            "t1": t1_ok, "t2": t2_ok, "t3": t3_ok, "gestoppt": gestoppt}
+    """Duenner Wrapper um exit_simulation.simuliere() - die Logik selbst liegt
+    seit 2026-09-12 dort (gemeinsame Konvention fuer alle Engines, siehe
+    Systempruefung Punkt 4). Hier wird der Pivot-eigene Stop aus dem Logbuch
+    uebergeben (Swing-Low, seit 2026-08-21 mitgeschrieben) statt des
+    prozentualen Stops, den Kohorten ohne eigenes Stop-Feld verwenden."""
+    return exit_simulation.simuliere(chart, entry_datum, entry_preis, stop)
 
 
 def _warn_tage():
@@ -566,7 +500,10 @@ def evaluate():
                 e["exit_sim"] = sim
         if e.get("exit_sim") is not None:
             sim = e["exit_sim"]
-            eimer[f"{e['status']}_exit_staffel"]["12W"].append(sim["blended_return"] / 100)
+            # "blended_return": Schluesselname vor 2026-09-12, kann in schon
+            # gecachten Logbuch-Eintraegen stehen (exit_sim wird nie neu berechnet).
+            staffel = sim.get("strategie_return", sim.get("blended_return"))
+            eimer[f"{e['status']}_exit_staffel"]["12W"].append(staffel / 100)
             eimer[f"{e['status']}_exit_hold"]["12W"].append(sim["hold_return"] / 100)
 
         einzelfaelle.append({

@@ -25,6 +25,23 @@ Methodik:
     Statistik ausreichend). Ohne diesen Abzug saehe in einem Bullenmarkt
     JEDER Score gut aus.
 
+Strategie-Spur (seit 2026-09-12, Systempruefung Punkt 4): Alles oben misst,
+was das SIGNAL gebracht haette (kaufen und liegen lassen bis heute) - real
+gehandelt wird aber mit 8-%-Stop und gestaffelter Gewinnmitnahme. Die stark
+negativen 12W-Zahlen (-11,5 % bei Tier A) entstehen deshalb zu einem
+unbekannten Teil aus Positionen, die laengst ausgestoppt gewesen waeren.
+exit_simulation.py rechnet dieselben Episoden zusaetzlich MIT Risikomanagement
+durch (Konventionen dort dokumentiert, aus den 252 realen Trades abgelesen)
+und stellt beides nebeneinander:
+  ergebnis[tier]["12W"]["strategie_sim"] = {strategie, hold, vorsprung_avg,
+                                            gestoppt_pct, t1/t2/t3_pct,
+                                            mfe/mae_median, n}
+Nur der 12W-Slot: die Simulation ist inhaerent ein fixer 78-Tage-Test, es
+gibt keine 4W/8W-Zwischenstaende. WICHTIG fuer den Vergleich - "strategie"
+und "hold" darin messen beide gegen denselben festen Stichtag (Signaltag +
+78 Tage), die uebrigen Zahlen dieser Datei dagegen gegen "heute"; nur die
+beiden Simulationswerte sind daher direkt miteinander vergleichbar.
+
 Teilt den Tages-Yahoo-Cache mit dem Scorer -> direkt nach einem Scorer-Lauf
 kosten fast alle Kursabrufe nichts. Laeuft deshalb taeglich in run.py mit.
 
@@ -38,6 +55,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import exit_simulation
 import pfade
 
 HORIZONTE = [("4W", 21), ("8W", 50), ("12W", 78)]   # Mindest-KALENDERtage je Kohorte
@@ -114,8 +132,13 @@ def evaluiere(picks):
         idx_closes[markt] = d["closes"] if d else []
 
     kurs = {}       # symbol -> aktueller Schlusskurs (oder None)
+    charts = {}     # symbol -> volles Chart-Dict (fuer die Strategie-Simulation)
     eimer = {t: {h: [] for h, _ in HORIZONTE} for t in ("A", "B")}
     eimer_edge = {t: {h: [] for h, _ in HORIZONTE} for t in ("A", "B")}
+    # Strategie-Spur (seit 2026-09-12, siehe Modul-Docstring): je Tier eine
+    # Liste von exit_simulation.simuliere()-Ergebnissen, nur fuer Episoden, die
+    # den festen 78-Tage-Stichtag im Chart tatsaechlich erreichen.
+    sims = {t: [] for t in ("A", "B")}
     gewertet = 0
     for p in picks:
         try:
@@ -128,6 +151,7 @@ def evaluiere(picks):
         sym = p["ticker"]
         if sym not in kurs:
             d = scorer.hole_chart_cached(sym, cache)
+            charts[sym] = d or {}
             kurs[sym] = (d["closes"][-1] if d and d.get("closes") else None)
         if not kurs[sym]:
             continue
@@ -140,6 +164,16 @@ def evaluiere(picks):
         if len(ic) > offset and ic[-1 - offset]:
             idx_ret = ic[-1] / ic[-1 - offset] - 1
             eimer_edge[p["tier"]][bk].append(ret - idx_ret)
+        # Strategie-Spur: Stop 8 % unter Einstieg (das Score-Logbuch fuehrt -
+        # anders als das Pivot-Logbuch - kein eigenes Stop-Feld, der
+        # prozentuale Stop ist deshalb rueckwirkend auf jede Episode
+        # anwendbar). Liefert None, solange der Chart den 78-Tage-Stichtag
+        # nicht erreicht - dann bleibt die Episode einfach aus dieser Spur.
+        sim = exit_simulation.simuliere(
+            charts.get(sym) or {}, p["datum"], p["preis"],
+            exit_simulation.stop_aus_prozent(p["preis"]))
+        if sim:
+            sims[p["tier"]].append(sim)
 
     scorer.speichere_cache(cache)
 
@@ -152,6 +186,10 @@ def evaluiere(picks):
             if e["n"]:
                 s["edge_idx_avg"] = e["avg"]        # Ø-Vorsprung vs. Markt-Index
                 s["edge_idx_win"] = e["win"]        # % der Picks, die den Index schlagen
+            if label == "12W":
+                agg = exit_simulation.aggregiere(sims[tier])
+                if agg.get("n"):
+                    s["strategie_sim"] = agg
             ergebnis[tier][label] = s
     return ergebnis, gewertet
 
@@ -204,6 +242,23 @@ def main():
                   f"{(s['avg'] or 0):8.2f}{(s['median'] or 0):8.2f}"
                   f"{(s.get('edge_idx_avg') if s.get('edge_idx_avg') is not None else 0):+9.2f}"
                   f"{(s.get('edge_idx_win') if s.get('edge_idx_win') is not None else 0):7.1f}")
+    # Strategie-Spur (seit 2026-09-12): zeigt, wie viel des 12W-Minus reines
+    # fehlendes Risikomanagement in der MESSUNG war, statt ein schwaches Signal.
+    for tier in ("A", "B"):
+        sim = ergebnis[tier]["12W"].get("strategie_sim")
+        if not sim:
+            continue
+        print(f"\n--- Tier {tier}: mit Stop/Staffel vs. nur halten "
+              f"(fester 78-Tage-Stichtag, n={sim['n']}) ---")
+        print(f"  mit Stop/Staffel : {sim['strategie']['avg']:+7.2f} %  "
+              f"Win {sim['strategie']['win']:5.1f} %  Median {sim['strategie']['median']:+6.2f} %")
+        print(f"  nur halten       : {sim['hold']['avg']:+7.2f} %  "
+              f"Win {sim['hold']['win']:5.1f} %  Median {sim['hold']['median']:+6.2f} %")
+        print(f"  Vorsprung {sim['vorsprung_avg']:+.2f} Pp | ausgestoppt {sim['gestoppt_pct']} % | "
+              f"T1 {sim['t1_pct']} % / T2 {sim['t2_pct']} % / T3 {sim['t3_pct']} %")
+        print(f"  MFE-Median {sim['mfe_median']:+.2f} % | MAE-Median {sim['mae_median']:+.2f} % | "
+              f"ausgestoppt und spaeter >= +8 %: {sim['gestoppt_mfe_ge_t1_pct']} %")
+
     print(f"\nGespeichert: {pfade.SCORE_BACKTEST}")
 
 
