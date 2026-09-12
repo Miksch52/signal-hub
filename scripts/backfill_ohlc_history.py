@@ -17,9 +17,11 @@ Holt pro Ticker range=2y/interval=1d direkt von Yahoo (dieselbe Rohquelle
 wie scorer.py::yahoo_chart, hier aber mit Zeitstempeln statt nur den
 letzten 126 Tagen - Yahoo liefert diese ohnehin in jeder Antwort mit,
 scorer.py wirft sie nur bisher weg), baut daraus Tages-Snapshots im
-GLEICHEN Format wie ohlc_history.py (ticker,close,volume) und laedt sie
-nach r2:signalhub-magazine/ohlc-history/ hoch - rein additiv, ueberschreibt
-keine bereits vorhandenen Tagesdateien (siehe --bis-Default).
+GLEICHEN Format wie ohlc_history.py (seit 2026-09-12: ticker,open,high,low,
+close,volume) und laedt sie nach r2:signalhub-magazine/ohlc-history/ hoch -
+rein additiv, ueberschreibt keine bereits vorhandenen Tagesdateien (siehe
+--bis-Default). Yahoos quote-Indikator liefert open/high/low im selben
+Aufruf mit, kostet also keinen zusaetzlichen Request.
 
 Einmaliger, manueller Lauf - bewusst NICHT Teil von run.py::pipeline()
 (anders als ohlc_history.py, das taeglich automatisch laeuft).
@@ -70,15 +72,25 @@ def yahoo_chart_mit_datum(symbol):
     r = res[0]
     ts = r.get("timestamp") or []
     q = r.get("indicators", {}).get("quote", [{}])[0]
+    opens, highs, lows = q.get("open") or [], q.get("high") or [], q.get("low") or []
     closes, vols = q.get("close") or [], q.get("volume") or []
     out = {}
     for i, t in enumerate(ts):
         c = closes[i] if i < len(closes) else None
-        v = vols[i] if i < len(vols) else None
         if c is None:
             continue
+        o = opens[i] if i < len(opens) else None
+        h = highs[i] if i < len(highs) else None
+        l = lows[i] if i < len(lows) else None
+        v = vols[i] if i < len(vols) else None
         d_str = datetime.fromtimestamp(t, tz=timezone.utc).date().isoformat()
-        out[d_str] = (round(c, 2), int(v) if v is not None else "")
+        out[d_str] = {
+            "open": round(o, 2) if o is not None else "",
+            "high": round(h, 2) if h is not None else "",
+            "low": round(l, 2) if l is not None else "",
+            "close": round(c, 2),
+            "volume": int(v) if v is not None else "",
+        }
     return out
 
 
@@ -127,11 +139,12 @@ def main():
           f"(delisted/Symbolwechsel/Yahoo-Fehler): {', '.join(fehler[:20])}"
           f"{' ...' if len(fehler) > 20 else ''}")
 
+    SPALTEN = ["ticker", "open", "high", "low", "close", "volume"]
     pro_tag = {}
     for tk, tage in ergebnisse.items():
-        for d_str, (close, vol) in tage.items():
+        for d_str, kurs in tage.items():
             if args.ab <= d_str <= args.bis:
-                pro_tag.setdefault(d_str, []).append((tk, close, vol))
+                pro_tag.setdefault(d_str, []).append((tk, kurs))
 
     out_dir = pfade.OHLC_HISTORY_DIR
     os.makedirs(out_dir, exist_ok=True)
@@ -144,9 +157,9 @@ def main():
             continue
         with open(pfad, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["ticker", "close", "volume"])
-            for tk, close, vol in sorted(pro_tag[d_str]):
-                w.writerow([tk, close, vol])
+            w.writerow(SPALTEN)
+            for tk, kurs in sorted(pro_tag[d_str]):
+                w.writerow([tk] + [kurs[s] for s in SPALTEN[1:]])
         geschrieben.append(d_str)
 
     if uebersprungen:

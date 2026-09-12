@@ -42,6 +42,20 @@ Eine Tagesdatei enthaelt damit ausschliesslich Schlusskurse genau dieses
 Handelstags; US und Europa koennen sich an Feiertagen unterscheiden (Labor Day
 2026-09-07: nur Europa).
 
+Schema seit 2026-09-12 (Systempruefung, Punkt 3 der Optimierungsliste):
+ticker,open,high,low,close,volume statt nur ticker,close,volume - ohne
+Tageshoch/-tief laesst sich im Backtest nicht rekonstruieren, ob ein Stop
+unterwegs gerissen worden waere (siehe pivot_backtest.py/muster_backtest.py:
+sie vergleichen bisher nur Schlusskurs-zu-Schlusskurs). scorer.py::_chartdaten
+liefert o/h/l bereits mit (Kerzendarstellung im Dashboard) - hier wird wie bei
+c/v nur der jeweils LETZTE Wert je Ticker herausgezogen. Fehlen o/h/l (Ticker
+ohne volle 126-Tage-Kerzenreihe, siehe _chartdaten-Docstring), bleibt das Feld
+leer statt die Zeile zu verwerfen - der Schlusskurs ist weiter nutzbar.
+Bestandsdateien (vor diesem Datum) bleiben unangetastet und dreispaltig -
+Leser muessen beide Spaltensaetze vertragen. Anhaengen an eine Tagesdatei,
+die noch im alten Schema begonnen wurde (z.B. ein Lauf kurz vor diesem
+Deploy), uebernimmt deren tatsaechliche Kopfzeile statt sie zu mischen.
+
 Aufruf: python3 src/ohlc_history.py (nach scorer.py, siehe run.py::pipeline).
 Schreibt Signal-Hub/data/ohlc-history/JJJJ-MM-TT.csv und listet die in diesem
 Lauf geaenderten Tage in data/ohlc-history/.geaendert (fuer den lokalen
@@ -74,6 +88,11 @@ SPAETE_REGIONALBOERSEN = {"F", "HM", "DU", "MU", "SG", "BE", "HA"}
 # zurueck, die alte Tagesdatei fehlte lokal und wurde neu angelegt.
 MAX_BAR_ALTER_TAGE = 7
 
+# Spaltenreihenfolge einer neu angelegten Tagesdatei (seit 2026-09-12).
+# Bestandsdateien behalten ALTE_SPALTEN, siehe _kopfzeile()/schreibe().
+NEUE_SPALTEN = ["ticker", "open", "high", "low", "close", "volume"]
+ALTE_SPALTEN = ["ticker", "close", "volume"]
+
 
 def handelsschluss_mit_puffer(ticker, markt, tag):
     if markt == "USA":
@@ -95,7 +114,7 @@ def _abrufzeit(chart, ersatz):
 
 
 def zeilen_nach_handelstag(signals, jetzt):
-    """-> ({'JJJJ-MM-TT': [(ticker, close, volume), ...]}, zaehler)"""
+    """-> ({'JJJJ-MM-TT': [{'ticker','open','high','low','close','volume'}, ...]}, zaehler)"""
     tage, zaehler = {}, {"ohne_kurs": 0, "ohne_bar_datum": 0, "laufender_handelstag": 0,
                          "veralteter_bar": 0}
     for t in signals.get("treffer") or []:
@@ -121,10 +140,31 @@ def zeilen_nach_handelstag(signals, jetzt):
         if abruf < handelsschluss_mit_puffer(ticker, markt, tag):
             zaehler["laufender_handelstag"] += 1
             continue
+        # o/h/l fehlen bei Tickern ohne volle Kerzenreihe (siehe
+        # scorer.py::_chartdaten) - dann bleibt das Feld leer, der Schlusskurs
+        # zaehlt trotzdem (seit 2026-09-12, Systempruefung Punkt 3).
+        opens = chart.get("o") or []
+        highs = chart.get("h") or []
+        lows = chart.get("l") or []
         vols = chart.get("v") or []
-        tage.setdefault(chart["d"], []).append(
-            (ticker, closes[-1], (vols[-1] * 1000) if vols else ""))
+        tage.setdefault(chart["d"], []).append({
+            "ticker": ticker,
+            "open": opens[-1] if opens else "",
+            "high": highs[-1] if highs else "",
+            "low": lows[-1] if lows else "",
+            "close": closes[-1],
+            "volume": (vols[-1] * 1000) if vols else "",
+        })
     return tage, zaehler
+
+
+def _kopfzeile(pfad):
+    """Tatsaechliche Spaltenreihenfolge einer bestehenden Tagesdatei - alte
+    Snapshots (vor 2026-09-12) haben nur ticker,close,volume. Verhindert, dass
+    ein Anhaengen an eine schon heute im alten Schema begonnene Datei Zeilen
+    unterschiedlicher Spaltenzahl mischt (siehe Docstring oben)."""
+    with open(pfad, encoding="utf-8") as f:
+        return next(csv.reader(f))
 
 
 def schreibe(signals_pfad=None, out_dir=None, jetzt=None):
@@ -143,19 +183,21 @@ def schreibe(signals_pfad=None, out_dir=None, jetzt=None):
     geaendert, neu_gesamt = [], 0
     for tag, zeilen in sorted(tage.items()):
         pfad = os.path.join(out_dir, f"{tag}.csv")
+        gibt_es_schon = os.path.exists(pfad)
         vorhanden = set()
-        if os.path.exists(pfad):
+        spalten = NEUE_SPALTEN
+        if gibt_es_schon:
             with open(pfad, encoding="utf-8") as f:
                 vorhanden = {r["ticker"] for r in csv.DictReader(f)}
-        frisch = [z for z in zeilen if z[0] not in vorhanden]
+            spalten = _kopfzeile(pfad)
+        frisch = [z for z in zeilen if z["ticker"] not in vorhanden]
         if not frisch:
             continue
-        kopfzeile = not os.path.exists(pfad)
         with open(pfad, "a", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            if kopfzeile:
-                w.writerow(["ticker", "close", "volume"])
-            w.writerows(frisch)
+            if not gibt_es_schon:
+                w.writerow(spalten)
+            w.writerows([[z.get(s, "") for s in spalten] for z in frisch])
         geaendert.append(f"{tag}.csv")
         neu_gesamt += len(frisch)
 
