@@ -7,6 +7,9 @@ data/
 # Vorlage: config.example.json
 config.json
 config.local.json
+# Sicherungskopien vor Konfigurationsaenderungen - enthalten denselben Token
+# wie config.json und duerfen deshalb genauso wenig ins Repo (2026-09-12).
+config.json.bak-*
 
 # Eingang fuer Minervini-Lexikon-Screenshots (siehe minervini_lexikon.py):
 # Original-Bilder von X duerfen nicht ins OEFFENTLICHE Repo - auch nicht

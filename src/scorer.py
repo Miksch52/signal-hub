@@ -2515,7 +2515,14 @@ def score_alle(limit=None):
                 "faktoren": {k: {"wert": v["wert"], "ampel": v["ampel"]}
                              for k, v in (e.get("faktoren") or {}).items()}}
                for e in ergebnisse if e["score"] >= schwellen["beobachten"]]
-        lb.append({"datum": heute, "anzahl": len(top), "treffer": top})
+        # Gewichte des Tages mitloggen (seit 2026-09-12, Systempruefung
+        # Punkt 1): eine Gewichtsaenderung ist nach der Backtest-Pflicht wie
+        # ein neues Signal zu behandeln, braucht also eine eigene, unvermischte
+        # Forward-Kohorte. Ohne diese Marke wuerde score_backtest.py Episoden
+        # aus zwei verschiedenen Gewichtungen in einen Topf werfen und der
+        # Vorher-/Nachher-Vergleich waere nicht mehr rekonstruierbar.
+        lb.append({"datum": heute, "anzahl": len(top), "treffer": top,
+                   "gewichte": dict(gew), "schwellen": dict(schwellen)})
         lb = lb[-400:]
         pfade.schreibe_json_atomar(pfade.LOGBUCH, lb, ensure_ascii=False)
     return out
