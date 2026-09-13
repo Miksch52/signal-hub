@@ -351,7 +351,7 @@ def log_heute():
 
 
 # ---------------------------------------------------------------------------
-# EVALUATE: gereifte Logbuch-Picks gegen aktuelle Kurse
+# EVALUATE: gereifte Logbuch-Picks ueber feste Fenster (seit 2026-09-13)
 # ---------------------------------------------------------------------------
 def _bucket(elapsed_tage):
     """Kalendertage -> Horizont-Label (oder None, wenn noch nicht reif)."""
@@ -389,6 +389,14 @@ def _ablegen(eimer, eimer_edge, kohorte, bk, ret, edge):
     eimer[kohorte][bk].append(ret)
     if edge is not None:
         eimer_edge[kohorte][bk].append(edge)
+
+
+def _ablegen_alle(eimer, eimer_edge, kohorte, erreicht):
+    """Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2): eine Episode
+    zaehlt in JEDEM Horizont, den sie erreicht hat - nicht mehr nur im
+    reifsten. erreicht = [(horizont, return, edge), ...]."""
+    for h, r, ed in erreicht:
+        _ablegen(eimer, eimer_edge, kohorte, h, r, ed)
 
 
 def evaluate():
@@ -468,27 +476,32 @@ def evaluate():
             tage = (heute - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
         except Exception:
             continue
-        bk = _bucket(tage)
-        if not bk or e.get("status") not in basis_stati:
+        if e.get("status") not in basis_stati:
             continue
         sym = e.get("yahoo_symbol") or e.get("ticker")
-        if sym not in aktuell:
-            d = scorer.hole_chart_cached(sym, cache)
-            charts[sym] = d
-            aktuell[sym] = (d.get("closes")[-1] if d and d.get("closes") else None)
-        kurs = aktuell[sym]
-        if not kurs or not e.get("preis_signal"):
+        if sym not in charts:
+            charts[sym] = scorer.hole_chart_cached(sym, cache) or {}
+        # Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2): Rendite vom
+        # Signalkurs bis zum Schlusskurs genau 21/50/78 Kalendertage spaeter,
+        # nicht mehr "bis heute". Die Episode zaehlt in jedem erreichten
+        # Horizont; bk/ret/edge meinen den laengsten davon (Einzelfall-Liste).
+        rets = index_vergleich.fenster_returns(charts[sym], e["datum"], e.get("preis_signal"))
+        bk, ret = index_vergleich.laengster_horizont(rets)
+        if bk is None:
             continue
-        ret = kurs / e["preis_signal"] - 1
-        edge = index_vergleich.edge_fuer(idx_charts, e.get("markt"), e["datum"], tage, ret)
-        e["realisiert"] = {"horizont": bk, "return_pct": round(ret * 100, 2),
-                           "stand": heute.strftime("%Y-%m-%d")}
-        _ablegen(eimer, eimer_edge, e["status"], bk, ret, edge)
+        edges = index_vergleich.fenster_edges(idx_charts, e.get("markt"), e["datum"], rets)
+        erreicht = [(h, r, edges[h]) for h, r in rets.items() if r is not None]
+        edge = edges[bk]
+        # Feste Werte aendern sich nie mehr; das alte Format {horizont,
+        # return_pct, stand} ("bis heute") wird dabei einfach ueberschrieben.
+        e["realisiert"] = {h: round(r * 100, 2) for h, r, _ in erreicht}
+        e["realisiert"]["stand"] = heute.strftime("%Y-%m-%d")
+        _ablegen_alle(eimer, eimer_edge, e["status"], erreicht)
         if e["status"] == "ARMED" and e.get("qualitaet") is not None:
-            _ablegen(eimer, eimer_edge, "ARMED_q70+" if e["qualitaet"] >= 70 else "ARMED_q<70", bk, ret, edge)
+            _ablegen_alle(eimer, eimer_edge, "ARMED_q70+" if e["qualitaet"] >= 70 else "ARMED_q<70", erreicht)
         et = e.get("earnings_tage")
         nah = et is not None and 0 <= et <= warn
-        _ablegen(eimer, eimer_edge, f"{e['status']}_earnings_{'nah' if nah else 'fern'}", bk, ret, edge)
+        _ablegen_alle(eimer, eimer_edge, f"{e['status']}_earnings_{'nah' if nah else 'fern'}", erreicht)
 
         # --- SEPA-Kriterien (2026-08-29) --------------------------------
         # Fehlt ein Feld (Eintrag von vor diesem Umbau), wird NICHT einsortiert
@@ -502,26 +515,26 @@ def evaluate():
         kt = e.get("kontraktionen")
         if kt is not None:
             eng = kt >= pivot.KONTRAKTION_MIN
-            _ablegen(eimer, eimer_edge, f"{e['status']}_vcp_{'ge2' if eng else 'lt2'}", bk, ret, edge)
+            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_vcp_{'ge2' if eng else 'lt2'}", erreicht)
             streng = kt >= pivot.KONTRAKTION_MIN_STRENG
-            _ablegen(eimer, eimer_edge, f"{e['status']}_vcp_{'ge3' if streng else 'lt3'}", bk, ret, edge)
+            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_vcp_{'ge3' if streng else 'lt3'}", erreicht)
         ep = e.get("eng_pct")
         if ep is not None:
             schmal = ep <= pivot.ENG_MAX_STRENG * 100     # eng_pct ist in Prozent
-            _ablegen(eimer, eimer_edge, f"{e['status']}_eng_{'le5' if schmal else 'gt5'}", bk, ret, edge)
+            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_eng_{'le5' if schmal else 'gt5'}", erreicht)
         bw = e.get("basis_wochen")
         if bw is not None:
             lang = bw >= pivot.BASIS_MIN_WOCHEN
-            _ablegen(eimer, eimer_edge, f"{e['status']}_basis_{'ge7w' if lang else 'lt7w'}", bk, ret, edge)
+            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_basis_{'ge7w' if lang else 'lt7w'}", erreicht)
         tt = e.get("tt_pass")
         if tt is not None:
-            _ablegen(eimer, eimer_edge, f"{e['status']}_tt_{'pass' if tt else 'fail'}", bk, ret, edge)
+            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_tt_{'pass' if tt else 'fail'}", erreicht)
         it = e.get("inst_trend")
         if it is not None:
-            _ablegen(eimer, eimer_edge, f"{e['status']}_insttrend_{'ja' if it else 'nein'}", bk, ret, edge)
+            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_insttrend_{'ja' if it else 'nein'}", erreicht)
         ft = e.get("follow_through_vol")
         if ft is not None and e["status"] == "BREAKOUT":
-            _ablegen(eimer, eimer_edge, "BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach", bk, ret, edge)
+            _ablegen_alle(eimer, eimer_edge, "BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach", erreicht)
 
         # Exit-Regel-Backtest: einmalig berechnen und dauerhaft im Logbuch-
         # Eintrag cachen (wie "realisiert") - kein erneutes Nachrechnen bei
@@ -544,6 +557,7 @@ def evaluate():
             "preis_signal": e["preis_signal"], "horizont": bk,
             "return_pct": round(ret * 100, 2),
             "edge_idx_pct": round(edge * 100, 2) if edge is not None else None,
+            "fenster": {h: round(r * 100, 2) for h, r, _ in erreicht},
             "earnings_tage": et,
             "exit_sim": e.get("exit_sim"),
             "kontraktionen": kt, "basis_wochen": bw,
@@ -574,7 +588,24 @@ def push_reife(fr):
     so meldet sich der Forward-Test nach ~6-8 Wochen von selbst. Anti-Spam:
     pro Kohorte nur beim ersten Erreichen der Schwelle bzw. wenn n sich ~verdoppelt."""
     state = _eval_state_load()
-    pushed = state.get("gepusht", {})    # key 'STATUS_HOR' -> zuletzt gepushtes n
+    # Seit 2026-09-13 feste Fenster: eine Episode zaehlt in jedem erreichten
+    # Horizont, 8W/12W fuellen sich beim ersten Lauf schlagartig. Unter dem
+    # alten Schluessel "gepusht" loeste das sofort einen Push-Schwall aus,
+    # obwohl nur die Messmethode gewechselt hat. Deshalb ein eigener
+    # Schluessel, der beim ersten Lauf OHNE Push mit den aktuellen n
+    # vorbelegt wird - gepusht wird erst bei echtem spaeteren Wachstum.
+    if "gepusht_fenster" not in state:
+        state["gepusht_fenster"] = {
+            f"{st}_{label}": (fr[st][label].get("n") or 0)
+            for st in fr for label, _ in HORIZONTE
+            if (fr[st][label].get("n") or 0) >= SCHWELLE_PUSH}
+        state["stand"] = datetime.now().strftime("%Y-%m-%d")
+        with open(pfade.PIVOT_EVAL_STATE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        print(f"Forward-Test: Umstellung auf feste Fenster - Push-Zustand mit "
+              f"{len(state['gepusht_fenster'])} reifen Kohorten vorbelegt, kein Push.")
+        return
+    pushed = state["gepusht_fenster"]    # key 'STATUS_HOR' -> zuletzt gepushtes n
     zeilen, neu = [], False
     for st in fr:
         for label, _ in HORIZONTE:
@@ -604,7 +635,7 @@ def push_reife(fr):
             print("Push gesendet:\n  " + "\n  ".join(zeilen))
     except Exception as ex:
         print(f"  ! Push fehlgeschlagen: {ex}")
-    state["gepusht"] = pushed
+    state["gepusht_fenster"] = pushed
     state["stand"] = datetime.now().strftime("%Y-%m-%d")
     with open(pfade.PIVOT_EVAL_STATE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)

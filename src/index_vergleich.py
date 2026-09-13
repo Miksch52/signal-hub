@@ -33,6 +33,13 @@ Signaldatum gesucht; sonst faellt die Rechnung auf die Naeherung
 bis hierher, Fehler ca. zwei Handelstage durch Feiertage). Der Fallback
 greift auch bei Charts, die am Umstellungstag noch aus dem Tages-Cache ohne
 Datumsreihe kommen - kein Grund, deshalb einen ganzen Lauf auszusetzen.
+
+Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2): fenster_returns(),
+fenster_edges() und laengster_horizont() messen jede Episode vom Signalkurs bis
+zum Schlusskurs genau 21/50/78 Kalendertage spaeter statt "bis heute". Sie
+liegen hier, weil dieses Modul ohnehin in allen drei Repos identisch gefuehrt
+wird - so rechnen alle Engines dieselben Fenster, und der Pruefsummen-Test
+deckt auch diese Funktionen ab.
 """
 
 INDEX = {"USA": "^GSPC", "Europa": "^STOXX"}
@@ -106,6 +113,102 @@ def index_return_fenster(idx_chart, start_datum, horizont_tage):
     if not start or not ende:
         return None
     return ende / start - 1
+
+
+# ---------------------------------------------------------------------------
+# Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2)
+# ---------------------------------------------------------------------------
+# Kalendertage je Horizont: dieselben Schwellen, die alle Forward-Tests seit
+# jeher als Mindestalter nutzen, und derselbe 78-Tage-Stichtag wie
+# exit_simulation.HORIZONT_TAGE.
+HORIZONTE_TAGE = (("4W", 21), ("8W", 50), ("12W", 78))
+
+
+def _heute():
+    from datetime import date
+    return date.today().isoformat()
+
+
+def _stichtag_index(dates, start_datum, tage, vor_datum):
+    """Index des ersten Bars mit Datum >= start_datum + tage - aber nur, wenn
+    dieser Bar strikt VOR vor_datum liegt. Der Bar des laufenden Tages ist bei
+    Yahoo bis Handelsschluss ein Intraday-Stand; zaehlte er als Stichtag,
+    aenderte sich ein "fester" Wert noch einmal, sobald der Bar final ist - und
+    genau die Eigenschaft, die feste Fenster wertvoll macht, waere weg."""
+    from datetime import datetime, timedelta
+    try:
+        grenze = (datetime.strptime(start_datum, "%Y-%m-%d")
+                  + timedelta(days=tage)).strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+    for i, d in enumerate(dates):
+        if d and d >= grenze:
+            return i if d < vor_datum else None
+    return None
+
+
+def fenster_returns(chart, signal_datum, preis_signal, horizonte=HORIZONTE_TAGE,
+                    vor_datum=None):
+    """Rendite vom Signalkurs bis zum Schlusskurs am ersten Handelstag >=
+    Signaltag + N Kalendertage, je Horizont.
+
+    Ersetzt das bisherige Verfahren aller Forward-Tests ("Signalkurs gegen den
+    heutigen Kurs, einsortiert nach dem reifsten erreichten Horizont"). Das
+    hatte zwei Fehler: Der 4W-Wert einer Episode aenderte sich jeden Tag, und
+    jede Episode zaehlte nur in EINEM Horizont - 8W/12W blieben leer, solange
+    Episoden nicht alt genug waren, und eine gereifte Episode verschwand aus
+    der 4W-Kohorte. Jetzt zaehlt eine Episode in jedem erreichten Horizont,
+    und ihr Wert dort steht fuer immer fest.
+
+    -> {"4W": r|None, "8W": r|None, "12W": r|None} als Dezimalwerte. None, wenn
+    der Stichtag im Chart (noch) nicht vorliegt oder der Chart keine
+    Datumsreihe hat - dann wird bewusst nichts genaehert, der Wert soll ja
+    exakt und dauerhaft sein."""
+    out = {h: None for h, _ in horizonte}
+    closes = (chart or {}).get("closes") or []
+    dates = (chart or {}).get("dates") or []
+    if not preis_signal or not closes or not dates or len(dates) != len(closes):
+        return out
+    vor_datum = vor_datum or _heute()
+    for h, tage in horizonte:
+        i = _stichtag_index(dates, signal_datum, tage, vor_datum)
+        if i is not None and closes[i]:
+            out[h] = closes[i] / preis_signal - 1
+    return out
+
+
+def hat_datumsreihe(chart):
+    """True, wenn der Chart eine zu den Kursen passende Datumsreihe fuehrt -
+    Voraussetzung fuer feste Fenster."""
+    c = chart or {}
+    d = c.get("dates") or []
+    return bool(d) and len(d) == len(c.get("closes") or [])
+
+
+def fenster_edges(idx_charts, markt, signal_datum, returns, horizonte=HORIZONTE_TAGE):
+    """Vorsprung gegenueber dem Leitindex je Horizont, ueber GENAU dasselbe
+    feste Fenster (index_return_fenster). None, wo der Pick-Return fehlt oder
+    der Index-Zeitraum nicht bestimmbar ist."""
+    markt = markt if markt in idx_charts else STANDARD_MARKT
+    out = {}
+    for h, tage in horizonte:
+        r = returns.get(h)
+        if r is None:
+            out[h] = None
+            continue
+        idx = index_return_fenster(idx_charts.get(markt), signal_datum, tage)
+        out[h] = (r - idx) if idx is not None else None
+    return out
+
+
+def laengster_horizont(returns, horizonte=HORIZONTE_TAGE):
+    """(label, return) des laengsten erreichten Horizonts - fuer die
+    Einzelfall-Listen der Frontends, die je Episode genau EINE Zeile zeigen
+    (sonst erschiene dieselbe Episode dreimal als "bester Einzelfall")."""
+    for h, _ in reversed(horizonte):
+        if returns.get(h) is not None:
+            return h, returns[h]
+    return None, None
 
 
 def ergaenze_edge(stats, edge_rets):

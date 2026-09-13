@@ -39,6 +39,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
+import index_vergleich
 import pfade
 
 HORIZONTE = [("4W", 21), ("8W", 50), ("12W", 78)]   # Mindest-KALENDERtage je Kohorte
@@ -149,28 +150,32 @@ def evaluate():
     heute_dt = datetime.now().date()
     eimer = {a: {h: [] for h, _ in HORIZONTE} for a in AMPELN}
     einzelfaelle = []
-    aktuell = {}
+    charts = {}
     for e in lb:
         try:
             tage = (heute_dt - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
         except Exception:
             continue
-        bk = _bucket(tage)
-        if not bk or e.get("ampel") not in eimer:
+        if e.get("ampel") not in eimer:
             continue
         sym = e.get("index_symbol")
-        if sym not in aktuell:
-            d = scorer.hole_chart_cached(sym, cache)
-            aktuell[sym] = (d.get("closes")[-1] if d and d.get("closes") else None)
-        kurs = aktuell[sym]
-        if not kurs or not e.get("index_kurs"):
+        if sym not in charts:
+            charts[sym] = scorer.hole_chart_cached(sym, cache) or {}
+        # Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2): Leitindex vom
+        # Tag der Einstufung bis genau 21/50/78 Kalendertage spaeter - jede
+        # Einstufung zaehlt in jedem erreichten Horizont, ihr Wert bleibt fest.
+        rets = index_vergleich.fenster_returns(charts[sym], e["datum"], e.get("index_kurs"))
+        bk, ret = index_vergleich.laengster_horizont(rets)
+        if bk is None:
             continue
-        ret = kurs / e["index_kurs"] - 1
-        eimer[e["ampel"]][bk].append(ret)
+        for h, r in rets.items():
+            if r is not None:
+                eimer[e["ampel"]][h].append(r)
         einzelfaelle.append({
             "markt": e["markt"], "ampel": e["ampel"], "datum": e["datum"],
             "index_symbol": sym, "index_kurs_signal": e["index_kurs"],
             "horizont": bk, "return_pct": round(ret * 100, 2),
+            "fenster": {h: round(r * 100, 2) for h, r in rets.items() if r is not None},
         })
     scorer.speichere_cache(cache)
     fr = {a: {h: _stats(eimer[a][h]) for h, _ in HORIZONTE} for a in eimer}
@@ -204,13 +209,13 @@ def log_und_evaluate():
     fr, einzelfaelle = evaluate()
     out = {
         "erstellt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "hinweis": ("Forward-Test: Leitindex-Kurs am Tag der Regime-Einstufung "
-                    "(gruen/gelb/rot) vs. aktueller Kurs, Kohorten nach Alter "
-                    "(>=21/50/78 Kalendertage). Unverzerrt (Einstufung stand vor "
-                    "dem Ergebnis fest). Kein Retro-Modus (siehe Docstring in "
-                    "regime_backtest.py) - die Stichprobe wird erst ueber "
-                    "Kalenderzeit aussagekraeftig, waechst aber nur um zwei "
-                    "Eintraege pro Tag (ein Markt-Regime-Wert je Markt)."),
+        "hinweis": ("Forward-Test mit festen Fenstern (seit 2026-09-13): Leitindex-Kurs "
+                    "am Tag der Regime-Einstufung (gruen/gelb/rot) vs. Schlusskurs genau "
+                    "21/50/78 Kalendertage spaeter; jede Einstufung zaehlt in jedem "
+                    "erreichten Horizont, ihr Wert bleibt danach fest. Unverzerrt "
+                    "(Einstufung stand vor dem Ergebnis fest). Kein Retro-Modus (siehe "
+                    "Docstring in regime_backtest.py) - die Stichprobe waechst nur um "
+                    "zwei Eintraege pro Tag (ein Markt-Regime-Wert je Markt)."),
         "forward_realisiert": fr,
         "forward_einzelfaelle": einzelfaelle,
     }

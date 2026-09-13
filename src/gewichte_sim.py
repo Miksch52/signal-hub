@@ -44,7 +44,7 @@ Aufruf:
   python3 src/gewichte_sim.py --sammeln   # teuer (Kurse je Episode), einmal
   python3 src/gewichte_sim.py             # rechnet Varianten gegen den Cache
 
---sammeln holt je Ticker den aktuellen Kurs (geteilter Tages-Cache mit dem
+--sammeln holt je Ticker den Chart (geteilter Tages-Cache mit dem
 Scorer - direkt nach einem Lauf kostet das fast nichts) und legt Episoden samt
 Forward-Return und Index-Vorsprung unter pfade.LOKAL ab. Danach ist jede
 weitere Variantenrechnung eine Sache von Sekunden.
@@ -92,7 +92,7 @@ def sammle():
     cache = scorer.lade_cache()
     idx_charts = index_vergleich.lade_index_charts(scorer.hole_chart_cached, cache)
 
-    kurs, raus = {}, []
+    charts, raus = {}, []
     for p in picks:
         if not p.get("faktoren"):
             continue
@@ -100,28 +100,29 @@ def sammle():
             tage = (heute - datetime.strptime(p["datum"], "%Y-%m-%d").date()).days
         except Exception:
             continue
-        bk = sb._bucket(tage)
-        if not bk:
-            continue
         sym = p["ticker"]
-        if sym not in kurs:
-            d = scorer.hole_chart_cached(sym, cache)
-            kurs[sym] = (d["closes"][-1] if d and d.get("closes") else None)
-        if not kurs[sym] or not p.get("preis"):
-            continue
-        ret = kurs[sym] / p["preis"] - 1
-        raus.append({
-            "ticker": sym, "datum": p["datum"], "markt": p.get("markt"),
-            "horizont": bk, "tage": tage,
-            "ret": round(ret, 6),
-            "edge": (lambda e: round(e, 6) if e is not None else None)(
-                index_vergleich.edge_fuer(idx_charts, p.get("markt"), p["datum"], tage, ret)),
-            "score_geloggt": p.get("score"),
-            # nur die Rohwerte - alles andere (Ampel, Gewicht, Detail) ist fuer
-            # die Neuberechnung irrelevant und blaeht den Cache auf
-            "werte": {k: v["wert"] for k, v in p["faktoren"].items()
-                      if isinstance(v, dict) and v.get("wert") is not None},
-        })
+        if sym not in charts:
+            charts[sym] = scorer.hole_chart_cached(sym, cache) or {}
+        # Feste Fenster (seit 2026-09-13): je erreichtem Horizont ein eigener
+        # Datensatz. bewerte() filtert ohnehin nach Horizont - eine Episode
+        # zaehlt dort also je Horizont genau einmal.
+        rets = index_vergleich.fenster_returns(charts[sym], p["datum"], p.get("preis"))
+        edges = index_vergleich.fenster_edges(idx_charts, p.get("markt"), p["datum"], rets)
+        # nur die Rohwerte - alles andere (Ampel, Gewicht, Detail) ist fuer
+        # die Neuberechnung irrelevant und blaeht den Cache auf
+        werte = {k: v["wert"] for k, v in p["faktoren"].items()
+                 if isinstance(v, dict) and v.get("wert") is not None}
+        for h, r in rets.items():
+            if r is None:
+                continue
+            raus.append({
+                "ticker": sym, "datum": p["datum"], "markt": p.get("markt"),
+                "horizont": h, "tage": tage,
+                "ret": round(r, 6),
+                "edge": round(edges[h], 6) if edges[h] is not None else None,
+                "score_geloggt": p.get("score"),
+                "werte": werte,
+            })
     scorer.speichere_cache(cache)
 
     out = {"erstellt": datetime.now(timezone.utc).isoformat(timespec="seconds"),

@@ -17,8 +17,9 @@ Methodik:
     Kandidat bleibt -> nur die ERSTE Nennung je (Ticker, Tier)-Episode wird
     gewertet; erst nach EPISODE_LUECKE Tagen Pause zaehlt ein Wiederauftauchen
     als neue Episode (sonst misst man denselben Trade hundertfach).
-  - Forward-Return: Kurs bei Erstnennung (im Logbuch gespeichert) gegen den
-    aktuellen Yahoo-Kurs, Kohorten nach Alter (>=21/50/78 Kalendertage).
+  - Forward-Return (seit 2026-09-13 feste Fenster): Kurs bei Erstnennung (im
+    Logbuch gespeichert) gegen den Schlusskurs genau 21/50/78 Kalendertage
+    spaeter; eine Episode zaehlt in jedem erreichten Horizont.
     Unverzerrt, weil die Auswahl VOR dem Ergebnis feststand.
   - edge_idx: Differenz zum Markt-Index (^GSPC/^STOXX) im selben Zeitraum
     (Handelstage-Offset ~ Kalendertage * 5/7 - Naeherung, fuer Kohorten-
@@ -124,46 +125,43 @@ def episoden(lb, schwellen):
 def evaluiere(picks):
     import scorer
     cache = scorer.lade_cache()
-    heute = datetime.now().date()
-
     # Index-Charts einmal holen (fuer edge_idx und die Index-Bereinigung der
-    # Strategie-Spur, die das feste 78-Tage-Fenster braucht statt "bis heute")
+    # Strategie-Spur - beides ueber feste Fenster, siehe unten)
     idx_charts = index_vergleich.lade_index_charts(scorer.hole_chart_cached, cache)
-    idx_closes = {m: (c.get("closes") or []) for m, c in idx_charts.items()}
 
-    kurs = {}       # symbol -> aktueller Schlusskurs (oder None)
-    charts = {}     # symbol -> volles Chart-Dict (fuer die Strategie-Simulation)
+    charts = {}     # symbol -> volles Chart-Dict (feste Fenster + Strategie-Simulation)
     eimer = {t: {h: [] for h, _ in HORIZONTE} for t in ("A", "B")}
     eimer_edge = {t: {h: [] for h, _ in HORIZONTE} for t in ("A", "B")}
     # Strategie-Spur (seit 2026-09-12, siehe Modul-Docstring): je Tier eine
     # Liste von exit_simulation.simuliere()-Ergebnissen, nur fuer Episoden, die
     # den festen 78-Tage-Stichtag im Chart tatsaechlich erreichen.
     sims = {t: [] for t in ("A", "B")}
-    gewertet = 0
+    gewertet = ohne_datumsreihe = 0
     for p in picks:
-        try:
-            tage = (heute - datetime.strptime(p["datum"], "%Y-%m-%d").date()).days
-        except Exception:
-            continue
-        bk = _bucket(tage)
-        if not bk or p["tier"] not in eimer:
+        if p["tier"] not in eimer:
             continue
         sym = p["ticker"]
-        if sym not in kurs:
-            d = scorer.hole_chart_cached(sym, cache)
-            charts[sym] = d or {}
-            kurs[sym] = (d["closes"][-1] if d and d.get("closes") else None)
-        if not kurs[sym]:
+        if sym not in charts:
+            charts[sym] = scorer.hole_chart_cached(sym, cache) or {}
+        chart = charts[sym]
+        # Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2): Rendite vom
+        # Kurs der Erstnennung bis zum Schlusskurs genau 21/50/78 Kalendertage
+        # spaeter - nicht mehr "bis heute". Eine Episode zaehlt damit in JEDEM
+        # erreichten Horizont (vorher nur im reifsten, 8W/12W blieben leer),
+        # und ihr Wert dort aendert sich nie mehr.
+        rets = index_vergleich.fenster_returns(chart, p["datum"], p["preis"])
+        if all(r is None for r in rets.values()):
+            if chart and not index_vergleich.hat_datumsreihe(chart):
+                ohne_datumsreihe += 1
             continue
-        ret = kurs[sym] / p["preis"] - 1
-        eimer[p["tier"]][bk].append(ret)
         gewertet += 1
-        # Index-Return im selben Zeitraum (Handelstage ~ Kalendertage * 5/7)
-        ic = idx_closes.get(p.get("markt")) or idx_closes.get("USA") or []
-        offset = max(1, round(tage * 5 / 7))
-        if len(ic) > offset and ic[-1 - offset]:
-            idx_ret = ic[-1] / ic[-1 - offset] - 1
-            eimer_edge[p["tier"]][bk].append(ret - idx_ret)
+        edges = index_vergleich.fenster_edges(idx_charts, p.get("markt"), p["datum"], rets)
+        for h, r in rets.items():
+            if r is None:
+                continue
+            eimer[p["tier"]][h].append(r)
+            if edges[h] is not None:
+                eimer_edge[p["tier"]][h].append(edges[h])
         # Strategie-Spur: Stop 8 % unter Einstieg (das Score-Logbuch fuehrt -
         # anders als das Pivot-Logbuch - kein eigenes Stop-Feld, der
         # prozentuale Stop ist deshalb rueckwirkend auf jede Episode
@@ -184,6 +182,9 @@ def evaluiere(picks):
             sims[p["tier"]].append(sim)
 
     scorer.speichere_cache(cache)
+    if ohne_datumsreihe:
+        print(f"  {ohne_datumsreihe} Episoden uebersprungen: Chart ohne Datumsreihe "
+              "(feste Fenster brauchen sie).")
 
     ergebnis = {}
     for tier in eimer:
@@ -229,11 +230,13 @@ def main():
         "episoden": len(picks),
         "gewertet": gewertet,
         "horizonte_kalendertage": {h: t for h, t in HORIZONTE},
-        "hinweis": ("Forward-Test: Kurs bei ERSTER Logbuch-Nennung je Episode vs. "
-                    "aktueller Kurs, Kohorten nach Alter. Unverzerrt (Auswahl stand "
-                    "vor dem Ergebnis fest). edge_idx_* = Vergleich zum Markt-Index "
-                    "im selben Zeitraum - nur ein positiver Index-Vorsprung belegt "
-                    "echten Selektions-Edge, nicht bloss einen steigenden Markt."),
+        "hinweis": ("Forward-Test mit festen Fenstern (seit 2026-09-13): Kurs bei ERSTER "
+                    "Logbuch-Nennung je Episode vs. Schlusskurs genau 21/50/78 Kalendertage "
+                    "spaeter. Eine Episode zaehlt in jedem erreichten Horizont, ihr Wert dort "
+                    "aendert sich danach nicht mehr. Unverzerrt (Auswahl stand vor dem "
+                    "Ergebnis fest). edge_idx_* = Vergleich zum Markt-Index ueber dasselbe "
+                    "Fenster - nur ein positiver Index-Vorsprung belegt echten "
+                    "Selektions-Edge, nicht bloss einen steigenden Markt."),
         "ergebnis": ergebnis,
     }
     with open(pfade.SCORE_BACKTEST, "w", encoding="utf-8") as f:

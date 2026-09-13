@@ -37,6 +37,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import index_vergleich
 import pfade
 import score_backtest as sb   # episoden()/HORIZONTE/_bucket/_stats wiederverwenden
 
@@ -55,39 +56,36 @@ FAKTOR_NAMEN = [
 
 def evaluiere(picks):
     """picks: Episoden MIT faktoren-Feld (aeltere werden vom Aufrufer schon
-    rausgefiltert). Holt je Ticker EINMAL den aktuellen Kurs (Cache geteilt
+    rausgefiltert). Holt je Ticker EINMAL den Chart (Cache geteilt
     mit dem Scorer), rechnet dann pro Faktor die gruen/nicht-gruen-Kohorte."""
     import scorer
     cache = scorer.lade_cache()
     heute = datetime.now().date()
 
-    kurs = {}
+    charts = {}
     eimer = {f: {"gruen": {h: [] for h, _ in sb.HORIZONTE},
                   "nicht_gruen": {h: [] for h, _ in sb.HORIZONTE}}
              for f in FAKTOR_NAMEN}
     gewertet = 0
     for p in picks:
-        try:
-            tage = (heute - datetime.strptime(p["datum"], "%Y-%m-%d").date()).days
-        except Exception:
-            continue
-        bk = sb._bucket(tage)
-        if not bk:
-            continue
         sym = p["ticker"]
-        if sym not in kurs:
-            d = scorer.hole_chart_cached(sym, cache)
-            kurs[sym] = (d["closes"][-1] if d and d.get("closes") else None)
-        if not kurs[sym]:
+        if sym not in charts:
+            charts[sym] = scorer.hole_chart_cached(sym, cache) or {}
+        # Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2), dieselbe
+        # Messung wie score_backtest.py: eine Episode zaehlt in jedem
+        # erreichten Horizont, ihr Wert dort aendert sich nie mehr.
+        rets = index_vergleich.fenster_returns(charts[sym], p["datum"], p["preis"])
+        if all(r is None for r in rets.values()):
             continue
-        ret = kurs[sym] / p["preis"] - 1
         gewertet += 1
         for fname in FAKTOR_NAMEN:
             info = (p.get("faktoren") or {}).get(fname)
             if not info:
                 continue
             kohorte = "gruen" if info.get("ampel") == "gruen" else "nicht_gruen"
-            eimer[fname][kohorte][bk].append(ret)
+            for h, r in rets.items():
+                if r is not None:
+                    eimer[fname][kohorte][h].append(r)
 
     scorer.speichere_cache(cache)
 
