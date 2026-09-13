@@ -146,6 +146,20 @@
   <button class="buy" onclick="kaufen()"><span class="ic">🛒</span>Kaufen</button>
 </div>
 
+<script>
+// Muss VOR dem "data/top_setups.js"-Tag stehen, nicht in dessen eigenem
+// Script-Block weiter unten (Fund beim CI-Test-Gate, Systempruefung
+// Punkt 10, 13.09.2026): ein onerror-Attribut feuert, sobald der externe
+// <script>-Tag scheitert - bei fehlender data/top_setups.js (jeder frische
+// Checkout ohne Pipeline-Lauf, auch der Smoke-Audit-Testlauf per file://)
+// war das VOR der Definition von ladeFehlgeschlagen() weiter unten im
+// Dokument, also "ladeFehlgeschlagen is not defined". init() selbst wird
+// ohnehin unbedingt am Ende des Hauptscripts aufgerufen (siehe dort) und
+// liest dort das hier gesetzte ladefehler - der fruehe init()-Aufruf war
+// nur redundant, kein Verhaltensunterschied.
+let ladefehler = false;
+function ladeFehlgeschlagen() { ladefehler = true; }
+</script>
 <script src="data/top_setups.js" onerror="ladeFehlgeschlagen()"></script>
 <script>
 const enc = encodeURIComponent;
@@ -165,9 +179,8 @@ let QUEUE = [];
 let GATED_COUNT = 0;
 let idx = 0;
 let entscheidungen = {};
-let ladefehler = false;
-
-function ladeFehlgeschlagen() { ladefehler = true; init(); }
+// ladefehler/ladeFehlgeschlagen() stehen jetzt im ersten <script>-Block oben,
+// vor dem "data/top_setups.js"-Tag, siehe Kommentar dort.
 
 function gesperrt(s) { return s.earnings_tage != null && s.earnings_tage >= 0 && s.earnings_tage <= WARN; }
 function aktivBar(s) { return s.regime === 'gruen' && !gesperrt(s); }
