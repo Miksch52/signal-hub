@@ -183,6 +183,7 @@
   .b-gruen{background:var(--ok)} .b-gelb{background:var(--warn)} .b-rot{background:var(--bad)}
   .chart{background:var(--chart-bg);border:1px solid var(--line);border-radius:6px;padding:2px}
   .chart svg{width:100%;height:96px;display:block}
+  .chartslot{color:var(--muted);font-size:11px;padding:10px 2px;text-align:center}
   .chleg{font-size:10px;color:var(--muted);display:flex;gap:9px;margin-top:3px}
   .chleg i{display:inline-block;width:8px;height:2px;vertical-align:middle;margin-right:3px}
 
@@ -556,13 +557,39 @@ function apiHeaders(extra){
   return Object.assign({}, extra||{}, tk?{'X-Token':tk}:{});
 }
 async function ladeDaten(){
-  // 1) versuch ueber Server (frische Daten), 2) fallback signals.js (file://)
+  // Erstladung auf Mobilfunkmass (Systempruefung Punkt 9, 13.09.2026): die
+  // Uebersicht hier braucht nicht die volle signals.json (~4,8 MB roh, davon
+  // allein ~70% "chart" je Ticker fuer den einklappbaren Mini-Chart) -
+  // signals_uebersicht.json ist dieselbe Struktur ohne chart/trend_template/
+  // institutional/institutional_trend (die drei Letzteren nutzt nur
+  // setup-detail.html, das weiterhin die volle Datei laedt). Gzip-Messung:
+  // ~117 KB statt ~1,44 MB ueber die Leitung. chart selbst kommt separat aus
+  // signals_charts.json, erst beim ersten aufgeklappten Mini-Chart (siehe
+  // ladeChartFuer()). 1) Server (frisch), 2) Fallback *.js (file://).
   try{
-    const r=await fetch('data/signals.json',{cache:'no-store'});
+    const r=await fetch('data/signals_uebersicht.json',{cache:'no-store'});
     if(r.ok){DATA=await r.json();return;}
   }catch(e){}
-  await _ladeFallbackSkript('data/signals.js');
-  DATA = window.SIGNAL_DATA || {treffer:[],erstellt:null,anzahl:0};
+  await _ladeFallbackSkript('data/signals_uebersicht.js');
+  DATA = window.SIGNAL_DATA_UEBERSICHT || {treffer:[],erstellt:null,anzahl:0};
+}
+// Mini-Chart-Daten (chart je Ticker) - bewusst getrennt von ladeDaten() und
+// nur bei Bedarf geladen: einmal angefordert (erstes aufgeklapptes
+// "📈 Chart"), dann fuer den Rest der Sitzung im Speicher gecacht, siehe
+// karte()/CHARTS unten.
+let CHARTS=null, CHARTS_LADEN=null;
+async function ladeCharts(){
+  if(CHARTS) return CHARTS;
+  if(!CHARTS_LADEN) CHARTS_LADEN=(async()=>{
+    try{
+      const r=await fetch('data/signals_charts.json',{cache:'no-store'});
+      if(r.ok){CHARTS=await r.json();return CHARTS;}
+    }catch(e){}
+    await _ladeFallbackSkript('data/signals_charts.js');
+    CHARTS=window.SIGNAL_CHARTS||{};
+    return CHARTS;
+  })();
+  return CHARTS_LADEN;
 }
 async function ladeConfig(){
   try{
@@ -1190,6 +1217,27 @@ function minichart(ch){
     +`</svg></div>`;
 }
 
+// Mini-Chart auf Abruf (Systempruefung Punkt 9, 13.09.2026): chart-Rohdaten
+// stehen nicht mehr in DATA (siehe ladeDaten()), sondern separat in
+// signals_charts.json. Erstes Aufklappen EINER Karte laedt die Datei einmal
+// fuer alle Karten (ladeCharts() cacht sie), danach nur noch Objekt-Lookup.
+async function chartAufklappen(details,tickerEnc){
+  if(!details.open) return;                     // Zuklappen -> nichts zu tun
+  // .chartslot existiert nur, solange noch nicht geladen - nach dem ersten
+  // erfolgreichen Laden ersetzt outerHTML sie durch minichart()s eigenes
+  // .chart-Div, ein erneutes Aufklappen findet dann keine .chartslot mehr
+  // und bricht hier sofort ab (kein doppeltes Laden noetig).
+  const slot=details.querySelector('.chartslot');
+  if(!slot) return;
+  const ticker=decodeURIComponent(tickerEnc);
+  try{
+    const charts=await ladeCharts();
+    slot.outerHTML=minichart(charts[ticker])||'<div class="chartslot muted2">Kein Chart verfügbar.</div>';
+  }catch(e){
+    slot.textContent='Chart konnte nicht geladen werden.';   // .chartslot bleibt -> naechstes Aufklappen versucht erneut
+  }
+}
+
 function earnText(t){
   const e=t.earnings; if(!e) return '—';
   if(e.status==='termin') return `${e.tage}T (${e.datum})`;
@@ -1380,9 +1428,9 @@ function karte(t,rang){
       </div>
     </div>
     <div class="qscan">${qscan}</div>
-    <details class="cardchart">
+    <details class="cardchart" ontoggle="chartAufklappen(this,'${encodeURIComponent(t.ticker)}')">
       <summary class="cardchart-sum">📈 Chart</summary>
-      ${minichart(t.chart)}
+      <div class="chartslot">⏳ Chart wird geladen …</div>
     </details>
     <div class="srcrow">${hebelBadge(t)}<span>📚 ${t.quellen.ausgaben} Ausgaben</span>${typen}
       ${konsensBadge}${code33Badge(t)}${maBadge}
@@ -1557,7 +1605,7 @@ async function aktualisieren(btn){
       if(s.laeuft) sahLaufen=true;
       if(!s.laeuft && s.stand && s.stand!==alt){           // neue Daten -> Erfolg
         clearInterval(poll); clearTimeout(stopp);
-        await ladeDaten(); await ladePivot(); await ladePivotHistory(); await ladeTopSetups(); render();
+        await Promise.all([ladeDaten(), ladePivot(), ladePivotHistory(), ladeTopSetups()]); render();
         zeigeMarktRegime(); ladeVolleMarktampel(); ladeScoreBacktest(); fertig();
       } else if(sahLaufen && !s.laeuft){                   // Lauf beendet, aber KEINE neuen Daten
         clearInterval(poll); clearTimeout(stopp); fertig();
@@ -1690,7 +1738,13 @@ window.addEventListener('storage', (e) => {
 
 (async function(){
   if(await zumLiveServer()) return;
-  await ladeDaten(); await ladeConfig(); await ladePivot(); await ladePivotHistory(); await ladeTopSetups();
+  // Erstladung auf Mobilfunkmass (Systempruefung Punkt 9, 13.09.2026): die
+  // vier/fuenf Ladefunktionen schreiben in komplett unabhaengige globale
+  // Variablen (DATA/CONFIG/PIVOT.../TOPSET...) und lasen sich nie gegenseitig -
+  // nacheinander await'et hiess unnoetig auf die SUMME aller Ladezeiten zu
+  // warten statt auf die langsamste einzelne. Der Browser laedt bis zu 6
+  // Requests parallel pro Origin, signal-hub.html hat hier nur 5.
+  await Promise.all([ladeDaten(), ladeConfig(), ladePivot(), ladePivotHistory(), ladeTopSetups()]);
   initControls(); renderSettings(); render();
   ladeMarktCheck();       // fire-and-forget, blockiert den Haupt-Render nicht
   ladeVolleMarktampel();  // US-Chip auf die volle Minervini-Ampel upgraden

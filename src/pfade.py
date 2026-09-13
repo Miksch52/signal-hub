@@ -33,6 +33,18 @@ os.makedirs(LOKAL, exist_ok=True)
 # Ausgaben (Dashboard liest diese)
 SIGNALS_JSON = os.path.join(DATA, "signals.json")
 SIGNALS_JS = os.path.join(DATA, "signals.js")
+# Erstladung auf Mobilfunkmass (Systempruefung Punkt 9, 13.09.2026):
+# signals.json selbst bleibt UNVERAENDERT (setup-detail.html liest weiterhin
+# daraus, u.a. trend_template/institutional/institutional_trend fuer EINEN
+# Ticker) - signal-hub.html laedt fuer die Uebersicht aller ~535 Ticker
+# stattdessen die schlanke Version ohne die drei von ihr nie gelesenen,
+# grossen Felder (chart/trend_template/institutional*, zusammen ~85% der
+# Dateigroesse). chart liegt zusaetzlich separat, geladen erst beim ersten
+# aufgeklappten Mini-Chart, nicht beim Erstladen.
+SIGNALS_UEBERSICHT_JSON = os.path.join(DATA, "signals_uebersicht.json")
+SIGNALS_UEBERSICHT_JS = os.path.join(DATA, "signals_uebersicht.js")
+SIGNALS_CHARTS_JSON = os.path.join(DATA, "signals_charts.json")
+SIGNALS_CHARTS_JS = os.path.join(DATA, "signals_charts.js")
 CONFIG_JS = os.path.join(DATA, "config.js")
 PIVOT_JSON = os.path.join(DATA, "pivot.json")           # Pivot-Armed-Ausgabe
 PIVOT_JS = os.path.join(DATA, "pivot.js")               # file://-Fallback

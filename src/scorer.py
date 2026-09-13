@@ -2486,6 +2486,45 @@ def score_alle(limit=None):
         json.dump(out, fp, ensure_ascii=False)
         fp.write(";")
     pfade.schreibe_atomar(pfade.SIGNALS_JS, _schreibe_signals_js)
+
+    # Erstladung auf Mobilfunkmass (Systempruefung Punkt 9, 13.09.2026):
+    # signals.json ist mit "chart" (6 Monate OHLCV + 3 SMAs je Ticker, ~70%
+    # der Dateigroesse) und den drei NUR von setup-detail.html gelesenen
+    # Feldern trend_template/institutional/institutional_trend (~7,5%) fuer
+    # eine Uebersicht ueber alle ~535 Ticker massiv ueberdimensioniert -
+    # signal-hub.html rendert die Karten-Liste ausschliesslich aus den
+    # uebrigen, kleinen Feldern (siehe karte()/qscan/badges dort). Zwei
+    # zusaetzliche, schlanke Ausgaben statt signals.json zu veraendern -
+    # setup-detail.html liest weiterhin unveraendert aus der vollen Datei:
+    #   signals_uebersicht.json - wie signals.json, aber je Treffer ohne
+    #     chart/trend_template/institutional/institutional_trend.
+    #   signals_charts.json     - NUR die chart-Objekte, nach Ticker
+    #     geschluesselt; signal-hub.html laedt sie erst beim ersten
+    #     aufgeklappten Mini-Chart, nicht beim Erstladen.
+    _UEBERSICHT_AUSSCHLUSS = ("chart", "trend_template", "institutional", "institutional_trend")
+    treffer_schlank = [
+        {k: v for k, v in e.items() if k not in _UEBERSICHT_AUSSCHLUSS}
+        for e in ergebnisse
+    ]
+    out_uebersicht = dict(out, treffer=treffer_schlank)
+    pfade.schreibe_json_atomar(pfade.SIGNALS_UEBERSICHT_JSON, out_uebersicht,
+                               ensure_ascii=False, separators=(",", ":"))
+
+    def _schreibe_uebersicht_js(fp):                      # file://-Fallback
+        fp.write("window.SIGNAL_DATA_UEBERSICHT = ")
+        json.dump(out_uebersicht, fp, ensure_ascii=False)
+        fp.write(";")
+    pfade.schreibe_atomar(pfade.SIGNALS_UEBERSICHT_JS, _schreibe_uebersicht_js)
+
+    charts = {e["ticker"]: e["chart"] for e in ergebnisse if e.get("chart")}
+    pfade.schreibe_json_atomar(pfade.SIGNALS_CHARTS_JSON, charts,
+                               ensure_ascii=False, separators=(",", ":"))
+
+    def _schreibe_charts_js(fp):                          # file://-Fallback
+        fp.write("window.SIGNAL_CHARTS = ")
+        json.dump(charts, fp, ensure_ascii=False)
+        fp.write(";")
+    pfade.schreibe_atomar(pfade.SIGNALS_CHARTS_JS, _schreibe_charts_js)
     import copy
     cfg_oeffentlich = copy.deepcopy(cfg)
     cfg_oeffentlich.get("server", {}).pop("token", None)  # Token nie ausliefern
