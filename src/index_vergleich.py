@@ -83,36 +83,30 @@ def index_return(idx_chart, signal_datum, kalendertage):
     return closes[-1] / start - 1
 
 
-def index_return_fenster(idx_chart, start_datum, horizont_tage):
-    """Index-Rendite ueber ein FESTES Fenster (Signaltag bis Signaltag +
-    horizont_tage Kalendertage) statt bis heute - das Gegenstueck zur
-    Strategie-Spur aus exit_simulation.py, die denselben festen Stichtag
-    verwendet. Braucht zwingend eine Datumsreihe; ohne sie None (eine
+def index_return_fenster(idx_chart, start_datum, horizont_tage, vor_datum=None):
+    """Index-Rendite ueber ein FESTES Fenster: vom Schlusskurs am Signaltag (erster
+    Bar ab start_datum) bis zum Schlusskurs am ersten Handelstag >= start_datum +
+    horizont_tage. Braucht zwingend eine Datumsreihe; ohne sie None (eine
     Naeherung waere hier irrefuehrend, weil der Vergleichswert selbst exakt
-    datiert ist)."""
-    from datetime import datetime, timedelta
+    datiert ist).
 
+    Start und Stichtag folgen seit 2026-09-13 exakt denselben Regeln wie
+    fenster_returns() (_start_index/_stichtag_index) - nur so messen Pick und
+    Index denselben Zeitraum. Vorher begann der Index am Signaltagsschluss, der
+    Pick aber beim geloggten Preis, und der ist je nach Logzeit Vortagesschluss,
+    Intraday-Kurs oder Signaltagsschluss (Code-Review 2026-09-13). Ausserdem
+    zaehlte hier der Intraday-Bar des laufenden Tages als Stichtag, sodass sich
+    der Index-Vorsprung am Folgetag noch aendern konnte."""
     closes = (idx_chart or {}).get("closes") or []
     dates = (idx_chart or {}).get("dates") or []
     if not closes or not dates or len(dates) != len(closes):
         return None
-    try:
-        grenze = (datetime.strptime(start_datum, "%Y-%m-%d")
-                  + timedelta(days=horizont_tage)).strftime("%Y-%m-%d")
-    except (ValueError, TypeError):
+    vor_datum = vor_datum or _heute()
+    s = _start_index(dates, start_datum, vor_datum)
+    e = _stichtag_index(dates, start_datum, horizont_tage, vor_datum)
+    if s is None or e is None or e <= s or not closes[s] or not closes[e]:
         return None
-    start = ende = None
-    for i, d in enumerate(dates):
-        if d is None:
-            continue
-        if start is None and d >= start_datum:
-            start = closes[i]
-        if d >= grenze:
-            ende = closes[i]
-            break
-    if not start or not ende:
-        return None
-    return ende / start - 1
+    return closes[e] / closes[s] - 1
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +121,25 @@ HORIZONTE_TAGE = (("4W", 21), ("8W", 50), ("12W", 78))
 def _heute():
     from datetime import date
     return date.today().isoformat()
+
+
+def _start_index(dates, signal_datum, vor_datum):
+    """Index des Startbars: erster Bar mit Datum >= signal_datum, der strikt vor
+    vor_datum liegt. Sein Schlusskurs ist der gemeinsame Startpunkt fuer Pick UND
+    Index (seit 2026-09-13).
+
+    Warum nicht der geloggte Preis: Stichproben aus Score- und Pivot-Logbuch
+    zeigen, dass er je nach Logzeit etwas anderes meint - in den USA zu rund
+    88 % den Vortagesschluss (Morgenlauf vor Handelsbeginn), in Europa nur zu
+    50-60 %, zu 30-40 % einen Intraday-Kurs und zu ~10 % schon den
+    Signaltagsschluss. Ein Index-Fenster laesst sich an diese Mischung nicht
+    anpassen. Der Signaltagsschluss dagegen passt fuer jede Logzeit und liegt
+    nie VOR dem Signal - wer das Signal morgens, mittags oder abends sieht, kann
+    zu diesem Kurs noch einsteigen."""
+    for i, d in enumerate(dates):
+        if d and d >= signal_datum:
+            return i if d < vor_datum else None
+    return None
 
 
 def _stichtag_index(dates, start_datum, tage, vor_datum):
@@ -149,8 +162,8 @@ def _stichtag_index(dates, start_datum, tage, vor_datum):
 
 def fenster_returns(chart, signal_datum, preis_signal, horizonte=HORIZONTE_TAGE,
                     vor_datum=None):
-    """Rendite vom Signalkurs bis zum Schlusskurs am ersten Handelstag >=
-    Signaltag + N Kalendertage, je Horizont.
+    """Rendite vom Schlusskurs am Signaltag bis zum Schlusskurs am ersten
+    Handelstag >= Signaltag + N Kalendertage, je Horizont.
 
     Ersetzt das bisherige Verfahren aller Forward-Tests ("Signalkurs gegen den
     heutigen Kurs, einsortiert nach dem reifsten erreichten Horizont"). Das
@@ -170,10 +183,17 @@ def fenster_returns(chart, signal_datum, preis_signal, horizonte=HORIZONTE_TAGE,
     if not preis_signal or not closes or not dates or len(dates) != len(closes):
         return out
     vor_datum = vor_datum or _heute()
+    # Startkurs = Schlusskurs am Signaltag aus dem Chart, NICHT preis_signal
+    # (seit 2026-09-13, siehe _start_index). preis_signal dient nur noch als
+    # Pruefung, dass der Logbuch-Eintrag vollstaendig ist.
+    s = _start_index(dates, signal_datum, vor_datum)
+    if s is None or not closes[s]:
+        return out
+    start = closes[s]
     for h, tage in horizonte:
         i = _stichtag_index(dates, signal_datum, tage, vor_datum)
-        if i is not None and closes[i]:
-            out[h] = closes[i] / preis_signal - 1
+        if i is not None and i > s and closes[i]:
+            out[h] = closes[i] / start - 1
     return out
 
 

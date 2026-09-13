@@ -75,11 +75,25 @@ def finde_start_index(dates, entry_datum):
     return None
 
 
-def simuliere(chart, entry_datum, entry_preis, stop, horizont_tage=HORIZONT_TAGE):
+def simuliere(chart, entry_datum, entry_preis, stop, horizont_tage=HORIZONT_TAGE,
+              stop_pct=None, vor_datum=None):
     """Simuliert die Ausstiegsstaffel Tag fuer Tag gegen den echten Kursverlauf.
 
     Nutzt Hoch/Tief je Tag statt nur Schluss - ein Stop oder Ziel kann intraday
     ausgeloest werden, ohne dass der Schlusskurs das zeigt.
+
+    Einstieg (seit 2026-09-13): zum Schlusskurs am Signaltag aus dem Chart, nicht
+    zum geloggten entry_preis. Der geloggte Preis meint je nach Logzeit
+    Vortagesschluss, Intraday-Kurs oder Signaltagsschluss (Code-Review
+    2026-09-13); nur der Signaltagsschluss passt zum Index-Fenster
+    (index_vergleich.index_return_fenster) und liegt nie vor dem Signal. Stop
+    und Ziele werden deshalb erst ab dem FOLGEtag geprueft - Hoch und Tief des
+    Signaltags liegen vor dem Einstieg. entry_preis dient nur noch als
+    Vollstaendigkeitspruefung.
+
+    stop: absoluter Stop (Pivot: Swing-Low aus dem Logbuch) ODER stop_pct:
+    prozentualer Abstand zum tatsaechlichen Einstieg (Score-Kohorten). Der
+    Stichtag ist wie bei den festen Fenstern nie der laufende Tag.
 
     chart: dict mit dates/highs/lows/closes (scorer.py::yahoo_chart-Format).
     Gibt None zurueck, wenn der Signaltag im Chart fehlt, kein plausibler Stop
@@ -101,34 +115,42 @@ def simuliere(chart, entry_datum, entry_preis, stop, horizont_tage=HORIZONT_TAGE
     dates = chart.get("dates") or []
     highs, lows = chart.get("highs") or [], chart.get("lows") or []
     closes = chart.get("closes") or []
-    if not dates or not entry_preis or stop is None or stop >= entry_preis:
+    if not dates or not entry_preis:
         return None
     start = finde_start_index(dates, entry_datum)
-    if start is None:
+    if start is None or start >= len(closes) or not closes[start]:
+        return None
+    einstieg = closes[start]
+    if stop_pct is not None:
+        stop = einstieg * (1 - stop_pct)
+    if stop is None or stop >= einstieg:
         return None
     try:
         grenze = (datetime.strptime(entry_datum, "%Y-%m-%d")
                   + timedelta(days=horizont_tage)).strftime("%Y-%m-%d")
     except ValueError:
         return None
+    if vor_datum is None:
+        from datetime import date
+        vor_datum = date.today().isoformat()
     horizont_idx = None
-    for i in range(start, len(dates)):
+    for i in range(start + 1, len(dates)):
         if dates[i] and dates[i] >= grenze:
             horizont_idx = i
             break
-    if horizont_idx is None:
-        return None   # Chart deckt den Horizont noch nicht ab
+    if horizont_idx is None or dates[horizont_idx] >= vor_datum:
+        return None   # Stichtag noch nicht erreicht oder erst ein Intraday-Bar
     if horizont_idx >= len(closes) or horizont_idx >= len(highs) or horizont_idx >= len(lows):
         return None
     hold_close = closes[horizont_idx]
 
-    t1_preis = entry_preis * (1 + T1_PCT)
-    t2_preis = entry_preis * (1 + T2_PCT)
-    t3_preis = entry_preis * (1 + T3_PCT)
+    t1_preis = einstieg * (1 + T1_PCT)
+    t2_preis = einstieg * (1 + T2_PCT)
+    t3_preis = einstieg * (1 + T3_PCT)
     rest, erloese = 1.0, 0.0
     t1_ok = t2_ok = t3_ok = gestoppt = False
-    hoch, tief = entry_preis, entry_preis
-    for i in range(start, horizont_idx + 1):
+    hoch, tief = einstieg, einstieg
+    for i in range(start + 1, horizont_idx + 1):
         # MFE/MAE laufen ueber das ganze Fenster weiter, auch nach dem Exit -
         # genau der Vergleich "was waere ohne Stop noch gekommen" ist die
         # interessante Frage (siehe Docstring).
@@ -158,11 +180,11 @@ def simuliere(chart, entry_datum, entry_preis, stop, horizont_tage=HORIZONT_TAGE
         erloese += rest * hold_close   # offene Restposition zum Stichtag bewertet
 
     return {
-        "strategie_return": round((erloese / entry_preis - 1.0) * 100, 2),
-        "hold_return": round((hold_close / entry_preis - 1.0) * 100, 2),
+        "strategie_return": round((erloese / einstieg - 1.0) * 100, 2),
+        "hold_return": round((hold_close / einstieg - 1.0) * 100, 2),
         "t1": t1_ok, "t2": t2_ok, "t3": t3_ok, "gestoppt": gestoppt,
-        "mfe": round((hoch / entry_preis - 1.0) * 100, 2),
-        "mae": round((tief / entry_preis - 1.0) * 100, 2),
+        "mfe": round((hoch / einstieg - 1.0) * 100, 2),
+        "mae": round((tief / einstieg - 1.0) * 100, 2),
     }
 
 

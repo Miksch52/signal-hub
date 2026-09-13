@@ -167,9 +167,10 @@ def evaluiere(picks):
         # prozentuale Stop ist deshalb rueckwirkend auf jede Episode
         # anwendbar). Liefert None, solange der Chart den 78-Tage-Stichtag
         # nicht erreicht - dann bleibt die Episode einfach aus dieser Spur.
+        # Stop prozentual zum TATSAECHLICHEN Einstieg (Signaltagsschluss, seit
+        # 2026-09-13) - nicht zum geloggten Preis, siehe exit_simulation.simuliere.
         sim = exit_simulation.simuliere(
-            charts.get(sym) or {}, p["datum"], p["preis"],
-            exit_simulation.stop_aus_prozent(p["preis"]))
+            chart, p["datum"], p["preis"], None, stop_pct=exit_simulation.STOP_PCT)
         if sim:
             # Index ueber GENAU dasselbe feste Fenster - nur so ist der
             # Strategie-Return als Leistung des Signals lesbar und nicht als
