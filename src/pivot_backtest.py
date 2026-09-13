@@ -489,7 +489,8 @@ def evaluate():
         bk, ret = index_vergleich.laengster_horizont(rets)
         if bk is None:
             continue
-        edges = index_vergleich.fenster_edges(idx_charts, e.get("markt"), e["datum"], rets)
+        edges = index_vergleich.fenster_edges(idx_charts, e.get("markt"), e["datum"], rets,
+                                              pick_chart=charts[sym], ticker=sym)
         erreicht = [(h, r, edges[h]) for h, r in rets.items() if r is not None]
         edge = edges[bk]
         # Feste Werte aendern sich nie mehr; das alte Format {horizont,

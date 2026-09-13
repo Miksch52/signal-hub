@@ -107,7 +107,8 @@ def sammle():
         # Datensatz. bewerte() filtert ohnehin nach Horizont - eine Episode
         # zaehlt dort also je Horizont genau einmal.
         rets = index_vergleich.fenster_returns(charts[sym], p["datum"], p.get("preis"))
-        edges = index_vergleich.fenster_edges(idx_charts, p.get("markt"), p["datum"], rets)
+        edges = index_vergleich.fenster_edges(idx_charts, p.get("markt"), p["datum"], rets,
+                                              pick_chart=charts[sym], ticker=sym)
         # nur die Rohwerte - alles andere (Ampel, Gewicht, Detail) ist fuer
         # die Neuberechnung irrelevant und blaeht den Cache auf
         werte = {k: v["wert"] for k, v in p["faktoren"].items()

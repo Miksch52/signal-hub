@@ -56,6 +56,22 @@ def index_symbol(markt):
     return INDEX.get(markt or STANDARD_MARKT, INDEX[STANDARD_MARKT])
 
 
+def markt_fuer(markt, ticker=None):
+    """Markt eines Picks fuer die Index-Zuordnung (seit 2026-09-13, Code-Review).
+
+    Ist ein gueltiger Markt geloggt, gilt er. Sonst entscheidet das
+    Boersensuffix: ein Punkt im Ticker (SAP.DE, SHEL.L, ASML.AS) heisst Europa,
+    kein Punkt USA - dieselbe Regel, die ohlc_history.py im System schon nutzt.
+    Anlass: Das Rotations-Logbuch fuehrt gar keinen Markt, und 10 von 68 seiner
+    Ticker sind europaeische Werte, die bis dahin gegen den S&P 500 gemessen
+    wurden."""
+    if markt in INDEX:
+        return markt
+    if ticker and "." in ticker:
+        return "Europa"
+    return STANDARD_MARKT
+
+
 def index_return(idx_chart, signal_datum, kalendertage):
     """Index-Rendite vom Signaltag bis zum letzten Kurs des Charts.
 
@@ -205,18 +221,73 @@ def hat_datumsreihe(chart):
     return bool(d) and len(d) == len(c.get("closes") or [])
 
 
-def fenster_edges(idx_charts, markt, signal_datum, returns, horizonte=HORIZONTE_TAGE):
-    """Vorsprung gegenueber dem Leitindex je Horizont, ueber GENAU dasselbe
-    feste Fenster (index_return_fenster). None, wo der Pick-Return fehlt oder
-    der Index-Zeitraum nicht bestimmbar ist."""
-    markt = markt if markt in idx_charts else STANDARD_MARKT
+def _index_return_zwischen(idx_chart, start_datum, end_datum, vor_datum):
+    """Index-Rendite vom ersten Bar ab start_datum bis zum ersten Bar ab
+    end_datum - also an den Handelstagen, die der PICK tatsaechlich verwendet
+    hat, nicht an denen, die sich aus dem Index-Kalender ergeben wuerden."""
+    closes = (idx_chart or {}).get("closes") or []
+    dates = (idx_chart or {}).get("dates") or []
+    if not closes or not dates or len(dates) != len(closes):
+        return None
+    s = _start_index(dates, start_datum, vor_datum)
+    e = _start_index(dates, end_datum, vor_datum)
+    if s is None or e is None or e <= s or not closes[s] or not closes[e]:
+        return None
+    return closes[e] / closes[s] - 1
+
+
+def index_return_fuer_pick(idx_charts, markt, pick_chart, signal_datum, tage,
+                           ticker=None, vor_datum=None):
+    """Index-Rendite ueber EXAKT die Handelstage, die der Pick fuer diesen
+    Horizont verwendet (seit 2026-09-13, Code-Review).
+
+    Start- und Stichtag werden zuerst am Pick-Chart bestimmt (dieselben Regeln
+    wie fenster_returns), erst dann wird im Index-Chart der jeweils erste Bar
+    ab diesen Daten gesucht. Vorher bestimmte der Index beides nach seinem
+    eigenen Kalender - bei Boersen mit eigenen Feiertagen lagen Pick und Index
+    dann einen Tag auseinander. Beleg: Signal am 2026-08-10, 4W-Stichtag
+    2026-08-31 - London geschlossen, SHEL.L endete am 01.09., ^STOXX am 31.08.
+
+    Ohne Datumsreihe im Pick-Chart faellt die Rechnung auf das Kalenderfenster
+    des Index zurueck (index_return_fenster)."""
+    vor_datum = vor_datum or _heute()
+    idx_chart = idx_charts.get(markt_fuer(markt, ticker))
+    if idx_chart is None:
+        idx_chart = idx_charts.get(STANDARD_MARKT)
+    pick_dates = (pick_chart or {}).get("dates") or []
+    if not hat_datumsreihe(pick_chart):
+        return index_return_fenster(idx_chart, signal_datum, tage, vor_datum)
+    s = _start_index(pick_dates, signal_datum, vor_datum)
+    e = _stichtag_index(pick_dates, signal_datum, tage, vor_datum)
+    if s is None or e is None or e <= s:
+        return None
+    return _index_return_zwischen(idx_chart, pick_dates[s], pick_dates[e], vor_datum)
+
+
+def fenster_edges(idx_charts, markt, signal_datum, returns, horizonte=HORIZONTE_TAGE,
+                  pick_chart=None, ticker=None, vor_datum=None):
+    """Vorsprung gegenueber dem Leitindex je Horizont. None, wo der Pick-Return
+    fehlt oder der Index-Zeitraum nicht bestimmbar ist.
+
+    Mit pick_chart (seit 2026-09-13 von allen Engines uebergeben) misst der
+    Index exakt an den Handelstagen des Picks (index_return_fuer_pick), und mit
+    ticker wird ein fehlender Markt aus dem Boersensuffix abgeleitet
+    (markt_fuer). Ohne pick_chart gilt das Kalenderfenster des Index."""
+    vor_datum = vor_datum or _heute()
     out = {}
     for h, tage in horizonte:
         r = returns.get(h)
         if r is None:
             out[h] = None
             continue
-        idx = index_return_fenster(idx_charts.get(markt), signal_datum, tage)
+        if pick_chart is not None:
+            idx = index_return_fuer_pick(idx_charts, markt, pick_chart, signal_datum,
+                                         tage, ticker=ticker, vor_datum=vor_datum)
+        else:
+            idx_chart = idx_charts.get(markt_fuer(markt, ticker))
+            if idx_chart is None:
+                idx_chart = idx_charts.get(STANDARD_MARKT)
+            idx = index_return_fenster(idx_chart, signal_datum, tage, vor_datum)
         out[h] = (r - idx) if idx is not None else None
     return out
 

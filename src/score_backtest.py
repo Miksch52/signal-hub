@@ -155,7 +155,8 @@ def evaluiere(picks):
                 ohne_datumsreihe += 1
             continue
         gewertet += 1
-        edges = index_vergleich.fenster_edges(idx_charts, p.get("markt"), p["datum"], rets)
+        edges = index_vergleich.fenster_edges(idx_charts, p.get("markt"), p["datum"], rets,
+                                              pick_chart=chart, ticker=sym)
         for h, r in rets.items():
             if r is None:
                 continue
@@ -175,9 +176,11 @@ def evaluiere(picks):
             # Index ueber GENAU dasselbe feste Fenster - nur so ist der
             # Strategie-Return als Leistung des Signals lesbar und nicht als
             # Abbild der Marktphase (Systempruefung Punkt 5).
-            idx_markt = p.get("markt") if p.get("markt") in idx_charts else "USA"
-            idx_ret = index_vergleich.index_return_fenster(
-                idx_charts.get(idx_markt), p["datum"], exit_simulation.HORIZONT_TAGE)
+            # An exakt den Handelstagen des Picks (Code-Review 2026-09-13): der
+            # Stichtag der Simulation folgt denselben Regeln wie die festen Fenster.
+            idx_ret = index_vergleich.index_return_fuer_pick(
+                idx_charts, p.get("markt"), chart, p["datum"], exit_simulation.HORIZONT_TAGE,
+                ticker=sym)
             if idx_ret is not None:
                 sim["index_return"] = round(idx_ret * 100, 2)
             sims[p["tier"]].append(sim)
