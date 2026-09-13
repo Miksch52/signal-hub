@@ -673,7 +673,17 @@ function renderTrefferquoten(){
   }
   html+='</table>';
   html+=`<p style="margin:8px 0 0;max-width:900px">${SCOREBT.hinweis||''}</p>`;
-  if(!zeilen){ box.style.display='none'; return; }
+  if(!zeilen){
+    // Reift noch (Systempruefung Punkt 8, 13.09.): das Logbuch wurde
+    // ausgewertet, aber keine Episode hat den kuerzesten Horizont (4W)
+    // erreicht - bisher verschwand das Panel dann komplett, nicht von einem
+    // echten Fehler (Datei fehlt) unterscheidbar. Jetzt sichtbar mit Erklaerung.
+    el.innerHTML = '<p style="margin:0">🌱 Reift noch — das Logbuch wurde ausgewertet, aber noch keine Episode '
+      + 'ist alt genug für den kürzesten Horizont (4W = 21 Kalendertage).</p>';
+    if(cnt) cnt.textContent=`Stand ${(SCOREBT.erstellt||'').slice(0,10)}`;
+    box.style.display='';
+    return;
+  }
   el.innerHTML=html;
   if(cnt) cnt.textContent=`${SCOREBT.gewertet||0} Episoden · Stand ${(SCOREBT.erstellt||'').slice(0,10)}`;
   box.style.display='';
