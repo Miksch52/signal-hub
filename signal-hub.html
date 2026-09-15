@@ -328,7 +328,7 @@
     <div class="fgroup">
      <div class="fgroup-label">Qualitäts-Filter (Minervini/Livermore)</div>
      <div class="fgroup-row">
-      <label class="slabel" title="Nur Werte, die der Pivot-Detektor als scharf (ARMED) oder frisch ausgebrochen (BREAKOUT) einstuft – die Entstehung des Ausbruchs statt des nachlaufenden Scores"><input type="checkbox" id="pivotonly" checked> 🎯 nur Pivot-Setups <span id="pivotcount" class="filtercount"></span></label>
+      <label class="slabel" title="Nur Werte, die der Pivot-Detektor als scharf (ARMED) oder frisch ausgebrochen (BREAKOUT) einstuft – die Entstehung des Ausbruchs statt des nachlaufenden Scores. Umgeht die Pflicht „Volumen grün“, da ARMED gerade austrocknendes Volumen bedeutet (Stage-2 bleibt Pflicht)."><input type="checkbox" id="pivotonly" checked> 🎯 nur Pivot-Setups <span id="pivotcount" class="filtercount"></span></label>
       <label class="slabel" title="Die dreifach bestätigte Schnittmenge (wie „Top-Setups heute“ auf der Startseite): Score ≥ 70 UND ARMED/BREAKOUT UND Price-Action bullisch (PA-Score > 0). Bringt die Price-Action-Dimension des Price-Action-Hubs in den Signal-Hub. Umgeht die Faktor-Pflicht (das Set ist schon kuratiert, und „Volumen grün“ widerspräche ARMED); Risiko-Filter (Earnings/Extended/50-80) bleiben aktiv."><input type="checkbox" id="topsetups"> 🏆 nur Top-Setups <span id="topsetcount" class="filtercount"></span></label>
       <label class="slabel" title="Für Hebelprodukte (Knock-Outs/Optionsscheine, z.B. Finanzen.net Zero): Markt-Ampel grün UND Stage-2-Trend grün UND Basis/VCP eng (geringe Volatilität) UND Pivot-Trigger (ARMED/BREAKOUT) UND nicht extended UND keine akute Earnings-Sperre UND kein 50/80-/Klimax-Risiko. Strenger als „nur Top-Setups“ – speziell auf die engere Stop-Distanz und geringere Fehlertoleranz eines gehebelten Einstiegs zugeschnitten."><input type="checkbox" id="hebelonly"> ⚡ nur Hebel-Kandidaten (grün) <span id="hebelcount" class="filtercount"></span></label>
       <label class="slabel"><input type="checkbox" id="hideearn" checked> ⚠︎ Earnings ausblenden</label>
@@ -1110,7 +1110,11 @@ function render(){
     // grundsaetzlich ausschliessen, auch wenn "Cheat-Pivots einschliessen" an ist.
     const p=pivotInfo(t);
     if(state.cheatInclude && p && p.pivot_status==='CHEAT') return true;
-    return [...state.faktoren].every(k=>t.faktoren[k]&&t.faktoren[k].ampel==='gruen');
+    // "nur Pivot-Setups" umgeht nur die Volumen-Pflicht (seit 2026-09-15):
+    // ARMED heisst Volumen-AUSTROCKNUNG - Pivot + "Volumen gruen" liess am
+    // 15.09. von 94 Setups genau 1 (Cloud) bzw. 0 (Mac mini) uebrig.
+    return [...state.faktoren].every(k=>(state.pivotOnly && k==='volumen_bestaetigung')
+      || (t.faktoren[k]&&t.faktoren[k].ampel==='gruen'));
   });
 
   const meta=document.getElementById('meta');
