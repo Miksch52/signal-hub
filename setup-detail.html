@@ -110,6 +110,17 @@
   .dz .dz-v{font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
   .dz-v.w-gruen{color:var(--ok)} .dz-v.w-gelb{color:var(--warn)} .dz-v.w-rot{color:var(--bad)}
 
+  /* Institutioneller Besitz - Info-Block (neutral, keine Ampelfarben) */
+  .dz-inst{font-size:12px;border-top:1px solid var(--line2);padding-top:6px;margin-top:1px}
+  .dz-inst-k{color:var(--muted);margin-bottom:3px}
+  .dz-inst-v{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;font-weight:650;font-variant-numeric:tabular-nums}
+  .inst-sep{font-style:normal;color:var(--muted2);font-weight:400}
+  .inst-label{font-size:11px;padding:1px 8px;border-radius:20px;background:var(--line2);color:var(--muted)}
+  .inst-label-unpl,.inst-unpl{color:var(--warn)}
+  .inst-unpl{font-size:10.5px;font-weight:650}
+  .dz-inst-t{margin-top:3px;color:var(--muted)}
+  .dz-inst-q{margin-top:3px;font-size:10.5px;color:var(--muted2)}
+
   /* Institutioneller Besitz je Quartal - Mini-Verlauf statt nackter Zahl */
   .dash-quartale{display:flex;align-items:flex-end;gap:5px;height:34px}
   .dq{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px;text-align:center}
@@ -1159,6 +1170,31 @@ function saeuleMomentum(t){
     dashBar(rs, ampel), zeilen);
 }
 
+// Institutioneller Besitz (seit 2026-09-15, scorer.py::baue_institutional):
+// reiner Info-Indikator - fliesst bewusst in KEINE Ampel, keinen Score,
+// keinen Filter. Einordnung niedrig/normal/hoch kommt fertig aus der
+// Pipeline (Schwellen je Groessenklasse), hier nur Anzeige.
+function instBesitzBlock(t){
+  const i = t.institutional || {};
+  const pct = (v, ueber) => v==null ? 'n/a' : dzahl(v)+' %'+(ueber ? ' <b class="inst-unpl">unplausibel</b>' : '');
+  const anz = i.anzahl!=null ? Number(i.anzahl).toLocaleString('de-DE') : 'n/a';
+  const label = i.label || 'n/a';
+  const quelle = i.quelle_hinweis || '13F-Daten, bis ~45 Tage verzögert';
+  const th = i.top_holder;
+  const tip = quelle
+    + (i.groesse_label && i.schwelle_niedrig!=null ? ` · ${i.groesse_label}: niedrig < ${i.schwelle_niedrig} %, hoch > ${i.schwelle_hoch} %` : '')
+    + ' · reine Info, kein Score-/Filter-Einfluss';
+  const sep = '<i class="inst-sep">|</i>';
+  return `<div class="dz-inst" title="${esc(tip)}">
+    <div class="dz-inst-k">Institutioneller Besitz${i.groesse_label ? ' · '+esc(i.groesse_label) : ''}</div>
+    <div class="dz-inst-v">
+      <span>${pct(i.prozent, i.ueber_100)} gehalten</span>${sep}<span>${pct(i.prozent_float, i.float_ueber_100)} vom Float</span>${sep}<span>${anz} Institutionen</span>${sep}<span class="inst-label${label==='Daten unplausibel'?' inst-label-unpl':''}">${esc(label)}</span>
+    </div>
+    ${th ? `<div class="dz-inst-t">Top-Holder: ${th.aufgestockt} aufgestockt, ${th.reduziert} reduziert</div>` : ''}
+    <div class="dz-inst-q">ⓘ ${esc(quelle)}</div>
+  </div>`;
+}
+
 // Saeule 2: Geldfluss. Leitzahl ist die juengste Quartalsveraenderung des
 // institutionellen Besitzes - die direkteste vorhandene Antwort auf "fliesst
 // grosses Geld zu". Faellt auf den Chaikin Money Flow zurueck, wenn Yahoo
@@ -1180,20 +1216,16 @@ function saeuleGeldfluss(t){
   const verlauf = reihe.length ? `<div class="dash-quartale" title="Veränderung des institutionellen Besitzes je Quartal (SEC 13F, über Yahoo)">
       ${reihe.map(x=>`<div class="dq"><i class="${x<0?'neg':''}" style="height:${Math.max(2, Math.round(Math.abs(x)/maxAbs*26))}px"></i><em>${x>0?'+':''}${dzahl(x)}</em></div>`).join('')}
     </div>` : dashBar(cmf!=null ? Math.min(100, Math.max(0,(cmf+0.2)*250)) : 0, ampel);
-  const anteil = (t.institutional||{}).prozent;
   const zeilen = [
     dzeile('Steigend in Folge', folge!=null ? folge+' Quartal'+(folge===1?'':'e') : '—',
            folge!=null ? (folge>=2?'gruen':folge>=1?'gelb':'rot') : null),
-    // Minervini-Zielband 30-70 %: darunter zu wenig institutionelle Basis,
-    // darueber wenig Luft fuer weitere Zukaeufe.
-    dzeile('Institutioneller Anteil', anteil!=null ? dzahl(anteil)+' %' : '—',
-           anteil!=null ? ((anteil>=30 && anteil<=70) ? 'gruen' : 'gelb') : null),
     dzeile('Up/Down-Volumen', ud!=null ? dzahl(ud,2) : '—',
            ud!=null ? (ud>=1.2?'gruen':ud>=1?'gelb':'rot') : null),
     dzeile('Chaikin Money Flow', cmf!=null ? (cmf>0?'+':'')+dzahl(cmf,2) : '—',
            cmf!=null ? (cmf>0.05?'gruen':cmf>0?'gelb':'rot') : null),
     dzeile('Volumen 5T/50T', vol!=null ? dzahl(vol)+'×' : '—',
            vol!=null ? (vol>=1.4?'gruen':vol>=1?'gelb':'rot') : null),
+    instBesitzBlock(t),
   ];
   return dashSaeule('🏦', 'Geldfluss', 'Fließt großes Geld zu?', ampel,
     dashZahl(letzte!=null ? (letzte>0?'+':'')+dzahl(letzte) : (cmf!=null ? (cmf>0?'+':'')+dzahl(cmf,2) : '—'),

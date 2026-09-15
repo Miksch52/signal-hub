@@ -659,55 +659,194 @@ def f_code33(ergebnisse, yop, ycrumb, schwellen, gew, gew_summe):
 # Kriterium ist damit NICHT abgedeckt, nur der aktuelle Prozentsatz.
 # KEIN Score-Einfluss (wie f_code33) - Backtest-Pflicht (CLAUDE.md): neue
 # Kriterien erst messen, dann ggf. spaeter scharf schalten.
-INSTITUTIONAL_CACHE_TAGE = 7      # aendert sich quartalsweise -> 7-Tage-TTL wie Code 33
+#
+# Erweitert 2026-09-15 zum Info-Indikator fuer die Setup-Analyse: dieselben
+# Yahoo-Module, die yfinance fuer Ticker.major_holders (majorHoldersBreakdown:
+# institutionsPercentHeld/-FloatPercentHeld/-Count) und
+# Ticker.institutional_holders (institutionOwnership.ownershipList, Spalte
+# pctChange) nutzt - direkt ueber quoteSummary wie der Rest dieses Scorers.
+# Live gegen AAPL/NVDA/SOUN/CELH/SAP.DE/ULVR.L/7203.T/SPY geprueft:
+# institutionsPercentHeld ist identisch mit heldPercentInstitutions (Basis
+# AUSSTEHENDE Aktien), der Float-Wert ist ein eigenes Feld (CELH: 75,2 %
+# gehalten, 105,8 % vom Float). SPY liefert alles None. marketCap kommt in
+# der Boersenwaehrung (price.currency), bei London "GBp", der Wert selbst ist
+# aber in GBP (ULVR.L ~99,9 Mrd) - daher Alias-Tabelle unten.
+# WEITERHIN KEIN Einfluss auf Score, Filter oder Ranking - nur Anzeige.
+INSTITUTIONAL_CACHE_TAGE = 1      # max. 1 Abruf pro Tag je Ticker
+INSTITUTIONAL_CACHE_VERSION = 2   # v1-Eintraege ({prozent, stand}) werden neu geholt
 INSTITUTIONAL_MAX_ABRUFE = 300    # Deckel je Lauf, wie beim Fundamental-/Code33-Post-Pass
+INSTITUTIONAL_QUELLE_HINWEIS = "13F-Daten, bis ~45 Tage verzögert"
 
-def yahoo_institutional(symbol, op, crumb):
-    """{prozent} (institutioneller Besitzanteil als Anteil 0..1, z.B. 0.664 =
-    66.4%) via Yahoo quoteSummary defaultKeyStatistics, Feld
-    heldPercentInstitutions - live verifiziert, siehe Modulkommentar oben.
-    None bei Abruf-/Parsefehler; {"prozent": None} (kein Fehler!), wenn Yahoo
-    fuer dieses Symbol schlicht keinen Wert liefert (z.B. ETFs) - dieser
-    Unterschied entscheidet, ob der naechste Lauf erneut versucht oder das
-    Ergebnis 7 Tage gecacht bleibt (siehe f_institutional())."""
+# Groessenklassen nach Marktkapitalisierung in USD: Small < 2 Mrd,
+# Mid 2-10 Mrd, Large > 10 Mrd.
+INSTITUTIONAL_SMALL_BIS_USD = 2e9
+INSTITUTIONAL_MID_BIS_USD = 10e9
+# (niedrig unter %, hoch ueber %) je Klasse, bezogen auf "% gehalten".
+INSTITUTIONAL_SCHWELLEN = {
+    "small": (20, 60),
+    "mid":   (40, 75),
+    "large": (55, 85),
+}
+INSTITUTIONAL_GROESSEN_LABEL = {"small": "Small Cap", "mid": "Mid Cap", "large": "Large Cap"}
+# Yahoo-Unterwaehrungen, deren marketCap trotzdem in der Hauptwaehrung steht.
+INSTITUTIONAL_WAEHRUNG_ALIAS = {"GBp": "GBP", "GBX": "GBP"}
+
+
+def _qs_raw(d, key):
+    v = (d or {}).get(key)
+    return v.get("raw") if isinstance(v, dict) else None
+
+
+def parse_institutional(qs):
+    """quoteSummary-result[0] -> Rohwerte. Wirft nie; fehlende Module/Felder
+    ergeben None. pctChange zaehlt nur, wo die Spalte ueberhaupt vorhanden ist
+    (top_mit_pct = 0 -> kein Trend-Hinweis)."""
+    mh = (qs or {}).get("majorHoldersBreakdown") or {}
+    liste = ((qs or {}).get("institutionOwnership") or {}).get("ownershipList") or []
+    auf = ab = mit_pct = 0
+    for h in liste:
+        p = _qs_raw(h, "pctChange")
+        if p is None:
+            continue
+        mit_pct += 1
+        if p > 0:
+            auf += 1
+        elif p < 0:
+            ab += 1
+    pr = (qs or {}).get("price") or {}
+    return {"held": _qs_raw(mh, "institutionsPercentHeld"),
+            "float": _qs_raw(mh, "institutionsFloatPercentHeld"),
+            "anzahl": _qs_raw(mh, "institutionsCount"),
+            "top_n": len(liste), "top_mit_pct": mit_pct,
+            "aufgestockt": auf, "reduziert": ab,
+            "marktkap": _qs_raw(pr, "marketCap"), "waehrung": pr.get("currency")}
+
+
+def groessenklasse(marktkap_usd):
+    """'small'/'mid'/'large' oder None bei fehlender Marktkapitalisierung."""
+    if not marktkap_usd or marktkap_usd <= 0:
+        return None
+    if marktkap_usd < INSTITUTIONAL_SMALL_BIS_USD:
+        return "small"
+    if marktkap_usd <= INSTITUTIONAL_MID_BIS_USD:
+        return "mid"
+    return "large"
+
+
+def institutional_label(held_pct, groesse):
+    """niedrig/normal/hoch - 'Daten unplausibel' bei > 100 %, 'n/a' ohne Wert
+    oder ohne Groessenklasse. Wert wird NIE gekappt."""
+    if held_pct is None:
+        return "n/a"
+    if held_pct > 100:
+        return "Daten unplausibel"
+    if groesse is None:
+        return "n/a"
+    niedrig, hoch = INSTITUTIONAL_SCHWELLEN[groesse]
+    if held_pct < niedrig:
+        return "niedrig"
+    if held_pct > hoch:
+        return "hoch"
+    return "normal"
+
+
+def baue_institutional(c):
+    """Cache-Eintrag (oder None) -> e['institutional'] fuer signals.json."""
+    c = c or {}
+    held = c.get("held", c.get("prozent"))      # v1-Eintraege kannten nur "prozent"
+    flo = c.get("float")
+    held_pct = round(held * 100, 1) if held is not None else None
+    float_pct = round(flo * 100, 1) if flo is not None else None
+    groesse = groessenklasse(c.get("marktkap_usd"))
+    label = institutional_label(held * 100 if held is not None else None, groesse)
+    top = None
+    if c.get("top_mit_pct"):
+        top = {"aufgestockt": c.get("aufgestockt", 0), "reduziert": c.get("reduziert", 0),
+               "anzahl": c.get("top_mit_pct")}
+    ueber = held is not None and held * 100 > 100
+    float_ueber = flo is not None and flo * 100 > 100
+    schw = INSTITUTIONAL_SCHWELLEN.get(groesse) if groesse else None
+    return {
+        "verfuegbar": held is not None,
+        "prozent": held_pct,
+        "prozent_float": float_pct,
+        "anzahl": int(c["anzahl"]) if c.get("anzahl") is not None else None,
+        "ueber_100": ueber if held is not None else None,
+        "float_ueber_100": float_ueber if flo is not None else None,
+        "groesse": groesse,
+        "groesse_label": INSTITUTIONAL_GROESSEN_LABEL.get(groesse),
+        "schwelle_niedrig": schw[0] if schw else None,
+        "schwelle_hoch": schw[1] if schw else None,
+        "label": label,
+        "top_holder": top,
+        "stand": c.get("stand"),
+        "quelle_hinweis": INSTITUTIONAL_QUELLE_HINWEIS,
+        "hinweis": ("Daten unplausibel (über 100 %)" if (ueber or float_ueber)
+                    else None if held is not None else "nicht verfügbar"),
+    }
+
+
+def yahoo_fx_usd(waehrung, op, memo):
+    """USD je Einheit der Waehrung via Yahoo-Chart ({W}USD=X), je Lauf gememot.
+    None, wenn nicht ermittelbar."""
+    if not waehrung:
+        return None
+    w = INSTITUTIONAL_WAEHRUNG_ALIAS.get(waehrung, waehrung)
+    if w == "USD":
+        return 1.0
+    if w in memo:
+        return memo[w]
+    kurs = None
+    try:
+        u = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(w + 'USD=X')}?range=1d&interval=1d"
+        with (op.open if op else urllib.request.urlopen)(urllib.request.Request(u, headers=UA), timeout=12) as r:
+            kurs = json.load(r)["chart"]["result"][0]["meta"].get("regularMarketPrice")
+    except Exception:
+        kurs = None
+    memo[w] = kurs
+    return kurs
+
+
+def yahoo_institutional(symbol, op, crumb, fx_memo=None):
+    """Rohwerte aus parse_institutional() plus marktkap_usd. None bei
+    Abruf-/Parsefehler (-> kein Cache, naechster Lauf versucht erneut); ein
+    Dict mit lauter None (z.B. ETFs) ist dagegen ein gueltiges Ergebnis."""
     if not op or not crumb:
         return None
     try:
         u = (f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/"
-             f"{urllib.parse.quote(symbol)}?modules=defaultKeyStatistics&crumb={urllib.parse.quote(crumb)}")
+             f"{urllib.parse.quote(symbol)}?modules=majorHoldersBreakdown,institutionOwnership,price"
+             f"&crumb={urllib.parse.quote(crumb)}")
         with op.open(urllib.request.Request(u, headers=UA), timeout=12) as r:
-            j = json.load(r)["quoteSummary"]["result"][0].get("defaultKeyStatistics") or {}
-        roh = (j.get("heldPercentInstitutions") or {}).get("raw")
-        return {"prozent": roh}
+            qs = json.load(r)["quoteSummary"]["result"][0]
     except Exception:
         return None
+    d = parse_institutional(qs)
+    d["marktkap_usd"] = None
+    if d["marktkap"]:
+        fx = yahoo_fx_usd(d["waehrung"], op, fx_memo if fx_memo is not None else {})
+        if fx is None:
+            return None          # Waehrung nicht umrechenbar -> lieber spaeter erneut
+        d["marktkap_usd"] = d["marktkap"] * fx
+    return d
+
 
 def f_institutional(ergebnisse, yop, ycrumb, schwellen):
-    """Post-Pass: institutioneller Besitzanteil als reine KONTEXTZAHL.
+    """Post-Pass: institutioneller Besitz als reiner INFO-INDIKATOR.
 
-    e['institutional'] = {verfuegbar, prozent (0-100+), ueber_100, hinweis}
-    fuer ALLE Treffer (anders als f_code33, das das Feld bei fehlenden Daten
-    ganz auslaesst - hier soll "nicht verfuegbar" explizit sichtbar sein).
-    Datenabruf nur ab Beobachten-Schwelle, gecacht/ratenlimitiert wie
-    f_code33() (7-Tage-TTL, 300 Abrufe/Lauf). KEIN Score-Einfluss.
+    e['institutional'] (siehe baue_institutional()) fuer ALLE Treffer -
+    fehlende Daten erscheinen explizit als "n/a". Datenabruf nur ab
+    Beobachten-Schwelle, max. 1x pro Tag je Ticker, 300 Abrufe/Lauf.
+    Beruehrt weder score, tier, einstufung noch faktoren.
 
-    BEWUSST OHNE Abgleich gegen Minervinis 30-70%-Bandbreite (2026-08-30
-    geaendert, urspruenglich war genau das eingebaut): Minervini misst den
-    Anteil an den AUSSTEHENDEN Aktien, Yahoos heldPercentInstitutions rechnet
-    aber erkennbar gegen den STREUBESITZ. Beleg aus dem ersten Live-Lauf
-    (2026-08-30, 548 Treffer): von 288 verfuegbaren Werten lagen 77 UEBER
-    100 % (Spitze 131,2 % bei Dropbox), der Median bei 89,8 %. Ueber 100 % ist
-    nur gegen den Streubesitz erklaerbar. Der Vergleich mit 30-70 % waere
-    damit Aepfel mit Birnen - er stufte 224 von 288 Werten als "oberhalb
-    70 % - wenig Kaufkraft-Reserve" ein und trennte damit nichts mehr.
-
-    Deshalb: Prozentsatz als Kontextzahl ausweisen (wie basis_anzahl() und
-    extended_pct()), Werte ueber 100 % zusaetzlich als Datenbasis-Hinweis
-    markieren - und KEINE eigene, "passende" Bandbreite erfinden. Dafuer
-    fehlt die Grundlage; eine an die beobachtete Verteilung angelegte Grenze
-    waere geraten, nicht belegt. Minervinis eigentliches Kriterium
-    ("steigend ueber die Quartale") bleibt ohnehin unabgedeckt, weil Yahoo
-    hier nur den aktuellen Stand liefert, keine Historie."""
+    Einordnung niedrig/normal/hoch nach Groessenklasse (Schwellen oben als
+    Konstanten). Hintergrund zur alten 30-70%-Diskussion (2026-08-30): der
+    erste Live-Lauf fand 77 von 288 Werten ueber 100 % - das wurde damals
+    als "Yahoo rechnet gegen den Streubesitz" gedeutet. Der Abgleich vom
+    2026-09-15 zeigt: heldPercentInstitutions == institutionsPercentHeld
+    (ausstehende Aktien), der Float-Wert ist ein separates Feld. Werte ueber
+    100 % sind damit schlicht unplausible Daten (Doppelzaehlung in 13F,
+    Wertpapierleihe) und werden als solche markiert, nie gekappt."""
     cache = {}
     if os.path.exists(pfade.INSTITUTIONAL_CACHE):
         try:
@@ -715,43 +854,32 @@ def f_institutional(ergebnisse, yop, ycrumb, schwellen):
         except Exception:
             cache = {}
     heute = datetime.now().date()
-    abrufe = verfuegbar_n = ueber_100_n = 0
+    fx_memo = {}
+    abrufe = verfuegbar_n = unplausibel_n = 0
     for e in ergebnisse:
         sym = e["yahoo_symbol"]
         c = cache.get(sym)
         frisch = False
-        if c and c.get("stand"):
+        if c and c.get("stand") and c.get("v") == INSTITUTIONAL_CACHE_VERSION:
             try:
-                frisch = (heute - datetime.strptime(c["stand"], "%Y-%m-%d").date()).days <= INSTITUTIONAL_CACHE_TAGE
+                frisch = (heute - datetime.strptime(c["stand"], "%Y-%m-%d").date()).days < INSTITUTIONAL_CACHE_TAGE
             except Exception:
                 frisch = False
         relevant = e["score"] >= schwellen["beobachten"]
         if relevant and abrufe < INSTITUTIONAL_MAX_ABRUFE and not frisch and ycrumb:
-            d = yahoo_institutional(sym, yop, ycrumb)
+            d = yahoo_institutional(sym, yop, ycrumb, fx_memo)
             time.sleep(0.15); abrufe += 1
             if d is not None:      # nur ein wirklicher Abruf wird gecacht (Fehlversuch = kein Cache)
-                c = {"prozent": d.get("prozent"), "stand": heute.strftime("%Y-%m-%d")}
+                c = dict(d, v=INSTITUTIONAL_CACHE_VERSION, stand=heute.strftime("%Y-%m-%d"))
                 cache[sym] = c
-        roh = c.get("prozent") if c else None
-        if roh is not None:
+        e["institutional"] = baue_institutional(c)
+        if e["institutional"]["verfuegbar"]:
             verfuegbar_n += 1
-            pct = round(roh * 100, 1)
-            ueber_100 = pct > 100
-            if ueber_100:
-                ueber_100_n += 1
-            # Nur dort einen Hinweis setzen, wo die Zahl fuer sich genommen
-            # irrefuehrend waere - sonst None statt eines Pseudo-Urteils.
-            hinweis = ("über 100 % – gegen den Streubesitz gerechnet, nicht mit "
-                       "Minervinis 30–70 % (ausstehende Aktien) vergleichbar"
-                       if ueber_100 else None)
-            e["institutional"] = {"verfuegbar": True, "prozent": pct,
-                                   "ueber_100": ueber_100, "hinweis": hinweis}
-        else:
-            e["institutional"] = {"verfuegbar": False, "prozent": None,
-                                   "ueber_100": None, "hinweis": "nicht verfügbar"}
+        if e["institutional"]["label"] == "Daten unplausibel" or e["institutional"]["float_ueber_100"]:
+            unplausibel_n += 1
     pfade.schreibe_json_atomar(pfade.INSTITUTIONAL_CACHE, cache, ensure_ascii=False)
     print(f"Institutioneller Besitz: {verfuegbar_n} verfuegbar "
-          f"({ueber_100_n} davon >100% = Streubesitz-Basis), {abrufe} Abrufe")
+          f"({unplausibel_n} davon >100% = unplausibel), {abrufe} Abrufe")
 
 # Minervinis eigentliches Besitz-Kriterium ist die RICHTUNG ("steigend ueber
 # aufeinanderfolgende Quartale"), nicht das Niveau. Yahoo liefert dafuer nichts
