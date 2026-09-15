@@ -65,7 +65,11 @@
      Substanz (keine Eintagsfliege?). Speist sich ausschliesslich aus Feldern,
      die signals.json ohnehin liefert - mehrere davon (rs_rating,
      institutional_trend, basis_nr, extended_pct) waren bis dahin auf dieser
-     Seite nirgends sichtbar, obwohl sie genau die Leitfrage beantworten. */
+     Seite nirgends sichtbar, obwohl sie genau die Leitfrage beantworten.
+     Seit 2026-09-15 zeigt die Geldfluss-Saeule zusaetzlich die BESITZBREITE
+     ("underowned", Feld underowned aus scorer.py::f_underowned): nicht nur,
+     ob institutionelles Geld zufliesst, sondern ob der Wert dafuer noch Luft
+     hat und ob NEUE Adressen einsteigen. */
   .dash-verdikt{background:var(--card);border:1px solid var(--line);border-radius:14px;
     box-shadow:var(--shadow);padding:16px 18px;margin-bottom:12px;border-top:3px solid var(--line)}
   .dash-verdikt.v-gruen{border-top-color:var(--ok)}
@@ -109,6 +113,11 @@
   .dz .dz-k{color:var(--muted)}
   .dz .dz-v{font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
   .dz-v.w-gruen{color:var(--ok)} .dz-v.w-gelb{color:var(--warn)} .dz-v.w-rot{color:var(--bad)}
+  /* Eine Zeile Deutung am Fuss einer Saeule - fuer Kennzahlen, deren nackte
+     Zahl nichts sagt (Besitzbreite/underowned, seit 2026-09-15). */
+  .ds-note{font-size:11px;color:var(--muted2);line-height:1.45;margin-top:2px;
+    border-top:1px dashed var(--line2);padding-top:6px}
+  .ds-note b{color:var(--muted)}
 
   /* Institutioneller Besitz - Info-Block (neutral, keine Ampelfarben) */
   .dz-inst{font-size:12px;border-top:1px solid var(--line2);padding-top:6px;margin-top:1px}
@@ -1133,7 +1142,7 @@ function earnText(e){
 // grosse Geld rein"), fundamentale Substanz ("keine Eintagsfliege").
 //
 // Nutzt NUR Felder, die signals.json ohnehin liefert - mehrere davon
-// (rs_rating, institutional, institutional_trend, basis_nr, extended_pct,
+// (rs_rating, institutional, institutional_trend, underowned, basis_nr, extended_pct,
 // trend_template) standen bis dahin zwar im Datensatz, wurden auf dieser
 // Seite aber nirgends angezeigt, obwohl sie die Leitfrage am direktesten
 // beantworten. Kein zusaetzlicher Datenabruf, kein KI-Aufruf.
@@ -1153,10 +1162,10 @@ function dashBar(pct, ampel){
   const farbe = {gruen:'var(--ok)', gelb:'var(--warn)', rot:'var(--bad)', na:'var(--muted2)'}[ampel] || 'var(--muted2)';
   return `<div class="dash-bar"><i style="width:${p}%;background:${farbe}"></i></div>`;
 }
-function dzeile(k, v, ampel){
-  return `<div class="dz"><span class="dz-k">${k}</span><span class="dz-v${ampel?' w-'+ampel:''}">${v}</span></div>`;
+function dzeile(k, v, ampel, titel){
+  return `<div class="dz"${titel?` title="${esc(titel)}"`:''}><span class="dz-k">${k}</span><span class="dz-v${ampel?' w-'+ampel:''}">${v}</span></div>`;
 }
-function dashSaeule(icon, titel, frage, ampel, zahlHtml, mitteHtml, zeilen){
+function dashSaeule(icon, titel, frage, ampel, zahlHtml, mitteHtml, zeilen, notiz){
   return `<section class="dash-saeule s-${ampel}">
     <div class="ds-kopf">
       <div class="ds-titel">${icon} ${titel}<small>${frage}</small></div>
@@ -1165,6 +1174,7 @@ function dashSaeule(icon, titel, frage, ampel, zahlHtml, mitteHtml, zeilen){
     ${zahlHtml}
     ${mitteHtml}
     <div class="ds-zeilen">${zeilen.join('')}</div>
+    ${notiz || ''}
   </section>`;
 }
 function dashZahl(wert, einheit, ampel){
@@ -1239,9 +1249,28 @@ function saeuleGeldfluss(t){
   const verlauf = reihe.length ? `<div class="dash-quartale" title="Veränderung des institutionellen Besitzes je Quartal (SEC 13F, über Yahoo)">
       ${reihe.map(x=>`<div class="dq"><i class="${x<0?'neg':''}" style="height:${Math.max(2, Math.round(Math.abs(x)/maxAbs*26))}px"></i><em>${x>0?'+':''}${dzahl(x)}</em></div>`).join('')}
     </div>` : dashBar(cmf!=null ? Math.min(100, Math.max(0,(cmf+0.2)*250)) : 0, ampel);
+  // Besitzbreite / "underowned" (seit 2026-09-15, scorer.py::f_underowned):
+  // NICHT das Niveau - das zeigt instBesitzBlock() unten vollstaendiger
+  // (% gehalten, % vom Float, Zahl der Institutionen, Schwellen je
+  // Groessenklasse) - sondern die RICHTUNG der Melderzahl ueber Quartale:
+  // steigen NEUE Adressen ein, oder kaufen nur die bestehenden Halter nach?
+  // Das trennt die 13F-Melderreihe, und nur die.
+  const uo = t.underowned || {};
+  const uoWert = uo.verfuegbar
+    ? `${uo.melder} Melder` + (uo.melder_delta_pct!=null
+        ? ` (${uo.melder_delta_pct>0?'+':''}${dzahl(uo.melder_delta_pct)} %)` : '')
+    : '—';
   const zeilen = [
     dzeile('Steigend in Folge', folge!=null ? folge+' Quartal'+(folge===1?'':'e') : '—',
-           folge!=null ? (folge>=2?'gruen':folge>=1?'gelb':'rot') : null),
+           folge!=null ? (folge>=2?'gruen':folge>=1?'gelb':'rot') : null,
+           'Quartale in Folge mit steigender 13F-Aktiensumme (quermarkt-normiert)'),
+    dzeile('13F-Melder (Richtung)', uoWert, uo.verfuegbar ? uo.ampel : null,
+           uo.verfuegbar
+             ? `Zahl der meldenden Institutionellen im jüngsten Quartal, in Klammern die quermarkt-normierte Veränderung.`
+               + ` Verlauf: ${(uo.melder_reihe||[]).map(x=>x==null?'?':x).join(' → ')}`
+               + ` · Rang ${uo.pool_pctl}/100 unter den ${uo.pool_n} bewerteten Kandidaten mit 13F-Daten`
+               + ` · ${esc(uo.urteil||'')} · kein Score-Einfluss`
+             : (uo.hinweis || 'keine 13F-Melderzahlen')),
     dzeile('Up/Down-Volumen', ud!=null ? dzahl(ud,2) : '—',
            ud!=null ? (ud>=1.2?'gruen':ud>=1?'gelb':'rot') : null),
     dzeile('Chaikin Money Flow', cmf!=null ? (cmf>0?'+':'')+dzahl(cmf,2) : '—',
@@ -1250,10 +1279,28 @@ function saeuleGeldfluss(t){
            vol!=null ? (vol>=1.4?'gruen':vol>=1?'gelb':'rot') : null),
     instBesitzBlock(t),
   ];
+  // Fusszeile: wer kauft - neue Adressen oder die bestehenden Halter? Das
+  // NIVEAU des Besitzes steht eine Zeile darueber (instBesitzBlock), hier
+  // steht ausschliesslich die Richtung der Melderzahl. Sie aendert die
+  // Saeulen-Ampel BEWUSST NICHT: fuer die Breite gibt es noch keinen
+  // Forward-Test (die Kohorte laeuft erst seit 2026-09-15 in
+  // pivot_backtest.py mit), und ein unbelegtes Kriterium darf ein
+  // bestehendes Urteil nicht verschieben.
+  const uoNote = uo.verfuegbar
+    ? `<div class="ds-note"><b>Neue Adressen:</b> ${esc(uo.urteil||'')} — ${
+        uo.richtung==='neue Adressen' ? 'es kommen Halter hinzu, nicht nur Stückzahlen'
+        : uo.richtung==='zu dünn gemeldet' ? 'zu wenige Melder, um die Richtung zu lesen'
+        : 'die Zahl der Halter bewegt sich nicht'}. Quartalsdaten (bis zu 4,5 Monate alt), kein Score-Einfluss.</div>`
+    : t.underowned
+      ? `<div class="ds-note"><b>Neue Adressen:</b> ${esc(uo.hinweis || 'keine 13F-Melderzahlen')} — für nicht-US-Werte meldet niemand nach 13F, das ist kein Mangel des Unternehmens.</div>`
+      // Feld ganz abwesend: Direktanalyse (kein Scan-Datensatz) oder ein
+      // signals.json von vor dem 15.09.2026. Nicht als "fehlende Daten des
+      // Unternehmens" ausgeben - das waere eine andere Aussage.
+      : `<div class="ds-note"><b>Neue Adressen:</b> in diesem Datensatz nicht enthalten — die Melderreihe entsteht im täglichen Scan (Direktanalyse und ältere Scans führen sie nicht).</div>`;
   return dashSaeule('🏦', 'Geldfluss', 'Fließt großes Geld zu?', ampel,
     dashZahl(letzte!=null ? (letzte>0?'+':'')+dzahl(letzte) : (cmf!=null ? (cmf>0?'+':'')+dzahl(cmf,2) : '—'),
              letzte!=null ? '% institutionell<br>letztes Quartal' : 'Chaikin Money Flow<br>(21 Tage)', ampel),
-    verlauf, zeilen);
+    verlauf, zeilen, uoNote);
 }
 
 // Saeule 3: Substanz. Leitzahl ist Code 33 (Minervini/TraderFox: EPS- und
@@ -2351,6 +2398,19 @@ function sammleKontext(){
     dividende: WERT_DIVIDENDE ? { serie: WERT_DIVIDENDE.serie, trend: WERT_DIVIDENDE.trend } : null,
     innererWert: innererWertKontext(fx, fcfProAktie),
     earnings: t.earnings,
+    // Besitzbreite (13F-Melderzahl, seit 2026-09-15): die KI soll fuer den
+    // "I"-Teil von CAN SLIM nicht nur wissen, OB institutionelles Geld
+    // zufliesst, sondern auch, ob der Wert schon breit besetzt ist.
+    besitzbreite: t.underowned && t.underowned.verfuegbar ? {
+      melder: t.underowned.melder,
+      melder_delta_pct: t.underowned.melder_delta_pct,
+      melder_folge: t.underowned.melder_folge,
+      pool_rang_von_100: t.underowned.pool_pctl,
+      universum_perzentil: t.underowned.melder_pctl,
+      stufe: t.underowned.stufe,
+      richtung: t.underowned.richtung,
+      basis: '13F-Melderzahl (SEC), quartalsweise - NICHT der Besitzanteil',
+    } : null,
   };
   if(t.faktoren){
     const mv = minerviniVerdikt(t, CUR_REGIME, p);

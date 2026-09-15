@@ -49,6 +49,28 @@ deshalb AUSSCHLIESSLICH die Richtung, kein Niveau. Fuer das Niveau bleibt
 Yahoos heldPercentInstitutions zustaendig (scorer.py::f_institutional),
 das seinerseits als reine Kontextzahl gefuehrt wird.
 
+DRITTER PUNKT - BREITE ("UNDEROWNED", seit 2026-09-15):
+Minervinis Besitz-Kriterium hat neben der Richtung eine zweite Haelfte, die
+bis dahin nirgends gemessen wurde: er will Werte, die noch NICHT bei jeder
+Adresse im Depot liegen ("underowned"), bei denen aber gerade neue Adressen
+einsteigen. Die dafuer belastbare Zahl aus 13F ist NICHT der Anteil, sondern
+die ZAHL DER MELDER je Titel (distinct ACCESSION_NUMBER in der INFOTABLE):
+  * Sie ist ein Stueckzahl-freies Abzaehlen und damit von der
+    Doppelzaehlung (Konzernstrukturen, Wertpapierleihe) weit weniger
+    betroffen als die Aktiensumme - ein Melder bleibt ein Melder.
+  * Sie trennt zwei Faelle, die die Aktiensumme vermischt: bestehende Halter
+    kaufen nach (Summe steigt, Melderzahl flach) gegen NEUE Adressen steigen
+    ein (Melderzahl steigt) - letzteres ist das, was Minervini sucht.
+Auch hier gilt die Normierung von oben: die Zahl der Meldezeilen am Markt
+waechst quartalsweise mit, deshalb wird je Uebergang ebenfalls der
+Quermarkt-Median abgezogen (melder_delta_pct).
+Fuer das NIVEAU wird bewusst KEINE absolute Grenze erfunden ("unter X
+Meldern = underowned") - dafuer fehlt die Grundlage, genau wie bei den
+30-70 % in scorer.py::f_institutional. Stattdessen liefert die Tabelle das
+PERZENTIL der Melderzahl im 13F-Universum (melder_pctl, 100 = am breitesten
+gehalten). Eine Einordnung ist damit immer eine Aussage "im Vergleich zu",
+nie ein erfundener Schwellenwert.
+
 Laeuft NICHT im taeglichen Zyklus: 13F-Daten aendern sich quartalsweise.
 Ein eigener Workflow (.github/workflows/institutional-13f.yml) baut die
 Tabelle viermal im Jahr; der Signal-Hub liest nur die fertige, kleine JSON.
@@ -60,6 +82,7 @@ Aufruf:
 """
 
 import argparse
+import bisect
 import collections
 import csv
 import io
@@ -90,6 +113,22 @@ SEC_FTD_INDEX = "https://www.sec.gov/data-research/sec-markets-data/fails-delive
 QUARTALE_STANDARD = 4       # so viele Quartale zurueck -> 3 Uebergaenge
 MIN_AKTIEN_REFERENZ = 50_000_000   # nur breit gehaltene Titel bilden den Median
 STEIGEND_MIN_PCT = 1.0      # normierte Veraenderung ab hier gilt als "steigend"
+# Referenzgrenze fuer den Quermarkt-Median der MELDERZAHL - dasselbe Motiv wie
+# MIN_AKTIEN_REFERENZ, nur in der anderen Einheit: ein Titel mit drei Meldern
+# springt bei einem einzigen Neuzugang um +33 % und wuerde den Median sonst
+# verzerren.
+MIN_MELDER_REFERENZ = 50
+# Schwelle fuer "neue Adressen steigen ein". Bewusst derselbe Wert wie
+# STEIGEND_MIN_PCT (nach der Normierung sind beide Reihen Prozentwerte um
+# Null), aber als eigene Konstante, damit sie sich getrennt nachziehen
+# laesst, sobald die Forward-Kohorte dazu reif ist (siehe pivot_backtest.py).
+MELDER_STEIGEND_MIN_PCT = 1.0
+# Spaltenname der Melder-Kennung in der INFOTABLE. Mehrere Kandidaten, weil
+# die Spalte hier NICHT live gegen SEC verifiziert werden konnte (der Build-
+# Runner hat Netzzugang, die Entwicklungsumgebung nicht) - findet sich keiner
+# davon, bleiben die Melderzahlen leer und alles Bisherige laeuft unveraendert
+# weiter. Lieber ein fehlendes Feld als ein abgebrochener Quartalslauf.
+ACCESSION_SPALTEN = ("ACCESSION_NUMBER", "ACCESSIONNUMBER", "ACCESSION_NO")
 
 
 def _hole(url, versuche=3):
@@ -151,11 +190,27 @@ def _label(pfad):
 
 
 def aggregiere_quartal(url):
-    """{CUSIP: Aktien} eines Quartals aus der INFOTABLE.
+    """({CUSIP: Aktien}, {CUSIP: Melder}) eines Quartals aus der INFOTABLE.
 
     Bewusst nur echte Aktienpositionen: PUTCALL-Zeilen (Optionen) und
     SSHPRNAMTTYPE != 'SH' (z.B. Anleihe-Nennwerte) fliessen NICHT ein -
-    sonst mischt man Stueckzahlen mit Nominalbetraegen."""
+    sonst mischt man Stueckzahlen mit Nominalbetraegen.
+
+    MELDER = Zahl der verschiedenen Meldungen (ACCESSION_NUMBER), die den
+    Titel als Aktienposition fuehren - die Basis der Breiten-/underowned-
+    Messung, siehe Modul-Docstring. Zwei bekannte Ungenauigkeiten, bewusst in
+    Kauf genommen und deshalb hier benannt statt kaschiert:
+      * Nachtraegliche Berichtigungen (13F-HR/A) sind eigene Meldungen und
+        zaehlen doppelt. Das trifft alle Titel gleichmaessig und faellt durch
+        die Quermarkt-Normierung des Trends heraus; das Niveau ist ohnehin
+        nur als Perzentil gemeint, nicht als Halterzahl.
+      * Ein Konzern mit mehreren meldenden Toechtern zaehlt mehrfach - wie
+        bei der Aktiensumme, nur deutlich schwaecher (eine Meldung je Tochter
+        statt der vollen Stueckzahl je Tochter).
+    Speicherbewusst: ueber 3,8 Mio. Zeilen je Quartal wuerde ein Set echter
+    (CUSIP, ACCESSION)-Paare mehrere hundert MB belegen. Gespeichert werden
+    deshalb nur deren Hashes - fuer ein Abzaehlen genuegt das (eine Kollision
+    verliert einen einzigen Melder von zehntausenden)."""
     roh = _hole(url)
     try:
         z = zipfile.ZipFile(io.BytesIO(roh))
@@ -170,9 +225,18 @@ def aggregiere_quartal(url):
     if not name:
         raise RuntimeError(f"Keine INFOTABLE im Archiv: {url} ({z.namelist()[:5]})")
     summe = collections.Counter()
+    melder = collections.Counter()
+    gesehen = set()
     with z.open(name) as f:
         text = io.TextIOWrapper(f, encoding="utf-8", errors="replace")
-        for row in csv.DictReader(text, delimiter="\t"):
+        leser = csv.DictReader(text, delimiter="\t")
+        acc_spalte = next((sp for sp in ACCESSION_SPALTEN
+                           if sp in (leser.fieldnames or [])), None)
+        if not acc_spalte:
+            print(f"    Hinweis: keine Melder-Spalte gefunden "
+                  f"({', '.join(ACCESSION_SPALTEN)}) - Breiten-Messung "
+                  f"entfaellt fuer dieses Quartal")
+        for row in leser:
             if (row.get("PUTCALL") or "").strip():
                 continue
             if (row.get("SSHPRNAMTTYPE") or "").strip().upper() != "SH":
@@ -180,21 +244,30 @@ def aggregiere_quartal(url):
             c = (row.get("CUSIP") or "").strip().upper()
             if not c:
                 continue
+            if acc_spalte:
+                acc = (row.get(acc_spalte) or "").strip()
+                if acc:
+                    h = hash((c, acc))
+                    if h not in gesehen:
+                        gesehen.add(h)
+                        melder[c] += 1
             try:
                 summe[c] += int(float(row.get("SSHPRNAMT") or 0))
             except ValueError:
                 continue
-    return summe
+    return summe, melder
 
 
-def normierte_veraenderung(vorher, nachher):
+def normierte_veraenderung(vorher, nachher, min_referenz=MIN_AKTIEN_REFERENZ):
     """(dict je CUSIP, Median) der um den Quermarkt bereinigten Veraenderung.
 
     Ohne diesen Schritt ist die Kennzahl unbrauchbar - siehe Modul-Docstring.
     Der Median wird nur ueber breit gehaltene Titel gebildet
-    (MIN_AKTIEN_REFERENZ), damit Kleinstpositionen ihn nicht verzerren."""
+    (min_referenz), damit Kleinstpositionen ihn nicht verzerren. Dieselbe
+    Rechnung dient zwei Reihen: Aktiensumme (min_referenz in Stueck) und
+    Melderzahl (min_referenz in Meldungen, MIN_MELDER_REFERENZ)."""
     gemeinsam = [c for c in nachher
-                 if c in vorher and vorher[c] >= MIN_AKTIEN_REFERENZ and nachher[c] > 0]
+                 if c in vorher and vorher[c] >= min_referenz and nachher[c] > 0]
     if len(gemeinsam) < 100:
         return {}, None
     roh = {c: (nachher[c] / vorher[c] - 1) * 100 for c in gemeinsam}
@@ -215,12 +288,14 @@ def bauen(anzahl_quartale=QUARTALE_STANDARD, ziel=None):
 
     quartale = verfuegbare_quartale(anzahl_quartale)
     print(f"13F-Datensaetze: {', '.join(l for _, l in quartale)}")
-    aggregate, labels = [], []
+    aggregate, melder_q, labels = [], [], []
     for url, label in quartale:
         print(f"  {label} …", flush=True)
-        s = aggregiere_quartal(url)
-        print(f"    {len(s):,} CUSIPs, {sum(s.values()):,} Aktien")
-        aggregate.append(s)
+        stueck, melder = aggregiere_quartal(url)
+        print(f"    {len(stueck):,} CUSIPs, {sum(stueck.values()):,} Aktien, "
+              f"{sum(melder.values()):,} Melder-Positionen")
+        aggregate.append(stueck)
+        melder_q.append(melder)
         labels.append(label)
 
     if len(aggregate) < 2:
@@ -234,9 +309,39 @@ def bauen(anzahl_quartale=QUARTALE_STANDARD, ziel=None):
         print(f"  Uebergang {labels[i-1]} -> {labels[i]}: "
               f"Quermarkt-Median {med:+.1f}% (herausgerechnet)")
 
+    # Zweite, unabhaengige Reihe: die Zahl der MELDER je Titel (Breite/
+    # "underowned", siehe Modul-Docstring). Gleiche Normierung, andere
+    # Referenzgrenze. Leer, wenn die INFOTABLE keine Melder-Spalte hatte -
+    # dann bleibt alles beim Stand vor 2026-09-15.
+    melder_uebergaenge, melder_mediane = [], []
+    hat_melder = any(melder_q)
+    if hat_melder:
+        for i in range(1, len(melder_q)):
+            norm, med = normierte_veraenderung(melder_q[i - 1], melder_q[i],
+                                               MIN_MELDER_REFERENZ)
+            melder_uebergaenge.append(norm)
+            melder_mediane.append(med)
+            if med is not None:
+                print(f"  Melder {labels[i-1]} -> {labels[i]}: "
+                      f"Quermarkt-Median {med:+.1f}% (herausgerechnet)")
+
     c2t = {}
     for t, c in t2c.items():
         c2t.setdefault(c, t)
+
+    # Niveau der Breite als PERZENTIL im 13F-Universum (kein erfundener
+    # Schwellenwert, siehe Modul-Docstring). Referenz ist das jeweils
+    # juengste Quartal; gezaehlt werden alle CUSIPs mit mindestens einem
+    # Melder, nicht nur die spaeter zugeordneten Ticker - sonst haengt das
+    # Perzentil an der Qualitaet der Ticker-Bruecke.
+    melder_letzte = melder_q[-1] if hat_melder else collections.Counter()
+    melder_sortiert = sorted(melder_letzte.values())
+
+    def _pctl(anzahl):
+        if not melder_sortiert:
+            return None
+        return round(bisect.bisect_left(melder_sortiert, anzahl)
+                     / len(melder_sortiert) * 100)
 
     werte = {}
     for ticker, cusip in t2c.items():
@@ -249,7 +354,24 @@ def bauen(anzahl_quartale=QUARTALE_STANDARD, ziel=None):
                 folge += 1
             else:
                 break
-        werte[ticker] = {"norm_pct": reihe, "steigend_folge": folge}
+        eintrag = {"norm_pct": reihe, "steigend_folge": folge}
+        if hat_melder:
+            m_reihe = [int(q[cusip]) if cusip in q else None for q in melder_q]
+            m_delta = [round(u[cusip], 1) if cusip in u else None
+                       for u in melder_uebergaenge]
+            m_folge = 0
+            for x in reversed(m_delta):
+                if x is not None and x >= MELDER_STEIGEND_MIN_PCT:
+                    m_folge += 1
+                else:
+                    break
+            eintrag.update({
+                "melder": m_reihe,
+                "melder_delta_pct": m_delta,
+                "melder_folge": m_folge,
+                "melder_pctl": _pctl(melder_letzte[cusip]) if cusip in melder_letzte else None,
+            })
+        werte[ticker] = eintrag
 
     out = {
         "erstellt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -258,10 +380,24 @@ def bauen(anzahl_quartale=QUARTALE_STANDARD, ziel=None):
         "uebergaenge": [f"{labels[i-1]}->{labels[i]}" for i in range(1, len(labels))],
         "quermarkt_median_pct": [round(m, 2) if m is not None else None for m in mediane],
         "steigend_min_pct": STEIGEND_MIN_PCT,
+        "melder_vorhanden": hat_melder,
+        "melder_steigend_min_pct": MELDER_STEIGEND_MIN_PCT,
+        "melder_quermarkt_median_pct": [round(m, 2) if m is not None else None
+                                        for m in melder_mediane],
+        "melder_universum": {
+            "n": len(melder_sortiert),
+            "median": melder_sortiert[len(melder_sortiert) // 2] if melder_sortiert else None,
+            "q10": melder_sortiert[len(melder_sortiert) // 10] if melder_sortiert else None,
+            "q90": melder_sortiert[len(melder_sortiert) * 9 // 10] if melder_sortiert else None,
+        },
         "hinweis": ("norm_pct = um den Quermarkt-Median bereinigte Veraenderung der "
                     "gemeldeten Aktien je Uebergang. NUR Richtung, kein Niveau: 13F "
                     "zaehlt Positionen doppelt (Konzernstrukturen, Wertpapierleihe). "
-                    "Nur US-meldepflichtige Institutionelle - europaeische Werte fehlen."),
+                    "Nur US-meldepflichtige Institutionelle - europaeische Werte fehlen. "
+                    "melder/melder_delta_pct/melder_pctl = Zahl der meldenden "
+                    "Adressen je Quartal, ihre quermarkt-normierte Veraenderung und "
+                    "das Perzentil im 13F-Universum (100 = am breitesten gehalten) - "
+                    "die Breiten-/underowned-Haelfte des Kriteriums."),
         "werte": werte,
     }
     os.makedirs(os.path.dirname(ziel), exist_ok=True)
@@ -269,6 +405,16 @@ def bauen(anzahl_quartale=QUARTALE_STANDARD, ziel=None):
     mit_folge = sum(1 for v in werte.values() if v["steigend_folge"] >= 2)
     print(f"\nGespeichert: {ziel}")
     print(f"  {len(werte):,} Ticker, davon {mit_folge:,} mit >= 2 Quartalen in Folge steigend")
+    if hat_melder:
+        mit_pctl = [v["melder_pctl"] for v in werte.values()
+                    if v.get("melder_pctl") is not None]
+        neue = sum(1 for v in werte.values() if (v.get("melder_folge") or 0) >= 1)
+        print(f"  Breite: {len(mit_pctl):,} Ticker mit Melder-Perzentil, "
+              f"{neue:,} mit neuen Adressen im letzten Uebergang "
+              f"(Universum-Median {out['melder_universum']['median']} Melder)")
+    else:
+        print("  Breite: keine Melder-Spalte in der INFOTABLE - "
+              "underowned-Messung bleibt leer")
     return out
 
 

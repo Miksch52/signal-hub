@@ -1,7 +1,11 @@
 # Baut die 13F-Quartalstabelle (institutioneller Besitz, Richtung nach
 # Minervini). Laeuft NICHT im taeglichen Zyklus: 13F-Daten aendern sich nur
 # quartalsweise, ein taeglicher Lauf waere reine Verschwendung (4x ~90 MB
-# Download je Lauf).
+# Download je Lauf). Seit 2026-09-15 zaehlt der Lauf zusaetzlich die MELDER je
+# Titel (Breite/"underowned") - dafuer haelt er je Quartal Hashes der
+# (CUSIP, Meldung)-Paare im Speicher, in der Groessenordnung einiger hundert
+# MB bei ~3,8 Mio. Meldezeilen. Auf dem Standard-Runner (7 GB) passt das;
+# deshalb bleibt es bei ubuntu-latest ohne groesseren Typ.
 #
 # Zeitpunkt: 13F ist 45 Tage nach Quartalsende faellig (Q1->15.05.,
 # Q2->14.08., Q3->14.11., Q4->14.02.). Der Lauf liegt bewusst einige Tage
@@ -55,6 +59,22 @@ jobs:
           # Untergrenze als Absturzsicherung: bei einem halb geladenen
           # Datensatz waere die Tabelle still fast leer statt fehlerhaft.
           assert n >= 5000, f"nur {n} Ticker - Datensatz vermutlich unvollstaendig"
+          # Breiten-/underowned-Messung (seit 2026-09-15): bewusst nur eine
+          # WARNUNG, kein Abbruch. Fehlt die Melder-Spalte in der INFOTABLE
+          # (Formataenderung bei SEC), bleibt die Richtung nutzbar und die
+          # Pipeline laeuft weiter - scorer.py::f_underowned meldet das Feld
+          # dann als "nicht verfuegbar". Ein harter Fehler wuerde hier die
+          # funktionierende Haelfte mit wegwerfen.
+          mit = sum(1 for v in (d.get("werte") or {}).values()
+                    if v.get("melder_pctl") is not None)
+          if d.get("melder_vorhanden") and mit >= 1000:
+              print(f"Breite: {mit} Ticker mit Melder-Perzentil, "
+                    f"Universum {d.get('melder_universum')}")
+          else:
+              print(f"::warning::Keine oder zu wenige Melderzahlen ({mit}) - "
+                    "underowned-Bewertung bleibt leer, Richtung unberuehrt. "
+                    "INFOTABLE-Spaltennamen in src/institutional_13f.py "
+                    "(ACCESSION_SPALTEN) gegen den SEC-Datensatz pruefen.")
           PY
 
       - name: Zurueckcommitten (nur bei Aenderung)
