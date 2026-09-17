@@ -1403,7 +1403,7 @@ function dashSektor(t){
   if(!thema){
     return `<div class="dash-sektor">
       <div class="dsk-kopf">🧭 Sektor-Kontext</div>
-      <div class="dsk-text">Kein Themen-ETF für „${esc(t.sektor)||'unbekannten Sektor'}" hinterlegt — das Rotation-Dashboard deckt 21 US-Themen ab, Nischenbranchen bleiben ohne Gegenstück. Ohne Sektor-Bezug, die Einordnung oben steht für sich.</div>
+      <div class="dsk-text">Kein Themen-ETF für „${esc(t.sektor)||'unbekannten Sektor'}"${t.branche?` (Branche: ${esc(t.branche)})`:''} hinterlegt — das Rotation-Dashboard deckt 21 US-Themen ab, Nischenbranchen bleiben ohne Gegenstück. Ohne Sektor-Bezug, die Einordnung oben steht für sich.</div>
     </div>`;
   }
   const rang = sektoren.indexOf(thema) + 1;
@@ -1421,6 +1421,7 @@ function dashSektor(t){
   else
     satz = `<b class="t-warn">Gegen den eigenen Sektor.</b> „${esc(thema.theme)}" liegt nur auf Platz ${rang} von ${sektoren.length}${thema.above_ma50===false?' und notiert unter der 50-Tage-Linie':''} — ein Einzelläufer ohne Themen-Rückenwind. Nach O'Neil das schwächere Muster.`;
   const kennz = [
+    ['Branche', t.branche ? esc(t.branche) : '—', null],
     ['RS-Rating Thema', rs!=null ? rs+' / 99' : '—', ampel],
     ['Rang unter den Themen', `${rang} von ${sektoren.length}`, ampel],
     ['Thema 1 Monat', thema.r1m!=null ? (thema.r1m>0?'+':'')+dzahl(thema.r1m)+' %' : '—',
