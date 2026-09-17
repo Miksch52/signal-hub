@@ -11,6 +11,11 @@
 #
 # Ersatz fuer seinen einzigen weiter noetigen Effekt (frische lokale Daten fuer
 # die LAN-Versionen): der reine Lese-Job com.maick.cloudspiegel, alle 30 Min.
+# Derselbe Zeitplan haengt zusaetzlich cloud_lexikon_sync.sh an - den
+# lokalen Minervini-Zitat-Backfill, den run.py::pipeline() vorher
+# miterledigt hat (siehe dortigen Kommentar), und den es ohne den alten
+# Agenten sonst nicht mehr gaebe. Laed die Datei bewusst NICHT nach R2 hoch
+# (Sicherheitsfix 2026-09-17, siehe Kommentar in cloud_lexikon_sync.sh).
 #
 # Sicherung: bricht ab, solange der Worker-Cron noch keinen erfolgreichen
 # Signal-Hub-Lauf ausgeloest hat - sonst ginge der puenktliche Morgen-Push
@@ -18,6 +23,7 @@
 set -euo pipefail
 HIER="$(cd "$(dirname "$0")" && pwd)"
 SPIEGEL="$HIER/cloud_spiegel.sh"
+LEXIKON="$HIER/cloud_lexikon_sync.sh"
 UIDN="$(id -u)"
 ALT="com.maick.signalhub"
 NEU="com.maick.cloudspiegel"
@@ -49,7 +55,7 @@ cat > "$PLIST" <<PLISTEOF
   <array>
     <string>/usr/bin/osascript</string>
     <string>-e</string>
-    <string>do shell script "'$SPIEGEL' &gt;&gt; /tmp/cloudspiegel.log 2&gt;&amp;1"</string>
+    <string>do shell script "'$SPIEGEL' &gt;&gt; /tmp/cloudspiegel.log 2&gt;&amp;1; '$LEXIKON' &gt;&gt; /tmp/cloudspiegel.log 2&gt;&amp;1"</string>
   </array>
   <key>StartInterval</key><integer>1800</integer>
   <key>RunAtLoad</key><true/>
@@ -63,6 +69,7 @@ launchctl bootstrap "gui/$UIDN" "$PLIST"
 
 echo "4/4 Einmal sofort spiegeln ..."
 "$SPIEGEL"
+"$LEXIKON"
 
 echo
 echo "Fertig. Rueckgaengig machen:"

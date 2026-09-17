@@ -177,25 +177,21 @@ def pipeline(c, push=False):
             # scripts/weekly_backtest_upload.sh laedt dieselben zwei Dateien
             # weiterhin hoch (dort nach dem teuren RETRO-Lauf) - doppelt
             # hochladen schadet nicht, upload_to_r2.sh ist idempotent.
-            # minervini-lexikon/ (seit 2026-09-07) faellt inhaltlich aus der
-            # Reihe: keine Backtest-Ausgabe, sondern die manuell gepflegte
-            # Zitat-Sammlung, die setup-detail.html unter der
-            # Minervini-Analyse anzeigt. Sie MUSS hier mit hoch, weil sie
-            # gitignored ist und im Cloud-Lauf gar nicht existiert - ohne
-            # diesen Upload gaebe es keinen Weg, wie ein neuer Eintrag je auf
-            # mts-hub.pages.dev landet. Genau der richtige Ort dafuer: direkt
-            # nach --backfill oben, auf derselben Maschine, die die Datei als
-            # einzige hat. Ein manueller Extra-Schritt nach jeder Pflege waere
-            # etwas, das man verlaesslich vergisst.
-            # Die Bilder (minervini-lexikon/bilder/) bleiben bewusst aussen
-            # vor: upload_to_r2.sh nimmt nur einzelne Dateien, keine Ordner -
-            # und die Setup-Analyse zeigt ohnehin nur den Text. Der Coach
-            # zeigt Bilder nur lokal am Mac mini.
+            # ACHTUNG (Sicherheitsfix 2026-09-17): minervini-lexikon/minervini_lexikon.json
+            # stand hier seit 2026-09-07 faelschlich mit im Upload - das lud
+            # Minervinis Original-Posts (Volltext) nach R2 unter
+            # signalhub-magazine/_deploy/signal-hub/, demselben Pfad, den
+            # deploy.yml fuer die OEFFENTLICHE mts-hub.pages.dev-Seite
+            # abholt. setup-detail.html zeigte dadurch 10 Tage lang ein
+            # volles Zitat auf jeder oeffentlichen Setup-Seite - bewusst NIE
+            # gewollt (siehe Konzept-Minervini-Lexikon.md: nur privater
+            # Gist-Sync im Coach). Fix: Datei NICHT mehr nach R2/_deploy
+            # hochladen. setup-detail.html liest die Zitat-Karte jetzt
+            # client-seitig aus demselben privaten Gist wie der Coach.
             subprocess.run([os.path.join(PROJEKT, "scripts", "upload_to_r2.sh"),
                             "score_backtest.json", "score_faktoren_backtest.json",
                             "regime_backtest.json", "regime_backtest.js",
-                            "pivot_backtest.json", "pivot_backtest.js",
-                            "minervini-lexikon/minervini_lexikon.json"])
+                            "pivot_backtest.json", "pivot_backtest.js"])
     sync_logbuch_lokal("sync_logbuch_push.sh")
     return scorer_ok
 

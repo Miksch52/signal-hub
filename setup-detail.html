@@ -2647,10 +2647,40 @@ let SCORE_BT_CACHE = null, FAKTOR_BT_CACHE = null;
 // Sektor-/Themen-Rotation fuer den Narrativ-Bezug (seit 2026-09-06, 7,8 KB).
 let ROTATION_CACHE = null;
 // Minervini-Lexikon fuer die Ergaenzung unter dem Regel-Verdikt (seit
-// 2026-09-07, ~42 KB): manuell erfasste, datierte X-Posts. Fehlt die Datei,
-// bleibt die Zitat-Karte einfach weg - der Regelabgleich darueber ist der
-// Kern und funktioniert ohne sie vollstaendig.
+// 2026-09-07, Sicherheitsfix 2026-09-17): manuell erfasste, datierte
+// X-Posts mit teils vollem Original-Text - bewusst NIE als oeffentliche
+// Datei deploybar (siehe Konzept-Minervini-Lexikon.md). Kommt deshalb NICHT
+// mehr aus data/minervini-lexikon/minervini_lexikon.json (das lag 10 Tage
+// oeffentlich auf mts-hub.pages.dev, siehe Kommentar in run.py/
+// deploy.command), sondern client-seitig aus demselben privaten Gist wie
+// der Coach-Lernfortschritt (localStorage gh_gist_token, Datei
+// minervini-fortschritt.json, Feld .lexikon). Kein Token gesetzt oder Fetch
+// schlaegt fehl -> ladeLexikonAusGist() gibt null zurueck, die Zitat-Karte
+// bleibt dann einfach weg - der Regelabgleich darueber ist der Kern und
+// funktioniert ohne sie vollstaendig.
 let LEXIKON_CACHE = null;
+async function ladeLexikonAusGist(){
+  try{
+    const token = localStorage.getItem('gh_gist_token');
+    if(!token) return null;
+    const liste = await fetch('https://api.github.com/gists?per_page=100', {
+      headers: {'Authorization': `token ${token}`}
+    });
+    if(!liste.ok) return null;
+    const gists = await liste.json();
+    const treffer = Array.isArray(gists) && gists.find(g => g.files && g.files['minervini-fortschritt.json']);
+    if(!treffer) return null;
+    const voll = await fetch(`https://api.github.com/gists/${treffer.id}`, {
+      headers: {'Authorization': `token ${token}`}
+    });
+    if(!voll.ok) return null;
+    const j = await voll.json();
+    const raw = j.files && j.files['minervini-fortschritt.json'] && j.files['minervini-fortschritt.json'].content;
+    if(!raw) return null;
+    const daten = JSON.parse(raw);
+    return daten.lexikon || null;
+  }catch(e){ return null; }
+}
 function ladeBasisdaten(){
   if(!BASISDATEN_PROMISE){
     BASISDATEN_PROMISE = Promise.all([
@@ -2660,7 +2690,7 @@ function ladeBasisdaten(){
       ladeJson('data/score_backtest.json'),
       ladeJson('data/score_faktoren_backtest.json'),
       ladeJson('../Rotation-Dashboard/data/rotation.json'),
-      ladeJson('data/minervini-lexikon/minervini_lexikon.json'),
+      ladeLexikonAusGist(),
     ]).then(([s,p,pa,sb,fb,rot,lex])=>{
       SIGNALS_CACHE=s; PIVOT_CACHE=p; PA_CACHE=pa;
       SCORE_BT_CACHE=sb; FAKTOR_BT_CACHE=fb; ROTATION_CACHE=rot; LEXIKON_CACHE=lex;
