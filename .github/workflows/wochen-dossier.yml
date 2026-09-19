@@ -1,0 +1,227 @@
+name: Wochen-Dossier
+run-name: ${{ inputs.erzwingen && 'Wochen-Dossier (erzwungen)' || 'Wochen-Dossier' }}
+
+# Verdichtet am Wochenende die Ausgaben aller drei Engines zu einer
+# Kandidatenliste fuer die naechste Woche (src/wochen_dossier.py).
+#
+# Warum ein EIGENER Workflow und kein weiterer Job in pipeline.yml:
+#   - Ein Fehler hier darf nie den Scan- oder Push-Lauf blockieren. Die
+#     Pipeline ist zu diesem Zeitpunkt bereits fertig und gruen.
+#   - Der Auslöser haengt am Ende des kompletten Laufs, egal wie lange der
+#     gedauert hat (15-40 Min, gelegentlich deutlich mehr) - eine feste
+#     Cron-Zeit wuerde entweder zu frueh feuern oder unnoetig warten.
+#   - Der Cloudflare-Worker-Cron (CRON_ZEITPLAN) kennt nur "taeglich" und
+#     "mo-fr", also keinen Samstagslauf - er muss dafuer nicht angefasst
+#     werden.
+#
+# Warum Samstag/Sonntag: erst dann sind die Freitags-SCHLUSSKURSE vollstaendig.
+# Der Freitagslauf um 21:37 Berlin sieht die US-Boerse noch offen (Schluss
+# 22:00), der Trend-Screener laeuft Fr 23:07, Markets 360 Sa 05:37. Der erste
+# erfolgreiche Pipeline-Lauf am Samstag (07:37) hat alles beisammen.
+#
+# Gate: hoechstens EIN Dossier je Kalenderwoche. Die KW kommt aus dem
+# DATENSTAND (top_setups.erstellt), nicht aus dem Schreibdatum - dieselbe
+# Regel wie bei den OHLC-/History-Dateien (CLAUDE.md: "Dateiname = belegter
+# Handelstag, nie das Schreibdatum"). Existiert die History-Datei der KW
+# schon, laeuft nur noch ein kurzer Skip-Job (die drei weiteren
+# Samstags-Slots loesen diesen Workflow ebenfalls aus).
+on:
+  workflow_run:
+    workflows: ["Signal-Hub Cloud-Pipeline"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      erzwingen:
+        description: 'Auch unter der Woche und trotz vorhandener KW-Datei laufen (Testlauf)'
+        type: boolean
+        default: false
+
+env:
+  TZ: Europe/Berlin
+
+jobs:
+  dossier:
+    # Bei workflow_run nur nach einem ERFOLGREICHEN Pipeline-Lauf - nach einem
+    # abgebrochenen Lauf stuende in R2 womoeglich ein halber Stand.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wochentag pruefen (Sa/So, sofern nicht erzwungen)
+        id: tag
+        run: |
+          WOCHENTAG=$(date +%u)   # 1=Mo ... 6=Sa, 7=So (TZ=Europe/Berlin, siehe env)
+          if [ "${{ inputs.erzwingen }}" = "true" ] || [ "$WOCHENTAG" -ge 6 ]; then
+            echo "weiter=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Heute ist kein Wochenende (Tag $WOCHENTAG) - kein Dossier."
+            echo "weiter=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Repo auschecken
+        if: steps.tag.outputs.weiter == 'true'
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        if: steps.tag.outputs.weiter == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Gleiches Muster wie in pipeline.yml (dort ausfuehrlich kommentiert):
+      # der GitHub-Runner-Resolver faellt sporadisch mit "server misbehaving"
+      # auf r2.cloudflarestorage.com aus.
+      - name: DNS-Workaround fuer GitHub-Runner
+        if: steps.tag.outputs.weiter == 'true'
+        run: |
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 9.9.9.9\n' \
+            | sudo tee /etc/resolv.conf >/dev/null
+          getent hosts r2.cloudflarestorage.com || true
+
+      - name: rclone installieren
+        if: steps.tag.outputs.weiter == 'true'
+        run: |
+          curl -sSL -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
+          unzip -q /tmp/rclone.zip -d /tmp
+          sudo cp /tmp/rclone-*-linux-amd64/rclone /usr/local/bin/rclone
+          rclone --version | head -1
+
+      - name: R2-Remote konfigurieren
+        if: steps.tag.outputs.weiter == 'true'
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<CONF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret_access_key = ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint = ${{ secrets.R2_ENDPOINT }}
+          acl = private
+          no_check_bucket = true
+          CONF
+
+      # Liest den fertigen Deploy-Stand, nicht die Artefakte des Laufs: so
+      # funktioniert auch ein manueller Testlauf ohne vorangegangene Pipeline,
+      # und uebersprungene Push-Slots (Wochenende!) liefern trotzdem den
+      # letzten gueltigen Stand. Veraltete Quellen meldet das Dossier selbst.
+      - name: Engine-Ausgaben aus R2 holen
+        if: steps.tag.outputs.weiter == 'true'
+        run: |
+          mkdir -p daten/Signal-Hub/data daten/Price-Action-Hub/data daten/Rotation-Dashboard/data
+          rclone copy r2:signalhub-magazine/_deploy/signal-hub/ daten/Signal-Hub/data/ --include "*.json"
+          rclone copy r2:signalhub-magazine/_deploy/price-action-hub/ daten/Price-Action-Hub/data/ --include "*.json" || true
+          rclone copy r2:signalhub-magazine/_deploy/rotation-dashboard/ daten/Rotation-Dashboard/data/ --include "*.json" || true
+          ls -la daten/Signal-Hub/data | head
+
+      - name: Kalenderwoche des Datenstands bestimmen
+        if: steps.tag.outputs.weiter == 'true'
+        id: kw
+        run: |
+          KW=$(python3 -c "
+          import json, sys
+          sys.path.insert(0, 'src')
+          import wochen_dossier as wd
+          d = wd.lade_alle('daten')
+          if not d.get('top_setups'):
+              print('KEINE_DATEN'); raise SystemExit(0)
+          print(wd.kalenderwoche(d, wd.datetime.now(wd.timezone.utc)))
+          ")
+          echo "kw=$KW" >> "$GITHUB_OUTPUT"
+          echo "Datenstand-KW: $KW"
+
+      - name: Schon ein Dossier fuer diese KW?
+        if: steps.tag.outputs.weiter == 'true'
+        id: gate
+        run: |
+          KW="${{ steps.kw.outputs.kw }}"
+          if [ "$KW" = "KEINE_DATEN" ]; then
+            echo "top_setups.json fehlt in R2 - nichts zu tun."
+            echo "weiter=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "${{ inputs.erzwingen }}" != "true" ] \
+             && rclone lsf "r2:signalhub-magazine/wochen-dossier/history/" 2>/dev/null | grep -qx "$KW.json"; then
+            echo "Dossier fuer $KW existiert bereits - kein zweiter Lauf."
+            echo "weiter=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "weiter=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Der zuletzt geschriebene Stand ist das Dossier der VORwoche (dieses
+      # hier ist ja noch nicht geschrieben) - Grundlage fuer "neu/raus".
+      - name: Dossier der Vorwoche holen
+        if: steps.gate.outputs.weiter == 'true'
+        run: rclone copy r2:signalhub-magazine/_state/wochen_dossier_letzte.json ./ || true
+
+      - name: Dossier erzeugen und pushen
+        if: steps.gate.outputs.weiter == 'true'
+        env:
+          SIGNALHUB_CONFIG_JSON: ${{ secrets.SIGNALHUB_CONFIG_JSON }}
+        run: |
+          # ntfy-Ziel aus derselben config.json wie alle anderen Push-Quellen
+          # (gleiches Muster wie der Forward-Test-Waechter im deploy-Job).
+          NTFY_THEMA=$(printf '%s' "$SIGNALHUB_CONFIG_JSON" | jq -r '.benachrichtigung.ntfy_thema // ""')
+          NTFY_SERVER=$(printf '%s' "$SIGNALHUB_CONFIG_JSON" | jq -r '.benachrichtigung.ntfy_server // "https://ntfy.sh"')
+          export NTFY_THEMA NTFY_SERVER
+          # config.json wird NICHT als Datei geschrieben (der Lauf braucht sie
+          # sonst nirgends) - earnings_warn_tage() faellt damit bewusst auf
+          # den Standard 7 zurueck, wie im Modul dokumentiert.
+          # --vorwoche wird IMMER uebergeben, auch wenn die Datei fehlt (erster
+          # Lauf): das Modul meldet das und erzeugt das Dossier dann ohne
+          # Vergleich. Absichtlich kein "$VORWOCHE"-Sammelargument - das
+          # verliesse sich auf Wortzerlegung der Shell (funktioniert in bash,
+          # nicht in zsh) und ist beim lokalen Nachstellen eine Fehlerquelle.
+          mkdir -p ausgabe
+          python3 src/wochen_dossier.py \
+            --basis daten \
+            --vorwoche wochen_dossier_letzte.json \
+            --aus ausgabe/wochen_dossier.json \
+            --push
+
+      # Drei Ziele, absichtlich getrennt:
+      #   _deploy/signal-hub/  -> was die Live-Seite zeigt (wird ueberschrieben)
+      #   history/<KW>.json    -> unveraenderliche Wochenkopie (CLAUDE.md:
+      #                           datierte History nie ueberschreiben, daher
+      #                           --ignore-existing)
+      #   _state/              -> Vergleichsbasis fuer den naechsten Lauf
+      - name: Dossier nach R2 hochladen
+        if: steps.gate.outputs.weiter == 'true'
+        run: |
+          rclone copy ausgabe/ r2:signalhub-magazine/_deploy/signal-hub/ --include "wochen_dossier.*"
+          rclone copyto ausgabe/wochen_dossier.json \
+            "r2:signalhub-magazine/wochen-dossier/history/${{ steps.kw.outputs.kw }}.json" --ignore-existing
+          rclone copyto ausgabe/wochen_dossier.json \
+            r2:signalhub-magazine/_state/wochen_dossier_letzte.json
+
+      - name: Deploy im Hauptrepo anstossen
+        if: steps.gate.outputs.weiter == 'true'
+        env:
+          DEPLOY_TRIGGER_TOKEN: ${{ secrets.DEPLOY_TRIGGER_TOKEN }}
+        run: |
+          # Bewusst ohne die Token-Ueberwachung aus pipeline.yml: dieselbe
+          # Token-Pruefung laeuft dort 4x taeglich und wuerde hier nur
+          # denselben Alarm ein zweites Mal senden. Schlaegt der Trigger fehl,
+          # faellt das spaetestens beim naechsten Pipeline-Lauf auf; das
+          # Dossier selbst liegt dann bereits in R2 und wird mit dem naechsten
+          # Deploy ausgeliefert.
+          CODE=$(curl -sS -o antwort.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $DEPLOY_TRIGGER_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Miksch52/maick-trading-system/actions/workflows/deploy.yml/dispatches \
+            -d '{"ref":"main"}')
+          echo "HTTP $CODE"
+          case "$CODE" in
+            2*) echo "Deploy angestossen." ;;
+            *) echo "Deploy-Trigger fehlgeschlagen: $(head -c 300 antwort.json)"; exit 1 ;;
+          esac
+
+      - name: Zusammenfassung
+        if: always() && steps.tag.outputs.weiter == 'true'
+        run: |
+          {
+            echo "### Wochen-Dossier"
+            echo ""
+            echo "- Datenstand-KW: \`${{ steps.kw.outputs.kw }}\`"
+            echo "- Erzeugt: \`${{ steps.gate.outputs.weiter }}\`"
+            echo "- Seite: https://mts-hub.pages.dev/Signal-Hub/wochen-dossier.html"
+          } >> "$GITHUB_STEP_SUMMARY"

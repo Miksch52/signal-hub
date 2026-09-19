@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📋 Wochen-Dossier</title>
+<style>
+  /* ===================================================================
+     Design "Tagesordnung" wie setup-detail.html (helle Papier-Basis,
+     Teal als einziger Akzent) - diese Seite ist deren Geschwisterseite
+     im Signal-Hub und darf kein eigenes Design aufmachen.
+     Dunkelmodus nach dem Muster von backtest-report.html:
+     prefers-color-scheme + data-theme-Ueberschreibung, damit ein spaeter
+     gesetztes Theme-Attribut greift. Alle Farben nur ueber Variablen -
+     sonst bricht genau diese Umschaltung an der neuen Stelle.
+     =================================================================== */
+  :root{
+    --primary:#1F6E66; --ok:#2E8B57; --warn:#C08A2E; --bad:#B23A2E;
+    --bg:#F6F3EC; --bg2:#FFFFFF; --card:#FFFFFF; --line:#E2DED2; --line2:#EDEAE0;
+    --txt:#1B241D; --muted:#6B7268; --muted2:#93998C;
+    --ok-bg:rgba(46,139,87,.10); --warn-bg:rgba(192,138,46,.13); --bad-bg:rgba(178,58,46,.11);
+    --primary-bg:rgba(31,110,102,.09);
+    --shadow:0 1px 2px rgba(27,36,29,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --primary:#4FBEB2; --ok:#4FBE95; --warn:#E0B96E; --bad:#E2695A;
+      --bg:#0B1524; --bg2:#131F31; --card:#131F31; --line:rgba(255,255,255,.14); --line2:rgba(255,255,255,.07);
+      --txt:#E8EDF2; --muted:#8B9AAE; --muted2:#6F7E92;
+      --ok-bg:rgba(79,190,149,.14); --warn-bg:rgba(224,185,110,.14); --bad-bg:rgba(226,105,90,.15);
+      --primary-bg:rgba(79,190,178,.13);
+      --shadow:0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --primary:#4FBEB2; --ok:#4FBE95; --warn:#E0B96E; --bad:#E2695A;
+    --bg:#0B1524; --bg2:#131F31; --card:#131F31; --line:rgba(255,255,255,.14); --line2:rgba(255,255,255,.07);
+    --txt:#E8EDF2; --muted:#8B9AAE; --muted2:#6F7E92;
+    --ok-bg:rgba(79,190,149,.14); --warn-bg:rgba(224,185,110,.14); --bad-bg:rgba(226,105,90,.15);
+    --primary-bg:rgba(79,190,178,.13);
+    --shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box}
+  html,body{background:var(--bg)}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       color:var(--txt);line-height:1.45;-webkit-font-smoothing:antialiased}
+  a{color:var(--primary)}
+
+  header{position:sticky;top:0;z-index:20;background:var(--bg2);border-bottom:1px solid var(--line);
+         padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  /* Tap-Ziele >= 44px (Apple-HIG) - die Seite wird samstags am iPhone gelesen. */
+  header a.back{color:var(--muted);text-decoration:none;font-size:14px;white-space:nowrap;
+    display:inline-flex;align-items:center;min-height:44px;padding:0 4px}
+  header a.back:hover{color:var(--txt)}
+  header h1{font-size:17px;margin:0;font-weight:700;flex:1;min-width:130px}
+  header .kw{font-size:12px;color:var(--muted);white-space:nowrap}
+
+  main{padding:16px 16px 64px;max-width:960px;margin:0 auto}
+  .karte{background:var(--card);border:1px solid var(--line);border-radius:14px;
+         box-shadow:var(--shadow);padding:15px 16px;margin-bottom:13px}
+  .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+           color:var(--primary);margin-bottom:7px}
+  h2{font-size:15px;margin:0 0 9px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:11.5px;padding:4px 10px;border-radius:20px;border:1px solid var(--line);
+        background:var(--line2);color:var(--muted);white-space:nowrap}
+  .chip.gruen{background:var(--ok-bg);border-color:transparent;color:var(--ok);font-weight:600}
+  .chip.gelb{background:var(--warn-bg);border-color:transparent;color:var(--warn);font-weight:600}
+  .chip.rot{background:var(--bad-bg);border-color:transparent;color:var(--bad);font-weight:600}
+  .chip.akzent{background:var(--primary-bg);border-color:transparent;color:var(--primary);font-weight:600}
+
+  .hinweis{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .warnbox{margin-top:9px;padding:9px 11px;border-radius:9px;background:var(--warn-bg);
+           color:var(--txt);font-size:12.5px;border-left:3px solid var(--warn)}
+  .stopbox{margin-top:9px;padding:10px 12px;border-radius:9px;background:var(--bad-bg);
+           color:var(--txt);font-size:13.5px;font-weight:650;border-left:3px solid var(--bad)}
+
+  .aenderung{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:4px}
+  .aenderung .sp b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+                   color:var(--muted2);margin-bottom:4px}
+
+  /* Kandidatenkarten: eine Spalte am iPhone, zwei ab Tablet. */
+  .kandidaten{display:grid;grid-template-columns:1fr;gap:13px}
+  @media (min-width:720px){ .kandidaten{grid-template-columns:1fr 1fr} }
+  .kopf{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .rang{font-size:11px;font-weight:700;color:var(--muted2);min-width:18px;padding-top:4px}
+  .ident{flex:1;min-width:130px}
+  .tick{font-size:21px;font-weight:800;letter-spacing:.3px}
+  /* min-height 44px: der Ticker ist der Hauptlink der Karte und muss am
+     iPhone sicher treffbar sein (smoke-audit.js prueft genau das). */
+  .tick a{text-decoration:none;color:var(--txt);display:inline-flex;align-items:center;min-height:44px}
+  .tick a:hover{color:var(--primary)}
+  .nam{font-size:12.5px;color:var(--muted);margin-top:1px}
+  .score{text-align:right;min-width:52px}
+  .score .num{font-size:22px;font-weight:800;line-height:1;color:var(--primary)}
+  .score .lbl{font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:.04em}
+
+  table.zahlen{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  table.zahlen td{padding:4px 0;border-bottom:1px solid var(--line2)}
+  table.zahlen td:first-child{color:var(--muted);width:46%}
+  table.zahlen td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+  table.zahlen tr:last-child td{border-bottom:none}
+
+  .block{margin-top:11px}
+  .block b.titel{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+                 color:var(--muted2);margin-bottom:5px;font-weight:700}
+  .zitat{font-size:12.5px;border-left:3px solid var(--line);padding:2px 0 2px 10px;color:var(--txt)}
+  /* Quellen als Chips statt als Fliesstext-Links: als 13px hohe Textlinks
+     waren sie am iPhone kaum treffbar (Befund bei der Browser-Pruefung). */
+  .quelle{font-size:11px;color:var(--muted2);margin-top:6px;display:flex;flex-wrap:wrap;
+          gap:6px;align-items:center}
+  .quelle a{color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;
+            min-height:44px;padding:0 11px;border:1px solid var(--line);border-radius:22px}
+  .quelle a:hover{color:var(--txt);border-color:var(--muted2)}
+  .fremd{font-size:10.5px;color:var(--muted2);font-style:italic;margin-top:3px}
+
+  .detail{display:inline-flex;align-items:center;min-height:44px;margin-top:8px;
+          font-size:13px;font-weight:600;text-decoration:none;color:var(--primary)}
+
+  .fuss{font-size:11.5px;color:var(--muted2);margin-top:6px}
+  .fuss table{border-collapse:collapse;width:100%;margin-top:6px}
+  .fuss td{padding:3px 6px 3px 0;border-bottom:1px solid var(--line2)}
+  #laden,#leer{padding:56px 12px;text-align:center;color:var(--muted)}
+  #leer b{color:var(--txt);display:block;margin-bottom:6px}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="../index.html">🏠 Start</a>
+  <a class="back" href="signal-hub.html">← Signal-Hub</a>
+  <h1>📋 Wochen-Dossier</h1>
+  <span class="kw" id="kw"></span>
+</header>
+
+<main>
+  <div id="laden">Dossier wird geladen …</div>
+  <div id="leer" hidden>
+    <b>Noch kein Dossier vorhanden.</b>
+    Es entsteht am Wochenende automatisch nach dem ersten erfolgreichen
+    Pipeline-Lauf (Samstag früh) und fasst die Kandidaten der neuen Woche zusammen.
+  </div>
+  <div id="inhalt" hidden></div>
+</main>
+
+<!-- .js-Fallback fuer file:// ohne Server (gleiches Muster wie die uebrigen
+     Dashboard-Daten); ueber HTTP gewinnt der fetch auf die .json. -->
+<script src="data/wochen_dossier.js" onerror="void 0"></script>
+<script>
+// ─── Hilfen ────────────────────────────────────────────────────────────────
+const $ = s => document.querySelector(s);
+// Alles, was aus den Daten kommt, laeuft durch esc() - insbesondere der
+// Katalysator-Text ist FREMDINHALT aus dem Netz (Perplexity) und darf
+// niemals als HTML interpretiert werden.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const zahl = (x, n = 2) => (typeof x === 'number' && isFinite(x)) ? x.toFixed(n) : '–';
+const pct = (x, n = 1) => (typeof x === 'number' && isFinite(x)) ? x.toFixed(n) + ' %' : '–';
+const AMPEL_KLASSE = {gruen:'gruen', gelb:'gelb', rot:'rot'};
+const AMPEL_TEXT = {gruen:'grün', gelb:'gelb', rot:'rot'};
+
+function zeitText(iso){
+  if(!iso) return 'unbekannt';
+  const d = new Date(String(iso).replace(' ', 'T'));
+  if(isNaN(d)) return esc(iso);
+  return d.toLocaleString('de-DE', {weekday:'short', day:'2-digit', month:'2-digit',
+                                    hour:'2-digit', minute:'2-digit'});
+}
+
+// ─── Marktlage ─────────────────────────────────────────────────────────────
+function marktlageHtml(d){
+  const ml = d.marktlage || {};
+  const maerkte = Object.entries(ml.maerkte || {});
+  const kaufpause = maerkte.some(([, m]) => m.kaufpause);
+
+  let h = '<section class="karte"><div class="eyebrow">Marktlage</div>';
+  h += '<div class="chips">' + maerkte.map(([name, m]) =>
+        `<span class="chip ${AMPEL_KLASSE[m.ampel] || ''}">${esc(name)}: ${esc(AMPEL_TEXT[m.ampel] || m.ampel || '?')}</span>`
+      ).join('') + '</div>';
+
+  if(kaufpause){
+    h += '<div class="stopbox">⛔ Marktampel rot – nach der eigenen Regel diese Woche keine neuen Käufe.</div>';
+  }
+  maerkte.forEach(([name, m]) => {
+    if(m.sentiment_hinweis)
+      h += `<div class="warnbox"><b>${esc(name)}:</b> ${esc(m.sentiment_hinweis)}</div>`;
+  });
+
+  const themen = (ml.rotation || {}).themen || [];
+  if(themen.length){
+    h += '<div class="block"><b class="titel">Stärkste Themen (Rotation)</b><div class="chips">' +
+      themen.map(t => `<span class="chip akzent">${esc(t.theme || t.etf)} · RS ${esc(t.rs)}` +
+        (typeof t.r1m === 'number' ? ` · 1M ${pct(t.r1m)}` : '') + '</span>').join('') + '</div>';
+    if((ml.rotation || {}).breite)
+      h += `<div class="hinweis">Marktbreite: ${esc(ml.rotation.breite)}</div>`;
+    h += '</div>';
+  }
+
+  const z = ml.pivot_zaehler || {};
+  const zEintraege = Object.entries(z);
+  if(zEintraege.length){
+    h += '<div class="block"><b class="titel">Pivot-Lage im Universum</b><div class="chips">' +
+      zEintraege.map(([k, v]) => `<span class="chip">${esc(k)}: ${esc(v)}</span>`).join('') + '</div></div>';
+  }
+  return h + '</section>';
+}
+
+// ─── Veraenderungen zur Vorwoche ───────────────────────────────────────────
+function vergleichHtml(v){
+  if(!v) return '';
+  const liste = (arr, leer) => arr && arr.length
+    ? arr.map(x => typeof x === 'string' ? esc(x) : esc(x.ticker)).join(', ') : leer;
+  return '<section class="karte"><div class="eyebrow">Veränderung zur Vorwoche' +
+    (v.vorwoche_kw ? ` (${esc(v.vorwoche_kw)})` : '') + '</div><div class="aenderung">' +
+    `<div class="sp"><b>Neu</b>${liste(v.neu, '–')}</div>` +
+    `<div class="sp"><b>Geblieben</b>${liste(v.geblieben, '–')}</div>` +
+    `<div class="sp"><b>Nicht mehr dabei</b>${liste(v.raus, '–')}</div>` +
+    '</div></section>';
+}
+
+// ─── Kandidat ──────────────────────────────────────────────────────────────
+function kandidatHtml(k, i){
+  let h = '<article class="karte"><div class="kopf">' +
+    `<div class="rang">${i + 1}</div><div class="ident">` +
+    `<div class="tick"><a href="setup-detail.html?ticker=${encodeURIComponent(k.ticker)}">${esc(k.ticker)}</a></div>` +
+    `<div class="nam">${esc(k.name || '')}</div></div>` +
+    `<div class="score"><div class="num">${zahl(k.score, 0)}</div><div class="lbl">Score</div></div></div>`;
+
+  // Statuszeile
+  const badges = [`<span class="chip akzent">${esc(k.pivot_status || '–')}</span>`];
+  if(k.kern_setup) badges.push('<span class="chip gruen">Kern-Setup</span>');
+  if(k.konfluenz) badges.push(`<span class="chip">🔗 ${esc(k.konfluenz)}× bestätigt</span>`);
+  if(k.rotation_leader) badges.push(`<span class="chip akzent">Leader: ${esc(k.rotation_leader.theme)}</span>`);
+  if(k.markt) badges.push(`<span class="chip">${esc(k.markt)}</span>`);
+  h += `<div class="chips" style="margin-top:9px">${badges.join('')}</div>`;
+
+  // Warnungen zuerst - sie sind der Grund, warum eine Karte trotzdem dasteht.
+  (k.warnungen || []).forEach(w => {
+    h += `<div class="${w.stufe === 'stop' ? 'stopbox' : 'warnbox'}">` +
+         `${w.stufe === 'stop' ? '⛔' : '⚠️'} ${esc(w.text)}</div>`;
+  });
+
+  h += '<table class="zahlen">' +
+    `<tr><td>Kurs</td><td>${zahl(k.preis)} ${esc(k.waehrung || '')}</td></tr>` +
+    `<tr><td>Pivot</td><td>${zahl(k.pivot)}</td></tr>` +
+    `<tr><td>Abstand zum Pivot</td><td>${pct(k.dist_pct)}</td></tr>` +
+    `<tr><td>Stop</td><td>${zahl(k.stop)}${typeof k.stop_pct === 'number' ? ' (' + pct(k.stop_pct) + ')' : ''}</td></tr>` +
+    `<tr><td>Chance/Risiko</td><td>${zahl(k.chance_risiko, 1)}</td></tr>` +
+    (k.earnings_datum || typeof k.earnings_tage === 'number'
+      ? `<tr><td>Earnings</td><td>${k.earnings_datum ? esc(k.earnings_datum) : ''}` +
+        `${typeof k.earnings_tage === 'number' ? ` (in ${esc(k.earnings_tage)} T.)` : ''}</td></tr>` : '') +
+    '</table>';
+
+  // Trend-Template
+  const tt = (k.trend_template || []).filter(f => f.ampel);
+  if(tt.length){
+    h += '<div class="block"><b class="titel">Trend-Template</b><div class="chips">' +
+      tt.map(f => `<span class="chip ${AMPEL_KLASSE[f.ampel] || ''}" title="${esc(f.detail || '')}">${esc(f.name)}</span>`).join('') +
+      '</div></div>';
+  }
+
+  // Code 33
+  if(k.code33){
+    const c = k.code33;
+    h += '<div class="block"><b class="titel">Code 33</b><div class="chips">' +
+      `<span class="chip ${AMPEL_KLASSE[c.ampel] || ''}">${esc(AMPEL_TEXT[c.ampel] || c.ampel || '?')}</span>` +
+      (typeof c.eps_yoy_pct === 'number' ? `<span class="chip">EPS ${pct(c.eps_yoy_pct, 0)}</span>` : '') +
+      (typeof c.umsatz_yoy_pct === 'number' ? `<span class="chip">Umsatz ${pct(c.umsatz_yoy_pct, 0)}</span>` : '') +
+      (typeof c.marge_delta_pp === 'number' ? `<span class="chip">Marge ${zahl(c.marge_delta_pp, 1)} pp</span>` : '') +
+      '</div></div>';
+  }
+
+  // Price-Action
+  if((k.pa_muster || []).length){
+    h += '<div class="block"><b class="titel">Price-Action</b><div class="chips">' +
+      k.pa_muster.map(m => `<span class="chip">${esc(m)}</span>`).join('') + '</div></div>';
+  }
+
+  // Katalysator - Fremdinhalt, als Zitat mit Quelle
+  if(k.katalysator && k.katalysator.text){
+    const kat = k.katalysator;
+    h += '<div class="block"><b class="titel">Katalysator' +
+      (kat.klasse ? ` · ${esc(kat.klasse)}` : '') + '</b>' +
+      `<div class="zitat">„${esc(kat.text)}“</div>` +
+      '<div class="fremd">Externe Recherche (Perplexity), keine eigene Einschätzung.</div>';
+    if((kat.quellen || []).length){
+      h += '<div class="quelle"><span>Quelle:</span>' + kat.quellen.map(q => {
+        let host = q; try{ host = new URL(q).hostname.replace(/^www\./, ''); }catch(e){}
+        return `<a href="${esc(q)}" target="_blank" rel="noopener noreferrer">${esc(host)}</a>`;
+      }).join('') + '</div>';
+    }
+    h += '</div>';
+  }
+
+  // Backtest der Kohorte
+  if(k.backtest && typeof k.backtest.win === 'number'){
+    const b = k.backtest;
+    const reif = b.reif ? '' : ' – Stichprobe noch zu klein';
+    h += '<div class="block"><b class="titel">Kohorte im Forward-Test</b>' +
+      `<div class="hinweis">${esc(k.pivot_status || '')} ${esc(b.horizont || '')}: ` +
+      `${zahl(b.win, 1)} % Trefferquote bei n = ${esc(b.n)}${reif}. ` +
+      'Das ist die Quote der Kohorte, nicht dieses Titels.</div></div>';
+  }
+
+  h += `<a class="detail" href="setup-detail.html?ticker=${encodeURIComponent(k.ticker)}">Vollständige Setup-Analyse →</a>`;
+  return h + '</article>';
+}
+
+// ─── Fusszeile: Datenstand ─────────────────────────────────────────────────
+const QUELL_NAMEN = {top_setups:'Top-Setups', signals:'Signal-Hub', pivot:'Pivot',
+                     katalysator:'Katalysator', priceaction:'Price-Action-Hub', rotation:'Rotation'};
+function datenstandHtml(d){
+  const st = d.datenstand || {};
+  let h = '<section class="karte"><div class="eyebrow">Datenstand</div><div class="fuss"><table>';
+  Object.entries(st).forEach(([k, s]) => {
+    const marke = s.fehlt ? '⚠️ fehlt' : (s.veraltet ? '⚠️ veraltet' : '');
+    h += `<tr><td>${esc(QUELL_NAMEN[k] || k)}</td><td>${s.fehlt ? '–' : zeitText(s.stand)}</td><td>${marke}</td></tr>`;
+  });
+  h += '</table><div class="hinweis">' + esc(d.hinweis || '') + '</div></div></section>';
+  return h;
+}
+
+// ─── Laden ─────────────────────────────────────────────────────────────────
+async function ladeDossier(){
+  let d = null;
+  try{
+    const r = await fetch('data/wochen_dossier.json', {cache:'no-store'});
+    if(r.ok) d = await r.json();
+  }catch(e){ /* offline oder file:// - .js-Fallback unten */ }
+  if(!d && window.WOCHEN_DOSSIER_DATA) d = window.WOCHEN_DOSSIER_DATA;
+
+  $('#laden').hidden = true;
+  if(!d || !Array.isArray(d.kandidaten)){ $('#leer').hidden = false; return; }
+
+  $('#kw').textContent = (d.kw || '') + ' · Stand ' + zeitText(d.erstellt);
+  const kands = d.kandidaten.length
+    ? `<div class="kandidaten">${d.kandidaten.map(kandidatHtml).join('')}</div>`
+    : '<section class="karte"><div class="hinweis">Diese Woche hat keine Aktie die ' +
+      'Top-Setup-Schwelle erreicht. Das ist ein Ergebnis, kein Fehler.</div></section>';
+
+  $('#inhalt').innerHTML = marktlageHtml(d) + vergleichHtml(d.vergleich) + kands + datenstandHtml(d);
+  $('#inhalt').hidden = false;
+  document.title = `📋 Wochen-Dossier ${d.kw || ''}`;
+}
+ladeDossier();
+</script>
+</body>
+</html>
