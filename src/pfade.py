@@ -72,6 +72,7 @@ MINERVINI_LEXIKON_DIR = os.path.join(DATA, "minervini-lexikon")
 MINERVINI_LEXIKON_JSON = os.path.join(MINERVINI_LEXIKON_DIR, "minervini_lexikon.json")
 MINERVINI_LEXIKON_JS = os.path.join(MINERVINI_LEXIKON_DIR, "minervini_lexikon.js")
 MINERVINI_LEXIKON_BILDER = os.path.join(MINERVINI_LEXIKON_DIR, "bilder")
+MINERVINI_LEXIKON_TRANSKRIPTE = os.path.join(MINERVINI_LEXIKON_DIR, "transkripte")
 MINERVINI_LEXIKON_EINGANG = os.path.join(PROJEKT, "minervini-lexikon-eingang")
 
 # Lokale Laufzeitdaten (kein iCloud)
