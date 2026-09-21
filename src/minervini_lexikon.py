@@ -183,6 +183,14 @@ def fuege_eintraege_hinzu(neue_eintraege):
         if not eintrag.get("post_id") or not eintrag.get("datum"):
             print(f"  ! Eintrag ohne post_id/datum uebersprungen: {eintrag.get('text_de', '')[:40]!r}")
             continue
+        if eintrag.get("typ") == "video_lektion" and eintrag.get("transkript_hash"):
+            dublette = next((e for e in daten["eintraege"]
+                             if e.get("transkript_hash") == eintrag["transkript_hash"]
+                             and e.get("post_id") != eintrag["post_id"]), None)
+            if dublette:
+                print(f"  ! Video-Dublette uebersprungen: {eintrag['post_id']} hat denselben "
+                      f"Transkript-Hash wie {dublette['post_id']}")
+                continue
         _verschiebe_bilder(eintrag)
         if eintrag.get("typ") == "marktkommentar" and not eintrag.get("markt_kontext"):
             kontext = _markt_kontext_fuer(eintrag["datum"])
