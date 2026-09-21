@@ -12,3 +12,14 @@ So einfach geht's:
 Dieser Ordner wird NICHT automatisch verarbeitet — er ist nur die
 Ablage für die Bilddateien, bis wir den Verarbeitungsschritt bauen.
 Nichts hier wird von der Signal-Hub-Pipeline gelöscht oder verändert.
+
+--- YouTube-Transkripte (Reiter "Lektionen" im Coach) ---
+1. Auf YouTube unter dem Video "Transkript anzeigen" -> Text mit Zeitstempeln
+   kopieren und als .txt in den Unterordner transkripte/ speichern
+   (erste Zeile = Videotitel, danach Zeilen im Format [mm:ss] Text).
+2. Claude im Chat sagen: "Neue Transkripte verarbeiten" - moeglichst mit
+   Video-Link und Veroeffentlichungsdatum (dann funktionieren die
+   Zeitmarken-Links im Coach).
+3. Doppelte werden automatisch erkannt (Video-ID, Text-Hash, Textanfang) und
+   in transkripte/_duplikate/ abgelegt, nie doppelt erfasst und nie geloescht.
+Volltexte bleiben nur lokal in data/minervini-lexikon/transkripte/.
