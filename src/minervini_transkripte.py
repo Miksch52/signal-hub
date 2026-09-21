@@ -21,6 +21,12 @@ aehnliche Titel), kein Abbruch.
 Bei einer Dublette mit neuer --url wird die URL im Index und im Lexikon-
 Eintrag nachgetragen (Zeitmarken-Links funktionieren erst mit URL).
 
+JSON-Import (Apify "YouTube Scraper"): --json datei.json registriert jedes
+Video als "bekannt" (Dublettenpruefung, Status ohne Transkript) und uebernimmt
+vorhandene Untertitel (SRT) als Transkript. Videos ohne Untertitel bleiben
+registriert; ein spaeter abgelegtes Transkript mit passender --url ergaenzt
+sie, statt als Dublette abgewiesen zu werden.
+
 Die Kernaussagen erstellt danach Claude im Chat und legt sie per
 minervini_lexikon.py --eintraege als Eintrag typ "video_lektion" ab.
 """
@@ -108,6 +114,17 @@ def verarbeite(pfad, url=None, datum=None):
             if _norm(v.get("titel", "")) == _norm(titel) and titel:
                 print(f"  Hinweis: gleicher Titel wie {k}, aber anderer Text - wird als neues Video behandelt.")
 
+    if treffer and not treffer[1].get("datei"):
+        k, v = treffer
+        ziel = os.path.join(pfade.MINERVINI_LEXIKON_TRANSKRIPTE, f"{k}.txt")
+        os.makedirs(pfade.MINERVINI_LEXIKON_TRANSKRIPTE, exist_ok=True)
+        shutil.move(pfad, ziel)
+        v.update({"hash": h, "kopf": kopf, "datei": os.path.basename(ziel), "dauer_bis": segmente[-1][0],
+                  "abschnitte": len(segmente), "aufgenommen": datetime.now().astimezone().isoformat(timespec="seconds")})
+        _speichere_index(idx)
+        print(f"+ Transkript zu bekanntem Video ergaenzt: {k} | {v.get('titel', '')[:60]} | {len(segmente)} Abschnitte")
+        return k
+
     if treffer:
         k, v = treffer
         print(f"= Dublette: {name} ist bereits erfasst als {k} ({v.get('titel', '')[:60]}) - nicht erneut aufgenommen.")
@@ -139,12 +156,76 @@ def verarbeite(pfad, url=None, datum=None):
     return schluessel
 
 
+def _srt_zu_txt(srt, titel):
+    zeilen = [titel]
+    letzter = None
+    for block in re.split(r"\n\s*\n", srt.strip()):
+        teile = block.strip().splitlines()
+        if len(teile) < 3:
+            continue
+        m = re.match(r"(\d+):(\d+):(\d+)[,.]\d+\s*-->", teile[1])
+        text = " ".join(t.strip() for t in teile[2:]).strip()
+        if not m or not text or text == letzter:
+            continue
+        letzter = text
+        sek = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+        h_, r = divmod(sek, 3600)
+        zeit = f"{h_}:{r // 60:02d}:{r % 60:02d}" if h_ else f"{r // 60:02d}:{r % 60:02d}"
+        zeilen.append(f"[{zeit}] {text}")
+    return "\n".join(zeilen) + "\n"
+
+
+def importiere_json(pfad):
+    with open(pfad, encoding="utf-8") as f:
+        videos = json.load(f)
+    idx = _lade_index()
+    bekannt = {v.get("video_id") for v in idx["videos"].values() if v.get("video_id")}
+    neu_registriert = mit_transkript = schon_da = 0
+    os.makedirs(EINGANG, exist_ok=True)
+    for it in videos:
+        vid, url, titel = it.get("id"), it.get("url"), it.get("title") or ""
+        if not vid or not url:
+            continue
+        datum = (it.get("date") or "")[:10] or None
+        srt = next((s.get("srt") for s in (it.get("subtitles") or []) if s.get("srt")), None)
+        vorhanden = next((v for v in idx["videos"].values() if v.get("video_id") == vid), None)
+        if srt and not (vorhanden and vorhanden.get("datei")):
+            tmp = os.path.join(EINGANG, f"{vid}.txt")
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(_srt_zu_txt(srt, titel))
+            _speichere_index(idx)
+            if verarbeite(tmp, url, datum):
+                mit_transkript += 1
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            idx = _lade_index()
+            bekannt = {v.get("video_id") for v in idx["videos"].values() if v.get("video_id")}
+            continue
+        if vid in bekannt:
+            schon_da += 1
+            continue
+        idx["videos"][f"yt-{vid}"] = {
+            "titel": titel, "video_id": vid, "url": url, "datum": datum, "dauer": it.get("duration"),
+            "kanal": it.get("channelName"), "hash": None, "kopf": None, "datei": None,
+            "aufgenommen": datetime.now().astimezone().isoformat(timespec="seconds"),
+        }
+        bekannt.add(vid)
+        neu_registriert += 1
+    _speichere_index(idx)
+    print(f"JSON-Import: {len(videos)} Videos gelesen, {neu_registriert} neu registriert (ohne Transkript), "
+          f"{mit_transkript} mit Transkript uebernommen, {schon_da} bereits bekannt.")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--json", help="Apify-YouTube-Scraper-JSON importieren (siehe Modul-Docstring)")
     ap.add_argument("--datei", help="einzelne Datei statt des ganzen Eingang-Ordners")
     ap.add_argument("--url", help="YouTube-URL (nur mit einer einzelnen Datei)")
     ap.add_argument("--datum", help="Veroeffentlichungsdatum JJJJ-MM-TT (nur mit einer einzelnen Datei)")
     a = ap.parse_args()
+    if a.json:
+        importiere_json(a.json)
+        raise SystemExit(0)
     os.makedirs(EINGANG, exist_ok=True)
     dateien = [a.datei] if a.datei else sorted(
         os.path.join(EINGANG, f) for f in os.listdir(EINGANG) if f.lower().endswith(".txt"))
