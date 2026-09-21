@@ -24,6 +24,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 
 PORT = 8091
@@ -117,6 +118,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, *a):
         pass  # ruhiger
+
+    def copyfile(self, source, outputfile):
+        # iCloud-Dateien liefern im Dauerprozess gelegentlich EDEADLK
+        # ("Resource deadlock avoided", Errno 11) beim Lesen -> der Browser
+        # bekaeme nur Header + 0 Bytes ("Keine Daten"). Erst mehrfach
+        # wiederholen, dann per `cat` (eigener Prozess) lesen.
+        pfad = getattr(source, "name", None)
+        body = None
+        for versuch in range(4):
+            try:
+                source.seek(0)
+                body = source.read()
+                break
+            except OSError:
+                time.sleep(0.5 * (versuch + 1))
+        if body is None and isinstance(pfad, str):
+            body = subprocess.run(["/bin/cat", pfad], capture_output=True, timeout=60,
+                                  check=True).stdout
+        outputfile.write(body)
 
     def _json(self, obj, code=200, cors=False):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
