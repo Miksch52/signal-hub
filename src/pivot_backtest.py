@@ -149,7 +149,11 @@ SPLIT_SUPPLY_GUT = 0.7       # Supply-Score-Schwelle (1.0 = kaum Angebot oben)
 
 SPLIT_STATI = ("BREAKOUT_nah", "BREAKOUT_weit",
                "ARMED_supply_gut", "ARMED_supply_schwach",
-               "ARMED_megaphone", "ARMED_sauber")
+               "ARMED_megaphone", "ARMED_sauber") + tuple(
+    f"{st}_{k}" for st in ("ARMED", "BREAKOUT") for k in (
+        "vcp_ge2", "vcp_lt2", "vcp_ge3", "vcp_lt3",
+        "eng_le5", "eng_gt5", "basis_ge7w", "basis_lt7w")
+) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")
 
 
 def _split_stati(r):
@@ -164,6 +168,33 @@ def _split_stati(r):
             out.append("ARMED_supply_gut" if sup >= SPLIT_SUPPLY_GUT else "ARMED_supply_schwach")
         if r.get("megaphone") is not None:
             out.append("ARMED_megaphone" if r["megaphone"] else "ARMED_sauber")
+
+    # SEPA-Kriterien auch RETROSPEKTIV (2026-09-22). klassifiziere() misst
+    # Kontraktionen, Enge und Basisdauer an jedem Retro-Tag ohnehin mit - der
+    # Forward-Test dagegen kennt die Felder erst ab dem 30.08. und beginnt
+    # deshalb bei n=0, obwohl das Logbuch selbst viel aelter ist. Labels und
+    # Schwellen sind bewusst identisch mit evaluate(): zwei Kohorten, die
+    # unterschiedlich teilen, beantworten unterschiedliche Fragen, und der
+    # Vergleich Retro/Forward waere wertlos.
+    #
+    # Was hier FEHLT und nicht nachruestbar ist: tt_pass braucht das marktweite
+    # RS-Rating des jeweiligen Tages, inst_trend die 13F-Lage des damaligen
+    # Quartals. Beides laesst sich nur mit heutigem Wissen rekonstruieren -
+    # also genau der Bias, den dieser Backtest vermeiden soll.
+    if st in ("ARMED", "BREAKOUT"):
+        kt = r.get("kontraktionen")
+        if kt is not None:
+            out.append(f"{st}_vcp_{'ge2' if kt >= pivot.KONTRAKTION_MIN else 'lt2'}")
+            out.append(f"{st}_vcp_{'ge3' if kt >= pivot.KONTRAKTION_MIN_STRENG else 'lt3'}")
+        ep = r.get("eng_pct")
+        if ep is not None:                                # eng_pct ist in Prozent
+            out.append(f"{st}_eng_{'le5' if ep <= pivot.ENG_MAX_STRENG * 100 else 'gt5'}")
+        bw = r.get("basis_wochen")
+        if bw is not None:
+            out.append(f"{st}_basis_{'ge7w' if bw >= pivot.BASIS_MIN_WOCHEN else 'lt7w'}")
+        ft = r.get("follow_through_vol")
+        if ft is not None and st == "BREAKOUT":
+            out.append("BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach")
     return out
 
 
@@ -238,6 +269,22 @@ def _logbuch_load():
 def _logbuch_save(lb):
     with open(pfade.PIVOT_LOGBUCH, "w", encoding="utf-8") as f:
         json.dump(lb, f, ensure_ascii=False, indent=2)
+
+
+def _archiv_load():
+    """Gereifte Faelle aus frueheren Laeufen, Schluessel 'datum|ticker|status'."""
+    if os.path.exists(pfade.PIVOT_FORWARD_ARCHIV):
+        try:
+            a = json.load(open(pfade.PIVOT_FORWARD_ARCHIV, encoding="utf-8"))
+            return a if isinstance(a, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _archiv_save(archiv):
+    with open(pfade.PIVOT_FORWARD_ARCHIV, "w", encoding="utf-8") as f:
+        json.dump(archiv, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def _earnings_tage_map():
@@ -342,7 +389,11 @@ def log_heute():
     # 12 bzw. 29 Tage und loeschte Episoden, bevor sie 4W/8W/12W erreichen
     # konnten (Hebel-Backtest dauerhaft n=0, Pivot nie 8W/12W; Pivot-
     # Episoden 02.07.-15.08.2026 dadurch unwiederbringlich verloren).
-    # 120 Tage = laengster Horizont (78 Kalendertage) plus Puffer.
+    # 120 Tage = laengster Horizont (78 Kalendertage) plus Puffer. Seit
+    # 2026-09-22 kostet diese Kappe keine Evidenz mehr: gereifte Faelle stehen
+    # dauerhaft in pfade.PIVOT_FORWARD_ARCHIV und werden in evaluate() von dort
+    # weiter mitgezaehlt. Das Logbuch bleibt bewusst klein - es wird bei JEDEM
+    # Lauf komplett neu durchgerechnet, das Archiv nicht.
     aufbewahrung_tage = 120
     grenze = (datetime.now().date() - timedelta(days=aufbewahrung_tage)).isoformat()
     lb = [e for e in lb if (e.get("datum") or "") >= grenze]
@@ -471,6 +522,12 @@ def evaluate():
     einzelfaelle = []
     aktuell = {}
     charts = {}   # sym -> voller Chart-Dict (closes/highs/lows/dates), fuer _simulate_exit
+    # Archiv (seit 2026-09-22): siehe pfade.PIVOT_FORWARD_ARCHIV. "gesehen"
+    # merkt sich, welche Faelle in DIESEM Lauf schon aus dem Logbuch kamen -
+    # nur die uebrigen werden unten aus dem Archiv nachgereicht, sonst zaehlte
+    # dieselbe Episode doppelt.
+    archiv = _archiv_load()
+    gesehen = set()
     for e in lb:
         try:
             tage = (heute - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
@@ -497,12 +554,23 @@ def evaluate():
         # return_pct, stand} ("bis heute") wird dabei einfach ueberschrieben.
         e["realisiert"] = {h: round(r * 100, 2) for h, r, _ in erreicht}
         e["realisiert"]["stand"] = heute.strftime("%Y-%m-%d")
-        _ablegen_alle(eimer, eimer_edge, e["status"], erreicht)
+
+        # lege() statt _ablegen_alle(): legt zusaetzlich fest, WELCHEN Kohorten
+        # diese Episode angehoert. Ohne diese Liste liesse sich ein Fall, der
+        # spaeter aus dem Logbuch faellt, nicht mehr einsortieren - die
+        # Kriterienfelder waeren dann naemlich mit weg.
+        kohorten = []
+
+        def lege(label):
+            kohorten.append(label)
+            _ablegen_alle(eimer, eimer_edge, label, erreicht)
+
+        lege(e["status"])
         if e["status"] == "ARMED" and e.get("qualitaet") is not None:
-            _ablegen_alle(eimer, eimer_edge, "ARMED_q70+" if e["qualitaet"] >= 70 else "ARMED_q<70", erreicht)
+            lege("ARMED_q70+" if e["qualitaet"] >= 70 else "ARMED_q<70")
         et = e.get("earnings_tage")
         nah = et is not None and 0 <= et <= warn
-        _ablegen_alle(eimer, eimer_edge, f"{e['status']}_earnings_{'nah' if nah else 'fern'}", erreicht)
+        lege(f"{e['status']}_earnings_{'nah' if nah else 'fern'}")
 
         # --- SEPA-Kriterien (2026-08-29) --------------------------------
         # Fehlt ein Feld (Eintrag von vor diesem Umbau), wird NICHT einsortiert
@@ -516,26 +584,26 @@ def evaluate():
         kt = e.get("kontraktionen")
         if kt is not None:
             eng = kt >= pivot.KONTRAKTION_MIN
-            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_vcp_{'ge2' if eng else 'lt2'}", erreicht)
+            lege(f"{e['status']}_vcp_{'ge2' if eng else 'lt2'}")
             streng = kt >= pivot.KONTRAKTION_MIN_STRENG
-            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_vcp_{'ge3' if streng else 'lt3'}", erreicht)
+            lege(f"{e['status']}_vcp_{'ge3' if streng else 'lt3'}")
         ep = e.get("eng_pct")
         if ep is not None:
             schmal = ep <= pivot.ENG_MAX_STRENG * 100     # eng_pct ist in Prozent
-            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_eng_{'le5' if schmal else 'gt5'}", erreicht)
+            lege(f"{e['status']}_eng_{'le5' if schmal else 'gt5'}")
         bw = e.get("basis_wochen")
         if bw is not None:
             lang = bw >= pivot.BASIS_MIN_WOCHEN
-            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_basis_{'ge7w' if lang else 'lt7w'}", erreicht)
+            lege(f"{e['status']}_basis_{'ge7w' if lang else 'lt7w'}")
         tt = e.get("tt_pass")
         if tt is not None:
-            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_tt_{'pass' if tt else 'fail'}", erreicht)
+            lege(f"{e['status']}_tt_{'pass' if tt else 'fail'}")
         it = e.get("inst_trend")
         if it is not None:
-            _ablegen_alle(eimer, eimer_edge, f"{e['status']}_insttrend_{'ja' if it else 'nein'}", erreicht)
+            lege(f"{e['status']}_insttrend_{'ja' if it else 'nein'}")
         ft = e.get("follow_through_vol")
         if ft is not None and e["status"] == "BREAKOUT":
-            _ablegen_alle(eimer, eimer_edge, "BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach", erreicht)
+            lege("BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach")
 
         # Exit-Regel-Backtest: einmalig berechnen und dauerhaft im Logbuch-
         # Eintrag cachen (wie "realisiert") - kein erneutes Nachrechnen bei
@@ -565,8 +633,57 @@ def evaluate():
             "follow_through_vol": e.get("follow_through_vol"), "tt_pass": tt,
             "eng_pct": e.get("eng_pct"), "inst_trend": it,
         })
+
+        # Archiv fortschreiben. Der Eintrag wird bei jedem Lauf ueberschrieben,
+        # solange die Episode im Logbuch steht - die spaetere Fassung ist immer
+        # die vollstaendigere (8W/12W kommen erst mit der Zeit dazu). Wenn die
+        # Episode nach 120 Tagen aus dem Logbuch faellt, sind alle Fenster
+        # (laengstens 78 Tage) laengst final.
+        schluessel = f"{e['datum']}|{e['ticker']}|{e['status']}"
+        gesehen.add(schluessel)
+        archiv[schluessel] = {
+            "status": e["status"], "ticker": e["ticker"],
+            "kohorten": kohorten,
+            "fenster": {h: r for h, r, _ in erreicht},
+            "fenster_edge": {h: ed for h, _, ed in erreicht if ed is not None},
+            "exit_sim": e.get("exit_sim"),
+            "kontraktionen": kt, "basis_wochen": bw, "eng_pct": e.get("eng_pct"),
+            "tt_pass": tt, "inst_trend": it,
+            "follow_through_vol": e.get("follow_through_vol"),
+        }
+
+    # Faelle, die inzwischen aus dem 120-Tage-Logbuch gefallen sind, kommen
+    # hier zurueck in die Aggregate. Ohne diesen Block waere der Forward-Test
+    # ein rollierendes Fenster: alte Evidenz ginge genauso schnell verloren,
+    # wie neue dazukommt, und n liefe gegen eine feste Decke statt zu wachsen.
+    # Die Einzelfall-Liste bleibt bewusst rollierend - sie haengt an der
+    # oeffentlichen pivot_backtest.json, die nicht unbegrenzt wachsen soll.
+    nachgereicht = 0
+    for schluessel, rec in archiv.items():
+        if schluessel in gesehen:
+            continue
+        erreicht_alt = [(h, r, rec.get("fenster_edge", {}).get(h))
+                        for h, r in (rec.get("fenster") or {}).items()]
+        if not erreicht_alt:
+            continue
+        for label in rec.get("kohorten", []):
+            if label in eimer:
+                _ablegen_alle(eimer, eimer_edge, label, erreicht_alt)
+        sim = rec.get("exit_sim")
+        st_alt = rec.get("status")
+        if sim and f"{st_alt}_exit_staffel" in eimer:
+            staffel = sim.get("strategie_return", sim.get("blended_return"))
+            if staffel is not None and sim.get("hold_return") is not None:
+                eimer[f"{st_alt}_exit_staffel"]["12W"].append(staffel / 100)
+                eimer[f"{st_alt}_exit_hold"]["12W"].append(sim["hold_return"] / 100)
+        nachgereicht += 1
+
     scorer.speichere_cache(cache)
     _logbuch_save(lb)
+    _archiv_save(archiv)
+    if nachgereicht:
+        print(f"Forward-Archiv: {nachgereicht} gereifte Faelle ausserhalb des "
+              f"Logbuchs mitgezaehlt (Archiv gesamt {len(archiv)}).")
     fr = {st: {h: index_vergleich.ergaenze_edge(_stats(eimer[st][h]), eimer_edge[st][h])
                for h, _ in HORIZONTE} for st in eimer}
     return fr, einzelfaelle

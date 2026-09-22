@@ -153,6 +153,7 @@ jobs:
           rclone copy r2:signalhub-magazine/_state/pivot_state.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/logbuch.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/pivot_logbuch.json ~/"Library/Application Support/SignalHub/" || true
+          rclone copy r2:signalhub-magazine/_state/pivot_forward_archiv.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/pivot_eval_state.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/regime_logbuch.json ~/"Library/Application Support/SignalHub/" || true
           rclone copy r2:signalhub-magazine/_state/quellen_historie.json ~/"Library/Application Support/SignalHub/" || true
@@ -246,6 +247,7 @@ jobs:
           rclone copy ~/"Library/Application Support/SignalHub/pivot_state.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/SignalHub/logbuch.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/SignalHub/pivot_logbuch.json" r2:signalhub-magazine/_state/ || true
+          rclone copy ~/"Library/Application Support/SignalHub/pivot_forward_archiv.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/SignalHub/pivot_eval_state.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/SignalHub/regime_logbuch.json" r2:signalhub-magazine/_state/ || true
           rclone copy ~/"Library/Application Support/SignalHub/quellen_historie.json" r2:signalhub-magazine/_state/ || true

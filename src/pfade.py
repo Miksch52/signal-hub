@@ -118,6 +118,11 @@ LOGBUCH = os.path.join(LOKAL, "logbuch.json")
 PIVOT_STATE = os.path.join(LOKAL, "pivot_state.json")   # Zustands-Uebergaenge fuer Push
 PIVOT_LOGBUCH = os.path.join(LOKAL, "pivot_logbuch.json")  # Forward-Log der ARMED/BREAKOUT-Picks
 PIVOT_EVAL_STATE = os.path.join(LOKAL, "pivot_eval_state.json")  # Reife-Meilensteine fuer Push
+# Gereifte Forward-Faelle, EINMAL geschrieben und danach unveraendert (feste
+# Fenster aendern sich nicht mehr). Noetig, weil log_heute() das Logbuch nach
+# 120 Tagen kappt: ohne dieses Archiv verliert der Forward-Test alte Evidenz
+# genauso schnell, wie neue dazukommt, und n liefe dauerhaft gegen eine Decke.
+PIVOT_FORWARD_ARCHIV = os.path.join(LOKAL, "pivot_forward_archiv.json")
 REGIME_LOGBUCH = os.path.join(LOKAL, "regime_logbuch.json")  # Forward-Log des Markt-Regimes je Markt
 # Plausibilitaetswaechter (seit 2026-08-23, siehe quellen_watchdog.py): Tages-
 # Historie der Trefferzahlen je Rohsignal-Quelle + Anti-Spam-Zustand fuer den
