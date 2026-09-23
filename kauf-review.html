@@ -119,6 +119,33 @@
   .actionbar button.buy{background:var(--primary);color:#fff;border-color:var(--primary)}
   .actionbar button.buy:hover{background:#195a54}
 
+  .b-watch{background:var(--teal-dim);color:var(--primary);border-color:rgba(31,110,102,.35)}
+
+  #beobachtet{max-width:560px;margin:0 auto;width:100%;padding:14px 16px 0}
+  #beobachtet:empty{display:none}
+  .wl{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  .wl>summary{list-style:none;cursor:pointer;min-height:44px;padding:0 14px;display:flex;
+              align-items:center;gap:8px;font-size:13.5px;font-weight:700}
+  .wl>summary::-webkit-details-marker{display:none}
+  .wl>summary .hint{margin-left:auto;font-size:11px;font-weight:400;color:var(--muted2)}
+  .wl-row{display:flex;align-items:center;gap:8px;padding:8px 14px;border-top:1px solid var(--line2)}
+  .wl-main{flex:1;min-width:0}
+  .wl-tk{font-weight:800;font-size:14px}
+  .wl-tk .nm{font-weight:400;font-size:12px;color:var(--muted);margin-left:4px}
+  .wl-sub{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .wl-sub .an{color:var(--ok);font-weight:700}
+  .wl-sub .warn{color:var(--warn);font-weight:700}
+  .wl-row a,.wl-row button{min-height:44px;min-width:44px;display:inline-flex;align-items:center;
+              justify-content:center;border-radius:10px;border:1px solid var(--line);background:var(--bg2);
+              color:var(--txt);text-decoration:none;font-size:15px;cursor:pointer;padding:0 8px}
+  .wl-empty{padding:10px 14px 12px;font-size:12px;color:var(--muted2);border-top:1px solid var(--line2)}
+  .wl-sync{padding:6px 14px 10px;font-size:11px;color:var(--muted2)}
+
+  #toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);
+         background:var(--txt);color:var(--bg2);padding:9px 16px;border-radius:10px;font-size:13px;
+         z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
+  #toast.an{opacity:1}
+
   #empty,#loading{padding:80px 20px;text-align:center;color:var(--muted)}
   #empty b{color:var(--txt)}
   #empty .sub{font-size:13px;margin-top:8px}
@@ -140,6 +167,8 @@
   <span class="progress" id="progress"></span>
 </header>
 <div class="progressbar"><div class="progressbar-fill" id="progressfill" style="width:0%"></div></div>
+<div id="beobachtet"></div>
+<div id="toast" role="status"></div>
 
 <main id="main">
   <div id="loading">Lädt Top-Setups …</div>
@@ -206,6 +235,187 @@ function ladeRotationLeaderMap() {
   document.head.appendChild(s);
 }
 
+// ── 👀 Beobachten = Fokusliste der Hauptapp (seit 2026-09-23) ──────────────
+// Keine eigene Liste (Entflechtung): „Beobachten“ setzt den Ticker auf die
+// SEPA-Watchlist der Hauptapp (localStorage['mts_v2'].watchlist, im Signal-Hub
+// „⭐ Fokusliste“). Geräteübergreifend über denselben privaten Gist wie die
+// Hauptapp (Token gh_gist_token, Datei maick-trading-system.json). Im Gist wird
+// NUR watchlist + _meta.geloeschteWatchlist angefasst, alles andere (Trades,
+// Depots …) unverändert zurückgeschrieben. Kein POST an /data - das erledigt
+// die Hauptapp beim nächsten Öffnen über ihren normalen Abgleich.
+const MTS_KEY = 'mts_v2';
+const GIST_DATEI = 'maick-trading-system.json';
+let FOKUS = [];            // zusammengeführte Sicht aus lokal + Gist
+let FOKUS_SYNC = '';       // Hinweiszeile unter der Liste
+
+function gistToken() {
+  try { return localStorage.getItem('mts_gist_token') || localStorage.getItem('gh_gist_token') || ''; } catch (e) { return ''; }
+}
+function ladeLokal() {
+  try { return JSON.parse(localStorage.getItem(MTS_KEY) || 'null'); } catch (e) { return null; }
+}
+
+// Identische Kopie von _mtsMergeWatchlist aus "Maick's Trading System.html"
+// (tests/test-trade-verwaltung.js prüft den Gleichlauf).
+function _mtsMergeWatchlist(basis, andere) {
+    const vermerke = { ...((andere && andere._meta && andere._meta.geloeschteWatchlist) || {}) };
+    Object.entries((basis && basis._meta && basis._meta.geloeschteWatchlist) || {}).forEach(([t, ts]) => {
+        vermerke[t] = Math.max(ts, vermerke[t] || 0);
+    });
+    const nachTicker = new Map();
+    ((basis && basis.watchlist) || []).forEach(w => { if (w && w.ticker) nachTicker.set(w.ticker, w); });
+    ((andere && andere.watchlist) || []).forEach(w => {
+        if (!w || !w.ticker || !w.ts) return;   // Alt-Einträge ohne ts entscheidet die Basis
+        const eigen = nachTicker.get(w.ticker);
+        if (!eigen || w.ts > (eigen.ts || 0)) nachTicker.set(w.ticker, w);
+    });
+    const watchlist = [...nachTicker.values()]
+        .filter(w => !(vermerke[w.ticker] >= (w.ts || 0)))
+        .sort((x, y) => (y.ts || 0) - (x.ts || 0));
+    return { watchlist, vermerke };
+}
+
+async function gistHolen(token) {
+  let id = '';
+  try { id = localStorage.getItem('mts_gist_id') || ''; } catch (e) {}
+  const kopf = { headers: { 'Authorization': `token ${token}` }, cache: 'no-store' };
+  if (!id) {
+    const r = await fetch('https://api.github.com/gists?per_page=100', kopf);
+    if (!r.ok) throw new Error('Gist-Liste HTTP ' + r.status);
+    const g = (await r.json()).find(x => x.files && x.files[GIST_DATEI]);
+    if (!g) return null;
+    id = g.id;
+    try { localStorage.setItem('mts_gist_id', id); } catch (e) {}
+  }
+  const r = await fetch(`https://api.github.com/gists/${id}`, kopf);
+  if (!r.ok) throw new Error('Gist HTTP ' + r.status);
+  const datei = (await r.json()).files?.[GIST_DATEI];
+  if (!datei || datei.truncated || !datei.content) return null;   // unvollständig → nie zurückschreiben
+  const huelle = JSON.parse(datei.content);
+  const daten = huelle && huelle.data ? huelle.data : huelle;
+  if (!daten || !Array.isArray(daten.trades)) return null;
+  return { id, huelle, daten };
+}
+
+async function gistSchreiben(token, g) {
+  const content = JSON.stringify(g.huelle && g.huelle.data ? { ...g.huelle, data: g.daten } : g.daten, null, 2);
+  const r = await fetch(`https://api.github.com/gists/${g.id}`, {
+    method: 'PATCH',
+    headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: { [GIST_DATEI]: { content } } })
+  });
+  if (!r.ok) throw new Error('Gist speichern HTTP ' + r.status);
+}
+
+// Wendet dieselbe Änderung auf den lokalen Stand und den Gist an. Beide
+// Seiten bekommen dasselbe ts - die Hauptapp führt sie pro Ticker zusammen.
+async function aendereFokusliste(aenderung) {
+  const jetzt = Date.now();
+  const anwenden = d => {
+    d.watchlist = Array.isArray(d.watchlist) ? d.watchlist : [];
+    d._meta = d._meta || {};
+    d._meta.geloeschteWatchlist = d._meta.geloeschteWatchlist || {};
+    d.watchlist = aenderung(d.watchlist, d._meta.geloeschteWatchlist, jetzt);
+  };
+  const token = gistToken();
+  let lokal = ladeLokal();
+  if (!lokal && !token) lokal = { watchlist: [], _meta: { watchlistImported: true } };
+  if (lokal) {
+    anwenden(lokal);
+    try { localStorage.setItem(MTS_KEY, JSON.stringify(lokal)); } catch (e) {}
+  }
+  let remote = null, fehler = '';
+  if (token) {
+    try {
+      const g = await gistHolen(token);
+      if (g) { anwenden(g.daten); await gistSchreiben(token, g); remote = g.daten; }
+      else fehler = 'kein vollständiger Hauptapp-Gist gefunden';
+    } catch (e) { fehler = e.message; }
+  }
+  FOKUS = _mtsMergeWatchlist(lokal || remote || {}, remote || {}).watchlist;
+  FOKUS_SYNC = !token ? 'Nur auf diesem Gerät gespeichert — für andere Geräte in der Hauptapp den Gist-Token (☁ Cloud-Sync) einrichten.'
+    : fehler ? 'Cloud-Sync fehlgeschlagen (' + fehler + ') — vorerst nur auf diesem Gerät.'
+    : 'Geräteübergreifend gespeichert.';
+  renderBeobachtet();
+  return { cloud: !!remote, fehler };
+}
+
+async function ladeFokusliste() {
+  const lokal = ladeLokal();
+  FOKUS = (lokal && Array.isArray(lokal.watchlist)) ? lokal.watchlist.slice() : [];
+  renderBeobachtet();
+  const token = gistToken();
+  if (!token) { FOKUS_SYNC = 'Nur dieses Gerät — ohne Gist-Token keine Einträge von anderen Geräten.'; renderBeobachtet(); return; }
+  try {
+    const g = await gistHolen(token);
+    if (!g) return;
+    FOKUS = _mtsMergeWatchlist(lokal || g.daten, g.daten).watchlist;
+    FOKUS_SYNC = '';
+  } catch (e) { FOKUS_SYNC = 'Cloud-Stand nicht erreichbar (' + e.message + ') — zeigt nur dieses Gerät.'; }
+  renderBeobachtet();
+}
+
+function aufFokusliste(ticker) { return FOKUS.some(w => w.ticker === ticker); }
+
+function setupZu(ticker) {
+  return ((window.TOP_SETUPS && window.TOP_SETUPS.setups) || []).find(x => x.ticker === ticker) || null;
+}
+
+function renderBeobachtet() {
+  const el = document.getElementById('beobachtet');
+  if (!el) return;
+  const offen = (() => { try { return localStorage.getItem('kaufReviewBeobachtetZu') !== '1'; } catch (e) { return true; } })();
+  const zeilen = FOKUS.map(w => {
+    const s = setupZu(w.ticker);
+    const pivot = (s && s.pivot > 0) ? s.pivot : w.pivot;
+    const stop = (s && s.stop > 0) ? s.stop : w.stop;
+    const teile = [];
+    if (s && s.preis != null) teile.push(`Kurs ${s.preis}`);
+    if (pivot > 0) teile.push(`Pivot ${pivot}`);
+    if (stop > 0) teile.push(`Stop ${stop}`);
+    if (s && s.preis != null && pivot > 0) {
+      const d = (s.preis - pivot) / pivot * 100;
+      teile.push(d >= 0 ? `<span class="an">▲ ${d.toFixed(1)}% über Pivot</span>` : `${d.toFixed(1)}% bis Pivot`);
+    }
+    if (s && s.pivot_status) teile.push(s.pivot_status === 'BREAKOUT' ? '🚀 BREAKOUT' : '🎯 ARMED');
+    if (s && gesperrt(s)) teile.push(`<span class="warn">Earnings in ${s.earnings_tage} T</span>`);
+    if (s && s.regime && s.regime !== 'gruen') teile.push(`<span class="warn">Markt ${s.regime}</span>`);
+    if (!s) teile.push('heute kein Top-Setup');
+    if (w.date) teile.push('seit ' + w.date);
+    const kauf = `../Maick's Trading System.html?neuerTrade=${enc(w.ticker)}&quelle=Kauf-Review-Fokusliste`
+      + (pivot > 0 ? `&entry=${enc(pivot)}` : '') + (stop > 0 ? `&stop=${enc(stop)}` : '');
+    return `<div class="wl-row">
+      <div class="wl-main">
+        <div class="wl-tk">${w.ticker}<span class="nm">${w.name || (s && s.name) || ''}</span></div>
+        <div class="wl-sub">${teile.join(' · ')}</div>
+      </div>
+      <a href="setup-detail.html?ticker=${enc(w.ticker)}"${IST_STANDALONE_PWA ? '' : ' target="_blank" rel="noopener"'} title="Vollständige Analyse">🔍</a>
+      <a href="${kauf}" title="In den Trade-Planner der Hauptapp">🛒</a>
+      <button type="button" data-t="${w.ticker}" onclick="entferneBeobachtet(this.dataset.t)" title="Von der Fokusliste nehmen">✕</button>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<details class="wl"${offen ? ' open' : ''} ontoggle="try{localStorage.setItem('kaufReviewBeobachtetZu', this.open ? '' : '1')}catch(e){}">
+    <summary>👀 Beobachtet (${FOKUS.length})<span class="hint">= Fokusliste der Hauptapp</span></summary>
+    ${zeilen || '<div class="wl-empty">Noch nichts beobachtet — „👀 Beobachten“ unten setzt einen Wert hierher.</div>'}
+    ${FOKUS_SYNC ? `<div class="wl-sync">${FOKUS_SYNC}</div>` : ''}
+  </details>`;
+}
+
+async function entferneBeobachtet(ticker) {
+  if (!confirm(`${ticker} von der Fokusliste nehmen? (Auch in der Hauptapp und auf anderen Geräten.)`)) return;
+  await aendereFokusliste((wl, vermerke, jetzt) => { vermerke[ticker] = jetzt; return wl.filter(w => w.ticker !== ticker); });
+  zeigeToast(`${ticker} von der Fokusliste genommen`);
+}
+
+function zeigeToast(text) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = text;
+  t.classList.add('an');
+  clearTimeout(t._z);
+  t._z = setTimeout(() => t.classList.remove('an'), 2600);
+}
+
 function sessionKey() { return 'kaufReviewSession_' + ((window.TOP_SETUPS && window.TOP_SETUPS.erstellt) || ''); }
 
 function speichereSession() {
@@ -214,6 +424,7 @@ function speichereSession() {
 
 function init() {
   const d = window.TOP_SETUPS;
+  ladeFokusliste();
   if (ladefehler || !d || !Array.isArray(d.setups) || !d.setups.length) { zeigeLeer(); return; }
   QUEUE = d.setups.filter(aktivBar);
   GATED_COUNT = d.setups.length - QUEUE.length;
@@ -315,6 +526,8 @@ function render() {
     ? `<span class="badge b-kern" title="Forward-Backtest ${s.backtest ? s.backtest.win + '% Win-Rate bei ' + s.backtest.n + ' gereiften Picks' : ''}">⭐ Kern-Setup</span>` : '';
   const depot = s.im_depot
     ? '<span class="badge b-depot" title="Bereits offene Position im Depot">📌 im Depot</span>' : '';
+  const beob = aufFokusliste(s.ticker)
+    ? '<span class="badge b-watch" title="Steht auf der Fokusliste (👀 Beobachtet oben)">👀 beobachtet</span>' : '';
   const distPct = (s.pivot > 0 && s.preis != null) ? ((s.preis - s.pivot) / s.pivot * 100) : null;
 
   document.getElementById('main').innerHTML = `
@@ -334,7 +547,7 @@ function render() {
         </div>
         <div class="card-px">${s.preis != null ? s.preis : '—'}<div class="sub">aktueller Kurs</div></div>
       </div>
-      <div class="badges">${kern}${depot}${badge}${konfluenz(s)}</div>
+      <div class="badges">${beob}${kern}${depot}${badge}${konfluenz(s)}</div>
       <div class="pivotline">
         <div>Pivot<b>${s.pivot != null ? s.pivot : '—'}</b></div>
         <div>Stop<b>${s.stop != null ? s.stop : '—'}</b></div>
@@ -400,6 +613,19 @@ function entscheiden(status) {
   idx++;
   speichereSession();
   render();
+  if (status === 'beobachten') beobachte(s);
+}
+
+async function beobachte(s) {
+  const eintrag = { ticker: s.ticker, name: s.name || '', quelle: 'Kauf-Review',
+                    pivot: s.pivot > 0 ? s.pivot : null, stop: s.stop > 0 ? s.stop : null,
+                    date: new Date().toLocaleDateString('de-DE') };
+  const r = await aendereFokusliste((wl, vermerke, jetzt) => {
+    const alt = wl.find(w => w.ticker === s.ticker) || {};
+    delete vermerke[s.ticker];
+    return [{ ...alt, ...eintrag, ts: jetzt }, ...wl.filter(w => w.ticker !== s.ticker)];
+  });
+  zeigeToast(`👀 ${s.ticker} auf der Fokusliste` + (r.cloud ? ' ✓ alle Geräte' : ' (nur dieses Gerät)'));
 }
 
 function kaufen() {
