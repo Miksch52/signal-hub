@@ -51,6 +51,11 @@
   .krbar input{width:88px;padding:8px 9px;border:1px solid var(--line);border-radius:8px;
                font-size:13px;color:var(--txt);background:var(--bg2);min-height:36px}
   .krbar .note{width:100%;font-size:11px;color:var(--muted2);margin-top:2px}
+  .krbar .presets{display:flex;gap:6px;flex-wrap:wrap;width:100%}
+  .krbar .presets button{min-height:44px;min-width:44px;padding:0 12px;border-radius:10px;
+               border:1px solid var(--line);background:var(--bg2);color:var(--txt);
+               font-size:13px;font-weight:600;cursor:pointer;font-variant-numeric:tabular-nums}
+  .krbar .presets button.aktiv{background:var(--teal-dim);border-color:var(--primary);color:var(--primary)}
 
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;
         padding:20px;box-shadow:var(--shadow-lg);flex:1;display:flex;flex-direction:column;
@@ -163,7 +168,8 @@ function ladeFehlgeschlagen() { ladefehler = true; }
 <script src="data/top_setups.js" onerror="ladeFehlgeschlagen()"></script>
 <script>
 const enc = encodeURIComponent;
-const WARN = 10;   // Earnings-Warnfenster, konsistent zu index.html/Signal-Hub warnTage()
+const WARN = 10;
+const KAPITAL_PRESETS = [3000, 5000, 10000, 15000];   // Schnellwahl, Feld bleibt frei editierbar   // Earnings-Warnfenster, konsistent zu index.html/Signal-Hub warnTage()
 const IST_STANDALONE_PWA = window.matchMedia('(display-mode: standalone)').matches;
 
 const TT_LABELS = {
@@ -314,8 +320,10 @@ function render() {
   document.getElementById('main').innerHTML = `
     ${window.TOP_SETUPS.marktregime ? renderRegimeBanner(window.TOP_SETUPS.marktregime) : ''}
     <div class="krbar">
-      <label>Kapital <input type="number" id="kr-kapital" inputmode="decimal" placeholder="z.B. 20000" oninput="render()"></label>
-      <label>Risiko % <input type="number" id="kr-risiko" inputmode="decimal" step="0.25" placeholder="1.25" oninput="render()"></label>
+      <div class="presets">${KAPITAL_PRESETS.map(v =>
+        `<button type="button" data-kapital="${v}" onclick="setzeKapital(${v})">${v.toLocaleString('de-DE')} €</button>`).join('')}</div>
+      <label>Kapital <input type="number" id="kr-kapital" inputmode="decimal" placeholder="z.B. 20000" oninput="aktualisiereGroesse()"></label>
+      <label>Risiko % <input type="number" id="kr-risiko" inputmode="decimal" step="0.25" placeholder="1.25" oninput="aktualisiereGroesse()"></label>
       <div class="note">Grobe Schätzung ohne Exposure-Deckel/Portfolio-Limits — die Hauptapp rechnet beim Speichern verbindlich nach.</div>
     </div>
     <div class="card">
@@ -348,7 +356,26 @@ function render() {
     if (kEl && !kEl.value) kEl.value = localStorage.getItem('kaufReviewKapital') || '';
     if (rEl && !rEl.value) rEl.value = localStorage.getItem('kaufReviewRisiko') || '1.25';
   } catch (e) {}
+  aktualisiereGroesse();
   autoFillKapital();
+}
+
+// Nur den Stückzahl-Kasten neu zeichnen, NICHT die ganze Karte: render()
+// ersetzt per innerHTML auch die Eingabefelder, dadurch verlor das
+// Kapital-Feld bei jedem Tastendruck den Cursor.
+function aktualisiereGroesse() {
+  const box = document.querySelector('#main .sizebox');
+  if (box && idx < QUEUE.length) box.outerHTML = renderSizeBox(QUEUE[idx]);
+  const k = parseFloat((document.getElementById('kr-kapital') || {}).value) || 0;
+  document.querySelectorAll('.krbar .presets button').forEach(b =>
+    b.classList.toggle('aktiv', Number(b.dataset.kapital) === k));
+}
+
+function setzeKapital(v) {
+  const el = document.getElementById('kr-kapital');
+  if (!el) return;
+  el.value = v;
+  aktualisiereGroesse();
 }
 
 // Best-effort Depotwert-Summe vom lokalen 8090-Server (nur wenn same-origin
@@ -363,7 +390,7 @@ async function autoFillKapital() {
     if (!r.ok) return;
     const d = await r.json();
     const summe = (d.depots || []).reduce((sum, dep) => sum + (Number(dep.depotwert) || 0), 0);
-    if (summe > 0 && el && !el.value) { el.value = Math.round(summe); render(); }
+    if (summe > 0 && el && !el.value) { el.value = Math.round(summe); aktualisiereGroesse(); }
   } catch (e) {}
 }
 
