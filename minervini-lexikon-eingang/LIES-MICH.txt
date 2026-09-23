@@ -23,3 +23,12 @@ Nichts hier wird von der Signal-Hub-Pipeline gelöscht oder verändert.
 3. Doppelte werden automatisch erkannt (Video-ID, Text-Hash, Textanfang) und
    in transkripte/_duplikate/ abgelegt, nie doppelt erfasst und nie geloescht.
 Volltexte bleiben nur lokal in data/minervini-lexikon/transkripte/.
+
+--- Direkt im Coach (seit 2026-09-23, jedes Geraet) ---
+- Lexikon: "+ Post hinzufuegen" erfasst einen Post ohne Chat; der Muelleimer
+  an jedem Post/Video loescht ihn auf allen Geraeten (kommt auch durch einen
+  spaeteren Import nicht zurueck).
+- Lektionen: "+ Video vormerken" legt Link (+ optional Transkript) in eine
+  Warteschlange. Claude im Chat sagen "Vorgemerkte Videos verarbeiten" -
+  dann laeuft: python3 src/minervini_transkripte.py --eingang
+  und nach dem Schreiben der Kernaussagen: python3 src/minervini_lexikon.py --gist

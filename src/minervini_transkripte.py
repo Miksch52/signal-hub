@@ -29,6 +29,15 @@ sie, statt als Dublette abgewiesen zu werden.
 
 Die Kernaussagen erstellt danach Claude im Chat und legt sie per
 minervini_lexikon.py --eintraege als Eintrag typ "video_lektion" ab.
+
+Warteschlange aus dem Coach (seit 2026-09-23): "＋ Video vormerken" im Reiter
+Lektionen legt Link + optional eingefuegtes Transkript in die Datei
+minervini-lexikon-eingang.json im privaten Coach-Gist. --eingang holt sie ab:
+Transkripte laufen durch dieselbe Dublettenpruefung wie oben, danach wird der
+Transkripttext aus dem Gist entfernt (Volltext bleibt nur lokal, Urheberrecht),
+Videos ohne Transkript werden im Index registriert. Die Vormerkung selbst
+verschwindet, sobald es Lektionen zu dem Video gibt (minervini_lexikon.py
+--gist raeumt auf). Im Coach geloeschte Videos werden nicht wieder aufgenommen.
 """
 
 import argparse
@@ -156,6 +165,90 @@ def verarbeite(pfad, url=None, datum=None):
     return schluessel
 
 
+ROH_ZEIT = re.compile(r"^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*(.*)$")
+# Barrierefreiheits-Beschriftungen, die YouTube beim Kopieren mitliefert
+ROH_LABEL = re.compile(r"^\d+\s*(sekunden?|seconds?|minuten?|minutes?|stunden?|hours?)"
+                       r"(,?\s*\d+\s*(sekunden?|seconds?|minuten?|minutes?))*$", re.I)
+
+
+def _roh_zu_txt(roh, titel):
+    """Eingefuegtes YouTube-Transkript ("0:00" auf eigener Zeile oder davor)
+    in das Format "[mm:ss] Text" bringen, das parse() erwartet."""
+    abschnitte = []
+    for z in (roh or "").splitlines():
+        z = z.strip()
+        if not z or ROH_LABEL.match(z):
+            continue
+        m = ROH_ZEIT.match(z)
+        if m:
+            abschnitte.append([m.group(1), m.group(2).strip()])
+        elif abschnitte:
+            abschnitte[-1][1] = (abschnitte[-1][1] + " " + z).strip()
+    return titel + "\n" + "\n".join(f"[{t}] {x}" for t, x in abschnitte if x) + "\n"
+
+
+def eingang_abholen():
+    import minervini_lexikon as ml
+    gist_id = ml.gist_finden()
+    roh = ml.gist_datei_lesen(gist_id, ml.GIST_EINGANG) if gist_id else None
+    if not roh:
+        print("Warteschlange: leer (keine Vormerkungen im Gist).")
+        return
+    eingang = json.loads(roh)
+    videos = eingang.get("videos") or []
+    daten = ml._lade_lexikon()
+    fertig = {e.get("video_id") for e in daten["eintraege"] if e.get("typ") == "video_lektion"}
+    gesperrt = ml.gesperrte_video_ids(daten)
+    geaendert = False
+    os.makedirs(EINGANG, exist_ok=True)
+    for it in videos:
+        vid, url = it.get("video_id"), it.get("url")
+        if not vid or vid in fertig or vid in gesperrt:
+            continue
+        titel = it.get("titel") or f"YouTube-Video {vid}"
+        if it.get("transkript") and it.get("status") != "uebernommen":
+            tmp = os.path.join(EINGANG, f"{vid}.txt")
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(_roh_zu_txt(it["transkript"], titel))
+            verarbeite(tmp, url, it.get("datum"))
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            eintrag = next((v for v in _lade_index()["videos"].values() if v.get("video_id") == vid), None)
+            if eintrag and eintrag.get("datei"):
+                it.update({"status": "uebernommen", "transkript": None,
+                           "uebernommen_am": datetime.now().astimezone().isoformat(timespec="seconds")})
+                geaendert = True
+            else:
+                it["status"] = "fehler"
+                it["fehler"] = "Transkript nicht lesbar (zu wenige Zeitmarken) - bleibt vorgemerkt"
+                geaendert = True
+        elif not it.get("transkript"):
+            idx = _lade_index()
+            if not any(v.get("video_id") == vid for v in idx["videos"].values()):
+                idx["videos"][f"yt-{vid}"] = {
+                    "titel": titel, "video_id": vid, "url": url, "datum": it.get("datum"),
+                    "hash": None, "kopf": None, "datei": None, "quelle": "coach_warteschlange",
+                    "aufgenommen": datetime.now().astimezone().isoformat(timespec="seconds"),
+                }
+                _speichere_index(idx)
+                print(f"+ Registriert (ohne Transkript): yt-{vid} | {titel[:60]}")
+    if geaendert:
+        ml.gist_datei_schreiben(gist_id, ml.GIST_EINGANG, json.dumps(eingang, ensure_ascii=False, indent=1))
+    idx = _lade_index()["videos"]
+    print("\nWarteschlange:")
+    for it in videos:
+        vid = it.get("video_id")
+        if vid in fertig or vid in gesperrt:
+            zustand = "erledigt (wird beim naechsten --gist entfernt)"
+        elif any(v.get("video_id") == vid and v.get("datei") for v in idx.values()):
+            zustand = "Transkript liegt lokal - bereit fuer Kernaussagen"
+        elif it.get("status") == "fehler":
+            zustand = "FEHLER: " + it.get("fehler", "")
+        else:
+            zustand = "ohne Transkript - Transkript besorgen (Apify-JSON oder .txt)"
+        print(f"  {vid} | {(it.get('titel') or it.get('url') or '')[:55]} | {zustand}")
+
+
 def _srt_zu_txt(srt, titel):
     zeilen = [titel]
     letzter = None
@@ -181,10 +274,15 @@ def importiere_json(pfad):
     idx = _lade_index()
     bekannt = {v.get("video_id") for v in idx["videos"].values() if v.get("video_id")}
     neu_registriert = mit_transkript = schon_da = 0
+    import minervini_lexikon as ml
+    gesperrt = ml.gesperrte_video_ids(ml._lade_lexikon())
     os.makedirs(EINGANG, exist_ok=True)
     for it in videos:
         vid, url, titel = it.get("id"), it.get("url"), it.get("title") or ""
         if not vid or not url:
+            continue
+        if vid in gesperrt:
+            print(f"  - {vid} wurde im Coach geloescht - uebersprungen.")
             continue
         datum = (it.get("date") or "")[:10] or None
         srt = next((s.get("srt") for s in (it.get("subtitles") or []) if s.get("srt")), None)
@@ -219,10 +317,14 @@ def importiere_json(pfad):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", help="Apify-YouTube-Scraper-JSON importieren (siehe Modul-Docstring)")
+    ap.add_argument("--eingang", action="store_true", help="im Coach vorgemerkte Videos aus dem Gist abholen")
     ap.add_argument("--datei", help="einzelne Datei statt des ganzen Eingang-Ordners")
     ap.add_argument("--url", help="YouTube-URL (nur mit einer einzelnen Datei)")
     ap.add_argument("--datum", help="Veroeffentlichungsdatum JJJJ-MM-TT (nur mit einer einzelnen Datei)")
     a = ap.parse_args()
+    if a.eingang:
+        eingang_abholen()
+        raise SystemExit(0)
     if a.json:
         importiere_json(a.json)
         raise SystemExit(0)
