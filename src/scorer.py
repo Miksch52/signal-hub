@@ -495,6 +495,17 @@ def yahoo_code33(symbol, op, crumb):
         letzte_marge = marge[-1]
         kandidaten = [m for m in (marge[-3] if len(marge) >= 3 else None,
                                    marge[-4] if len(marge) >= 4 else None) if m]
+        # Datenqualitaet (seit 2026-09-24, Befund HALO): ein Vergleichsquartal
+        # mit negativer Marge zaehlt nicht, wenn die Reihe davor schon ein
+        # profitables Quartal (Marge > 0) hatte - das ist ein einmaliger
+        # Sonderverlust, keine Basis fuer "Marge verbessert" (HALO: +79 Pp
+        # gegen das Verlustquartal, -1,7 Pp gegen das Quartal davor).
+        # Turnarounds aus durchgehenden Verlusten bleiben unveraendert.
+        # Identisch in mts-cors-proxy.js::fetchCode33() - beide mitpflegen.
+        def einmal_verlust(k):
+            return k["val"] < 0 and any(x["val"] > 0 for x in marge if x["date"] < k["date"])
+        marge_basis_ausgeschlossen = [k["date"] for k in kandidaten if einmal_verlust(k)]
+        kandidaten = [k for k in kandidaten if not einmal_verlust(k)]
         marge_delta_pp, marge_erfuellt = None, False
         for k in kandidaten:
             delta = (letzte_marge["val"] - k["val"]) * 100
@@ -546,6 +557,7 @@ def yahoo_code33(symbol, op, crumb):
             "umsatz_yoy_pct": round(rev_yoy * 1000) / 10 if rev_yoy is not None else None,
             "marge_delta_pp": round(marge_delta_pp * 10) / 10 if marge_delta_pp is not None else None,
             "marge_aktuell_pct": round(letzte_marge["val"] * 1000) / 10,
+            "marge_basis_ausgeschlossen": marge_basis_ausgeschlossen,
             "quartal": letzte_marge["date"], "vorjahresquartal": rev_paar["vorjahr"]["date"],
         }
     except Exception:
@@ -603,7 +615,8 @@ def f_code33(ergebnisse, yop, ycrumb, schwellen, gew, gew_summe):
             e["code33"] = {k: c[k] for k in (
                 "verfuegbar", "ampel", "eps_erfuellt", "umsatz_erfuellt", "marge_erfuellt",
                 "anzahl_erfuellt", "eps_yoy_pct", "umsatz_yoy_pct", "marge_delta_pp",
-                "marge_aktuell_pct", "quartal", "vorjahresquartal") if k in c}
+                "marge_aktuell_pct", "marge_basis_ausgeschlossen", "quartal",
+                "vorjahresquartal") if k in c}
         # Score-Faktor (seit 2026-09-06, siehe Docstring). Delta gegen den
         # 0.5-Platzhalter aus dem Haupt-Loop, exakt wie f_fundamental().
         c33 = e.get("code33") or {}
@@ -612,7 +625,11 @@ def f_code33(ergebnisse, yop, ycrumb, schwellen, gew, gew_summe):
             wert = n_erf / 3
             detail = (f"{n_erf}/3 Kriterien: EPS {_fmt_pct((c33.get('eps_yoy_pct') or 0)/100)}, "
                       f"Umsatz {_fmt_pct((c33.get('umsatz_yoy_pct') or 0)/100)}, "
-                      f"Marge {c33.get('marge_delta_pp')} Pp. (Quartal {c33.get('quartal')})")
+                      f"Marge {c33.get('marge_delta_pp') if c33.get('marge_delta_pp') is not None else 'n/a'} Pp. "
+                      f"(Quartal {c33.get('quartal')})")
+            if c33.get("marge_basis_ausgeschlossen"):
+                detail += (" · Verlustquartal " + ", ".join(c33["marge_basis_ausgeschlossen"])
+                           + " als Margenbasis ausgeschlossen")
         else:
             wert = 0.5
             detail = "keine Quartalsreihe verfügbar (neutral gewertet, kein Malus)"

@@ -805,7 +805,8 @@ function code33Card(c){
   const teile = [
     [c.eps_erfuellt, `EPS ${pctTxt(c.eps_yoy_pct)} ggü. Vorjahresquartal (Schwelle &gt;40%)`],
     [c.umsatz_erfuellt, `Umsatz ${pctTxt(c.umsatz_yoy_pct)} ggü. Vorjahresquartal (Schwelle &gt;7%)`],
-    [c.marge_erfuellt, `Nettomarge ${ppTxt(c.marge_delta_pp)} ggü. 2-3 Quartale zuvor (Schwelle &gt;2 Pp.)`],
+    [c.marge_erfuellt, `Nettomarge ${ppTxt(c.marge_delta_pp)} ggü. 2-3 Quartale zuvor (Schwelle &gt;2 Pp.)`
+      + ((c.marge_basis_ausgeschlossen||[]).length ? ` · Verlustquartal ${c.marge_basis_ausgeschlossen.map(d=>d.split('-').reverse().join('.')).join(', ')} als Basis ausgeschlossen (einmaliger Sonderverlust)` : '')],
   ].map(([ok,txt])=>`${ok?'✅':'❌'} ${txt}`).join('<br>');
   return `<div class="fcard fcard-${c.ampel||'na'}" id="code33wrap">${dot(c.ampel)}<div class="fcard-body">
     <div class="fcard-head">
