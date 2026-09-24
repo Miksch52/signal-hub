@@ -2677,10 +2677,17 @@ def score_alle(limit=None):
         # spaeter (sobald genug Episoden gereift sind) nicht nur Tier A/B,
         # sondern JEDER EINZELNE Faktor gegen den Forward-Return auswerten
         # laesst (welche Methoden/Filter tatsaechlich Erfolg vorhersagen).
+        # quellen mitloggen (seit 2026-09-24, TraderFox-Quellen-Audit): typen
+        # (z. B. "trader-zeitung", "mail:tagesperf", "finviz:…") + Datum der
+        # juengsten Nennung. Rueckwirkend ging das nicht - das IMAP-Postfach
+        # reicht nur ~1 Monat zurueck -, nur so laesst sich je Magazin/Mail-Typ
+        # eine unverzerrte Forward-Kohorte bilden.
         top = [{"ticker": e["ticker"], "score": e["score"], "tier": e["tier"],
                 "preis": e["preis"], "markt": e["markt"],
                 "faktoren": {k: {"wert": v["wert"], "ampel": v["ampel"]}
-                             for k, v in (e.get("faktoren") or {}).items()}}
+                             for k, v in (e.get("faktoren") or {}).items()},
+                "quellen": {"typen": (e.get("quellen") or {}).get("typen") or [],
+                            "zuletzt": (e.get("quellen") or {}).get("zuletzt")}}
                for e in ergebnisse if e["score"] >= schwellen["beobachten"]]
         # Gewichte des Tages mitloggen (seit 2026-09-12, Systempruefung
         # Punkt 1): eine Gewichtsaenderung ist nach der Backtest-Pflicht wie
