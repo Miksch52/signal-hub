@@ -2045,7 +2045,7 @@ function renderStory(d){
       ${newsHtml}
     </div>
     <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
-      KI-generierte Zusammenfassung (Claude, Yahoo-Finance-Daten) · rein informativ, keine Anlageberatung,
+      KI-generierte Zusammenfassung (Llama 3.1 8B über Cloudflare Workers AI, Yahoo-Finance-Daten) · rein informativ, keine Anlageberatung,
       keine Kauf-/Verkaufsempfehlung · Stand ${stand} Uhr
     </div>`;
 }
@@ -2136,7 +2136,7 @@ async function ladeStory(ticker, yahooSymbol, name){
 }
 
 // ─── Erweiterter Bericht (seit 2026-08-08) ──────────────────────────────
-// Manuell per Button, NICHT automatisch: mehr externe Aufrufe (Google News +
+// Manuell per Button, NICHT automatisch: mehr externe Aufrufe (Yahoo-Schlagzeilen +
 // ggf. Reddit) als /story, daher spuerbar langsamer. Reddit-Abschnitt taucht
 // nur auf, wenn der Worker REDDIT_CLIENT_ID/-SECRET gesetzt hat (reddit_aktiv).
 function renderDeepButton(ticker, yahooSymbol, name){
@@ -2165,7 +2165,7 @@ function renderDeep(d){
         ${redditHtml || '<div style="color:var(--muted);font-size:12.5px">Keine Treffer im letzten Monat.</div>'}
       </div>`
     : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">
-        💬 Reddit-Anbindung noch nicht eingerichtet (Worker-Secrets fehlen) — Bericht basiert nur auf Google News.
+        💬 Reddit-Anbindung noch nicht eingerichtet (Worker-Secrets fehlen) — Bericht basiert nur auf Yahoo-Schlagzeilen.
       </div></div>`;
 
   // SEC-EDGAR-Filings (seit 2026-08-09): echte offizielle Einreichungen statt
@@ -2201,11 +2201,11 @@ function renderDeep(d){
     ${edgarBlock}
     ${redditBlock}
     <div class="pivotcard">
-      <div class="pdetail" style="margin-bottom:0">📰 Weitere Schlagzeilen (Google News)</div>
+      <div class="pdetail" style="margin-bottom:0">📰 Weitere Schlagzeilen (Yahoo Finance)</div>
       ${newsHtml}
     </div>
     <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
-      KI-generierter erweiterter Bericht (Google News${d.reddit_aktiv?' + Reddit':''}${d.edgar_aktiv?' + SEC EDGAR':''}) · rein informativ, keine
+      KI-generierter erweiterter Bericht (Llama 3.1 8B über Cloudflare Workers AI · Yahoo Finance${d.reddit_aktiv?' + Reddit':''}${d.edgar_aktiv?' + SEC EDGAR':''}) · rein informativ, keine
       Anlageberatung, keine Kauf-/Verkaufsempfehlung · Stand ${stand} Uhr
     </div>`;
 }
@@ -2213,7 +2213,7 @@ function renderDeep(d){
 async function ladeDeepStory(ticker, yahooSymbol, name){
   const wrap = document.getElementById('deepwrap');
   if(!wrap) return;
-  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt erweiterten Bericht (Google News' +
+  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt erweiterten Bericht (Yahoo Finance' +
     ', ggf. Reddit/SEC EDGAR) — kann etwas länger dauern …</div></div>';
   try{
     const u = MTS_PROXY + 'deep-story?ticker=' + encodeURIComponent(yahooSymbol || ticker)
