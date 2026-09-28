@@ -301,6 +301,37 @@
   .klimax-warn{background:rgba(178,58,46,.08);border:1px solid rgba(178,58,46,.35);border-radius:12px;
                padding:10px 14px;font-size:12.5px;color:var(--bad);margin-bottom:12px}
 
+  /* Key Points (seit 2026-09-28): die fuenf Punkte, die fuer die Entscheidung
+     zaehlen, in einem iPhone-Bildschirm. Alles darunter ist zugeklappt. */
+  .kp{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+      padding:16px 18px 12px;margin-bottom:12px;border-top:3px solid var(--line)}
+  .kp.kp-gruen{border-top-color:var(--ok)} .kp.kp-gelb{border-top-color:var(--warn)} .kp.kp-rot{border-top-color:var(--bad)}
+  .kp-kopf{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--primary);margin-bottom:6px}
+  .kp-urteil{font-size:14.5px;line-height:1.45;margin-bottom:10px;max-width:72ch}
+  .kp-urteil .t-ok{color:var(--ok)} .kp-urteil .t-warn{color:var(--warn)} .kp-urteil .t-bad{color:var(--bad)}
+  .kp-z{display:grid;grid-template-columns:88px 1fr;gap:10px;padding:8px 0;border-top:1px solid var(--line2);
+        font-size:13px;line-height:1.45}
+  .kp-k{font-weight:700;color:var(--muted);font-size:12px}
+  .kp-v{min-width:0}
+  .kp-v .w-gruen{color:var(--ok)} .kp-v .w-gelb{color:var(--warn)} .kp-v .w-rot{color:var(--bad)}
+  .kp-leer{color:var(--muted2)}
+  .kp-quelle{display:block;font-size:10.5px;color:var(--muted2);margin-top:2px}
+  .kp-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;padding-top:10px;border-top:1px solid var(--line2)}
+  .kp-links button{font:inherit;font-size:12px;font-weight:600;color:var(--primary);background:var(--teal-dim);
+    border:1px solid rgba(31,110,102,.3);border-radius:20px;padding:0 13px;min-height:44px;cursor:pointer}
+  .acc{scroll-margin-top:76px}
+  #canslimwrap{scroll-margin-top:76px}
+  .acc-dots{margin-left:auto;display:flex;gap:5px;align-items:center}
+  .acc-pill{margin-left:auto;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap}
+  .acc-pill.u-gruen{background:rgba(46,139,87,.12);color:var(--ok)}
+  .acc-pill.u-gelb{background:rgba(192,138,46,.14);color:var(--warn)}
+  .acc-pill.u-rot{background:rgba(178,58,46,.12);color:var(--bad)}
+  @media (max-width:720px){
+    .tv-box{height:360px}
+    .kp-z{grid-template-columns:74px 1fr;gap:8px}
+    .acc>summary .acc-sub{display:none}
+  }
+
   /* Direktanalyse (seit 2026-09-10): Hinweisbox fuer Ticker ohne Signal-Hub-
      Treffer - bewusst neutral/informativ (Teal statt Rot wie .klimax-warn),
      das ist keine Warnung, sondern eine Erklaerung fehlender Abschnitte. */
@@ -493,9 +524,6 @@ function sortiereNachAmpel(keys, faktoren){
     const fa = faktoren && faktoren[a], fb = faktoren && faktoren[b];
     return (AMPEL_RANG[fa && fa.ampel] ?? 3) - (AMPEL_RANG[fb && fb.ampel] ?? 3);
   });
-}
-function zaehleGruen(keys, faktoren){
-  return keys.filter(k => { const f = faktoren && faktoren[k]; return f && f.ampel === 'gruen'; }).length;
 }
 const qsClass = ampel => 'qs-item q-' + (ampel || 'na');
 // Yahoo haengt bei Nicht-US-Boersen ein Laender-/Boersen-Kuerzel an (SY1.DE,
@@ -1152,13 +1180,9 @@ function saeuleMomentum(t){
   const rs = t.rs_rating;
   const ampel = rs==null ? (t.faktoren && t.faktoren.relative_staerke ? t.faktoren.relative_staerke.ampel : 'na')
               : rs>=90 ? 'gruen' : rs>=70 ? 'gelb' : 'rot';
-  const tt = t.trend_template || {};
-  const ttTxt = (tt.erfuellt!=null && tt.gesamt) ? `${tt.erfuellt} / ${tt.gesamt}` : '—';
-  const ttAmpel = (tt.erfuellt!=null && tt.gesamt) ? (tt.erfuellt>=tt.gesamt-1 ? 'gruen' : tt.erfuellt>=6 ? 'gelb' : 'rot') : null;
   const untHoch = detailZahl((t.faktoren&&t.faktoren.naehe_52w_hoch||{}).detail, /([\d.,]+)\s*%\s*unter/);
   const verengung = detailZahl((t.faktoren&&t.faktoren.basis_konsolidierung||{}).detail, /Verengung\s*([\d.,]+)/);
   const zeilen = [
-    dzeile('Trend-Template', ttTxt, ttAmpel),
     dzeile('Abstand 52W-Hoch', untHoch!=null ? '−'+dzahl(untHoch)+' %' : '—',
            untHoch!=null ? (untHoch<=5?'gruen':untHoch<=15?'gelb':'rot') : null),
     dzeile('Basis-Verengung', verengung!=null ? dzahl(verengung)+'×' : '—',
@@ -1261,7 +1285,7 @@ function saeuleSubstanz(t){
 // Verdikt-Satz + Risiko-Chips: fasst die drei Saeulen zu einer Aussage
 // zusammen und nennt im selben Atemzug, was dagegen spricht (spaete Basis,
 // weit ueber SMA50) - genau die Punkte, die ein hoher Score sonst uebertoent.
-function dashVerdikt(t, aMom, aGeld, aSub, regime){
+function dashVerdikt(t, aMom, aGeld, aSub){
   const gruen = [aMom,aGeld,aSub].filter(a=>a==='gruen').length;
   const rot = [aMom,aGeld,aSub].filter(a=>a==='rot').length;
   const spaet = (t.basis_nr!=null && t.basis_nr>=3) || (t.extended_pct!=null && t.extended_pct>10);
@@ -1280,21 +1304,11 @@ function dashVerdikt(t, aMom, aGeld, aSub, regime){
     satz += `, aber <span class="t-warn">spät im Zyklus</span>: ${teile.join(' und ')}.`;
   } else satz += '.';
 
-  const chips = [];
-  const rAmpel = regime && t.markt && regime[t.markt] && regime[t.markt].ampel;
-  if(rAmpel) chips.push(`<span class="dash-chip c-${rAmpel}">Markt-Regime ${({gruen:'grün',gelb:'gelb',rot:'rot'})[rAmpel]||rAmpel}</span>`);
-  const e = t.earnings || {};
-  if(e.status==='termin' && e.tage!=null) chips.push(`<span class="dash-chip c-rot">Earnings in ${e.tage} Tagen</span>`);
-  else if(e.status==='kein_termin') chips.push('<span class="dash-chip c-gruen">Keine Earnings-Sperre</span>');
-  chips.push(t.klimax_warnung
-    ? '<span class="dash-chip c-rot">50/80-Klimax-Warnung</span>'
-    : '<span class="dash-chip c-gruen">Kein 50/80-Risiko</span>');
-  if(t.basis_nr!=null) chips.push(`<span class="dash-chip ${t.basis_nr>=3?'c-gelb':'c-gruen'}">${t.basis_nr}. Basis</span>`);
-  if(t.extended_pct!=null) chips.push(`<span class="dash-chip ${t.extended_pct>10?'c-gelb':'c-gruen'}">${dzahl(t.extended_pct)} % über SMA50</span>`);
+  // Risiko-Chips (Regime, Earnings, 50/80, Basis, SMA50) stehen seit
+  // 2026-09-28 gebuendelt in den Key Points ganz oben.
   return {gesamt, html: `<div class="dash-verdikt v-${gesamt}">
     <div class="dash-frage">Wie aussichtsreich ist ${esc(t.ticker)} für den weiteren Trendverlauf?</div>
-    <div class="dash-satz">${satz}</div>
-    <div class="dash-chips">${chips.join('')}</div>
+    <div class="dash-satz" style="margin-bottom:0">${satz}</div>
   </div>` };
 }
 
@@ -1388,9 +1402,9 @@ const SEKTOR_ZU_ETF = {
   'Process Industries':'XLI','Producer Manufacturing':'XLI','Retail Trade':'XLY',
   'Technology':'XLK','Technology Services':'IGV','Transportation':'XLI','Utilities':'XLU',
 };
-function dashSektor(t){
+function sektorLage(t){
   const rot = ROTATION_CACHE;
-  if(!rot || !Array.isArray(rot.sectors) || !rot.sectors.length) return '';
+  if(!rot || !Array.isArray(rot.sectors) || !rot.sectors.length) return null;
   const sektoren = rot.sectors.slice().sort((a,b)=>(b.rs||0)-(a.rs||0));
   const leader = (rot.leaders||[]).find(l =>
     (l.ticker||'').toUpperCase() === (t.ticker||'').toUpperCase() ||
@@ -1401,6 +1415,14 @@ function dashSektor(t){
     const etf = SEKTOR_ZU_ETF[(t.sektor||'').trim()];
     if(etf) thema = sektoren.find(s => s.etf === etf);
   }
+  const rs = thema ? thema.rs : null;
+  return {rot, sektoren, leader, thema, rang: thema ? sektoren.indexOf(thema) + 1 : null,
+          ampel: thema ? (rs>=70 ? 'gruen' : rs>=40 ? 'gelb' : 'rot') : null};
+}
+function dashSektor(t){
+  const lage = sektorLage(t);
+  if(!lage) return '';
+  const {rot, sektoren, leader, thema} = lage;
   if(!thema){
     return `<div class="dash-sektor">
       <div class="dsk-kopf">🧭 Sektor-Kontext</div>
@@ -1472,6 +1494,7 @@ async function renderKatalysatorButton(ticker, yahooSymbol, name, markt){
   const batch = window.TOP_SETUPS_KATALYSATOR && window.TOP_SETUPS_KATALYSATOR[ticker];
   if(batch){
     wrap.innerHTML = renderKatalysatorCard({ ticker, name, markt, klasse: batch.klasse, text: batch.text, quellen: batch.quellen, erstellt: batch.stand }, false);
+    katalysatorInKeyPoints(batch.klasse, batch.text);
     return;
   }
   wrap.innerHTML = `<button id="katbtn" class="deepbtn" onclick="ladeKatalysator('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}','${esc(markt||'')}')">⚡ Warum gerade jetzt? <span style="opacity:.7;font-weight:400">(kostenpflichtige Websuche)</span></button>`;
@@ -1498,6 +1521,7 @@ async function ladeKatalysator(ticker, yahooSymbol, name, markt, erzwingen){
     if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
     d.markt = markt;
     wrap.innerHTML = renderKatalysatorCard(d, true);
+    katalysatorInKeyPoints(d.klasse, d.text);
     try{ sessionStorage.setItem(cacheKey, JSON.stringify(d)); }catch(e){ /* Speicher voll/gesperrt - ignorieren */ }
   }catch(e){
     wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
@@ -1505,6 +1529,11 @@ async function ladeKatalysator(ticker, yahooSymbol, name, markt, erzwingen){
     </div></div>
     <button class="deepbtn" onclick="ladeKatalysator('${esc(ticker)}','${esc(symbol)}','${esc(name||'')}','${esc(markt||'')}',true)">🔄 Erneut versuchen</button>`;
   }
+}
+// "Kein Anlass gefunden" ist keine Story - dann bleibt die KI-Zusammenfassung.
+function katalysatorInKeyPoints(klasse, text){
+  if(!klasse || klasse==='keiner' || !text) return;
+  setzeKpStory(text, `Katalysator: ${KAT_KLASSE_LABEL[klasse] || klasse} · Websuche, unverifizierter Fremdinhalt`, 2);
 }
 // Hostname robust aus einer Fremd-URL ziehen - Quellen-Links sind FREMDINHALT
 // AUS DEM NETZ (Perplexity-Citations), new URL() darf hier nie hart crashen.
@@ -1673,10 +1702,7 @@ function minerviniVerdikt(t, regime, p){
       </div>
     </div>`;
   }).join('');
-  return {ampel, html: `<div class="mv-verdikt mv-v-${ampel}">
-      <div class="mv-satz">${satz}</div>
-    </div>
-    <div class="mv-stufen">${zeilen}</div>`};
+  return {ampel, satz, stufen: `<div class="mv-stufen">${zeilen}</div>`};
 }
 
 // Ergaenzung: seine ECHTEN, datierten Aussagen aus dem Minervini-Lexikon
@@ -1704,27 +1730,157 @@ function minerviniLexikonKarte(){
   </div>`;
 }
 
-function minerviniBlock(t, regime, p){
-  const v = minerviniVerdikt(t, regime, p);
-  return `<h2>🎓 Minervini-Analyse <span class="sub">seine Kaufregeln, auf diesen Wert angewandt</span></h2>
-    <div class="mv-wrap">
-      ${v.html}
+// Seit 2026-09-28 zugeklappt: das Urteil steht in den Key Points, hier nur
+// die fuenf Stufen samt Gegenpruefung, Zitat und Vertiefung.
+function minerviniBlock(t, v){
+  const pill = {gruen:'sauber', gelb:'beobachten', rot:'kein Kauf'}[v.ampel] || '';
+  const s2 = t.faktoren && t.faktoren.stage2_trend;
+  const claimed = (s2 && s2.wert!=null) ? s2.wert : 'null';
+  return `<details class="acc" id="acc-mv">
+    <summary>🎓 Minervini-Analyse <span class="acc-sub">fünf Stufen in fester Reihenfolge</span><span class="acc-pill u-${v.ampel}">${pill}</span><span class="chev">▾</span></summary>
+    <div class="acc-body mv-wrap">
+      ${v.stufen}
+      <div id="verifywrap" style="margin-top:10px"><button class="deepbtn" title="${VERIFY_EXPLAIN}" onclick="ladeVerify('${esc(t.ticker)}','${esc(t.yahoo_symbol||t.ticker)}',${claimed})">🔍 Trend-Template frisch nachrechnen</button></div>
       ${minerviniLexikonKarte()}
       <div class="subhead" style="margin-top:16px">🧬 Vertiefung <span class="sub" title="${CANSLIM_EXPLAIN}">CAN SLIM · Minervini-Check · Accumulation · Widerstand/Unterstützung · These — optional, manuell</span></div>
       <div id="canslimwrap"></div>
-    </div>`;
+    </div>
+  </details>`;
 }
 
-function dashboardBlock(t, regime){
-  const aMom = saeuleMomentum(t), aGeld = saeuleGeldfluss(t), aSub = saeuleSubstanz(t);
+function saeulen(t){
+  const mom = saeuleMomentum(t), geld = saeuleGeldfluss(t), sub = saeuleSubstanz(t);
   const ampelVon = html => (html.match(/dash-saeule s-(\w+)/)||[])[1] || 'na';
-  const v = dashVerdikt(t, ampelVon(aMom), ampelVon(aGeld), ampelVon(aSub), regime);
+  return {mom, geld, sub, aMom: ampelVon(mom), aGeld: ampelVon(geld), aSub: ampelVon(sub)};
+}
+
+function dashboardBlock(t, s){
+  const v = dashVerdikt(t, s.aMom, s.aGeld, s.aSub);
   const gewichte = (SIGNALS_CACHE && SIGNALS_CACHE.gewichte) || {};
-  return v.html
-    + `<div class="dash-saeulen">${aMom}${aGeld}${aSub}</div>`
-    + dashSektor(t)
-    + `<div id="katwrap"></div>`
-    + dashBeleg(t, SCORE_BT_CACHE, FAKTOR_BT_CACHE, gewichte);
+  const punkte = [['Momentum', s.aMom], ['Geldfluss', s.aGeld], ['Substanz', s.aSub]]
+    .map(([n, a]) => `<span class="dot d-${a}" title="${n}: ${dashUrteil(a)}"></span>`).join('');
+  return `<details class="acc" id="acc-dash">
+    <summary>📊 Momentum · Geldfluss · Substanz <span class="acc-dots">${punkte}</span><span class="chev">▾</span></summary>
+    <div class="acc-body">
+      ${v.html}
+      <div class="dash-saeulen">${s.mom}${s.geld}${s.sub}</div>
+      ${dashSektor(t)}
+      <div id="katwrap"></div>
+      ${dashBeleg(t, SCORE_BT_CACHE, FAKTOR_BT_CACHE, gewichte)}
+    </div>
+  </details>`;
+}
+
+// ─── Key Points (seit 2026-09-28) ────────────────────────────────────────────
+// Die fuenf Punkte, die fuer die Entscheidung zaehlen, in einem iPhone-
+// Bildschirm - rein aus Werten, die die Seite ohnehin berechnet (Minervini-
+// Stufen, Saeulen, Sektor-Kontext, Forward-Test). Nur die Story-Zeile kommt
+// nachtraeglich: bevorzugt der Katalysator aus dem taeglichen Top-Setups-
+// Lauf, sonst der Anfang der KI-Zusammenfassung von /story.
+function kpKennzahl(t){
+  const it = t.institutional_trend || {};
+  const reihe = Array.isArray(it.norm_pct) ? it.norm_pct : [];
+  const letzte = it.verfuegbar && reihe.length ? reihe[reihe.length-1] : null;
+  const cmf = detailZahl((t.faktoren&&t.faktoren.cmf||{}).detail, /CMF\(21\)\s*([+-]?[\d.,]+)/);
+  const c = t.code33 || {};
+  const vz = x => x>0 ? '+' : '';
+  return {
+    Momentum: t.rs_rating!=null ? `RS-Rating ${t.rs_rating}` : 'relative Stärke',
+    Geldfluss: letzte!=null ? `institutionell ${vz(letzte)}${dzahl(letzte)} % im letzten Quartal`
+             : cmf!=null ? `Chaikin Money Flow ${vz(cmf)}${dzahl(cmf,2)}` : 'keine 13F-Daten',
+    Substanz: c.verfuegbar ? `Code 33: ${c.anzahl_erfuellt}/3` : 'Fundamentaldaten',
+  };
+}
+
+function keyPointsBlock(t, regime, p, v, s){
+  let setup;
+  if(p && p.pivot_status){
+    const st = p.pivot_status;
+    const teile = [`<b class="${st==='ARMED'||st==='BREAKOUT'?'w-gruen':'w-gelb'}">${esc(st)}</b>`];
+    if(p.pivot!=null) teile.push(`Pivot ${dzahl(p.pivot,2)}`);
+    if(p.dist_pct!=null) teile.push(`${p.dist_pct>0?'+':''}${dzahl(p.dist_pct)} % zum Pivot`);
+    if(p.stop!=null) teile.push(`Stop ${dzahl(p.stop,2)}${p.stop_pct!=null?` (−${dzahl(Math.abs(p.stop_pct))} %)`:''}`);
+    setup = teile.join(' · ');
+  } else setup = '<span class="kp-leer">kein Pivot-Setup aktiv – gekauft wird erst am Pivot</span>';
+
+  const r = [];
+  const ra = regime && t.markt && regime[t.markt] && regime[t.markt].ampel;
+  if(ra==='rot' || ra==='gelb') r.push(`<b class="w-${ra}">Markt-Regime ${ra}</b>`);
+  const e = t.earnings || {};
+  if(e.status==='termin' && e.tage!=null && e.tage>=0 && e.tage<=10) r.push(`<b class="w-rot">Earnings in ${e.tage} Tagen</b>`);
+  if(t.klimax_warnung) r.push('<b class="w-rot">50/80-Klimax-Warnung</b>');
+  if(t.extended_pct!=null && t.extended_pct>10) r.push(`<b class="w-${t.extended_pct>25?'rot':'gelb'}">${dzahl(t.extended_pct)} % über SMA50</b>`);
+  if(t.basis_nr!=null && t.basis_nr>=3) r.push(`<b class="w-${t.basis_nr>=5?'rot':'gelb'}">${t.basis_nr}. Basis</b>`);
+  if(p && p.stop_pct!=null && Math.abs(p.stop_pct)>8) r.push(`<b class="w-${Math.abs(p.stop_pct)>10?'rot':'gelb'}">weiter Stop (${dzahl(Math.abs(p.stop_pct))} %)</b>`);
+  const k = SCORE_BT_CACHE && SCORE_BT_CACHE.ergebnis && SCORE_BT_CACHE.ergebnis[t.tier] && SCORE_BT_CACHE.ergebnis[t.tier]['4W'];
+  if(k && k.n && k.edge_idx_avg!=null && k.edge_idx_avg<0)
+    r.push(`<b class="w-gelb">Forward-Test:</b> Tier ${esc(t.tier)} lag nach 4 Wochen ${dzahl(Math.abs(k.edge_idx_avg))} pp hinter dem Index (n = ${k.n})`);
+  const risiken = r.length ? r.join(' · ')
+    : '<span class="kp-leer">keine aktiv (geprüft: Regime, Earnings, 50/80, SMA50-Abstand, Basis, Stop, Forward-Test)</span>';
+
+  const kz = kpKennzahl(t);
+  const plus = [], minus = [];
+  [['Momentum', s.aMom], ['Geldfluss', s.aGeld], ['Substanz', s.aSub]].forEach(([n, a]) => {
+    if(a==='gruen') plus.push(`<b>${n}</b> (${kz[n]})`);
+    else if(a==='gelb' || a==='rot') minus.push(`<b class="w-${a}">${n} ${dashUrteil(a)}</b> (${kz[n]})`);
+    else minus.push(`<span class="kp-leer">${n}: keine Daten</span>`);
+  });
+  const tt = t.trend_template || {};
+  if(tt.erfuellt!=null && tt.gesamt) (tt.erfuellt===tt.gesamt ? plus : minus).push(`Trend-Template ${tt.erfuellt}/${tt.gesamt}`);
+  const sl = sektorLage(t);
+  if(sl && sl.thema){
+    const name = `„${esc(sl.thema.theme)}“`;
+    const platz = `Platz ${sl.rang} von ${sl.sektoren.length}`;
+    if(sl.ampel==='gruen') plus.push(sl.leader ? `<b>Leader</b> im Thema ${name} (${platz})` : `Thema ${name} ${platz}`);
+    else {
+      if(sl.leader) plus.push(`<b>Leader</b> im Thema ${name}`);
+      minus.push(`Thema ${name} ${platz}${sl.thema.above_ma50===false ? ', unter SMA50' : ''}`);
+    }
+  }
+
+  const zeile = (label, inhalt, id) => `<div class="kp-z"><div class="kp-k">${label}</div><div class="kp-v"${id?` id="${id}"`:''}>${inhalt}</div></div>`;
+  return `<div class="kp kp-${v.ampel}">
+    <div class="kp-kopf">Key Points · nach Minervinis Regeln</div>
+    <div class="kp-urteil">${v.satz}</div>
+    ${zeile('Setup', setup)}
+    ${zeile('Risiken', risiken)}
+    ${zeile('Stärken', plus.join(' · ') || '<span class="kp-leer">keine der drei Säulen klar erfüllt</span>')}
+    ${zeile('Schwächen', minus.join(' · ') || '<span class="kp-leer">keine</span>')}
+    ${zeile('Story', '<span class="kp-leer">lädt …</span>', 'kp-story')}
+    <div class="kp-links">
+      <button type="button" onclick="springeZu('acc-mv')">🎓 Minervini-Stufen</button>
+      <button type="button" onclick="springeZu('acc-dash')">📊 Säulen &amp; Sektor</button>
+      <button type="button" onclick="springeZu('acc-mv','canslimwrap')">🧬 Tiefere Analyse</button>
+      <button type="button" onclick="springeZu('acc-fund','storyblock')">📰 Story &amp; Zahlen</button>
+    </div>
+  </div>`;
+}
+
+let KP_STORY_RANG = 0;
+function setzeKpStory(text, quelle, rang){
+  const el = document.getElementById('kp-story');
+  if(!el || rang < KP_STORY_RANG) return;
+  KP_STORY_RANG = rang;
+  el.innerHTML = text
+    ? `${esc(text)}<span class="kp-quelle">${esc(quelle)}</span>`
+    : `<span class="kp-leer">${esc(quelle)}</span>`;
+}
+// Satzende nur vor Leerzeichen + Grossbuchstabe, sonst zerlegt "Monday.com"
+// oder "Inc." den Satz.
+function ersteSaetze(text, max){
+  const s = String(text || '').trim();
+  const enden = [...s.matchAll(/[.!?](?=\s+[A-ZÄÖÜ„"]|\s*$)/g)].map(m => m.index + 1);
+  const passend = enden.filter(e => e <= max);
+  if(passend.length) return s.slice(0, passend[passend.length-1]);
+  if(enden.length && enden[0] <= max + 60) return s.slice(0, enden[0]);
+  return s.length <= max + 60 ? s : s.slice(0, max).trim() + ' …';
+}
+
+function springeZu(accId, zielId){
+  const acc = document.getElementById(accId);
+  if(!acc) return;
+  acc.open = true;
+  (document.getElementById(zielId) || acc).scrollIntoView({block: 'start'});
 }
 
 function render(sig, piv, pa, regime){
@@ -1797,7 +1953,9 @@ function render(sig, piv, pa, regime){
   const fundKeysSortiert = sortiereNachAmpel(FUND_KEYS, t.faktoren);
   const techCards = techKeysSortiert.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
   const fundCards = fundKeysSortiert.map(k => fcard(k, t.faktoren && t.faktoren[k])).join('');
-  const techErfuellt = zaehleGruen(TECH_KEYS, t.faktoren);
+  const sa = saeulen(t);
+  const mv = minerviniVerdikt(t, regime, p);
+  KP_STORY_RANG = 0;
 
   // Pivot-Kennzahlen
   let pivotBlock = '<div class="pivotcard"><div class="pdetail">Kein Pivot-Datensatz für diesen Ticker (noch nicht bewertet oder kein Aufwärtstrend/Stage-2-Gate erfüllt).</div></div>';
@@ -1852,18 +2010,17 @@ function render(sig, piv, pa, regime){
 
     ${t.klimax_warnung ? `<div class="klimax-warn">⚠️ <b>Minervini 50/80-Klimax-Warnung:</b> ${(t.faktoren.minervini_5080||{}).detail||''} Späte Basis (≥3) + frischer Gap-down auf hohem Volumen ist das klassische Topmuster — nicht als „billig" nachkaufen.</div>` : ''}
 
-    ${dashboardBlock(t, regime)}
+    ${keyPointsBlock(t, regime, p, mv, sa)}
 
-    ${minerviniBlock(t, regime, p)}
+    ${dashboardBlock(t, sa)}
 
-    <h2>🔎 Sofort-Überblick <span class="sub">${erfuelltCount} von ${qsAmpeln.length} Kriterien grün erfüllt</span></h2>
-    <div class="quickscan">${qsItems.join('')}</div>
+    ${minerviniBlock(t, mv)}
 
-    <!-- Technische Analyse/Fundamentalanalyse starten seit 2026-09-04
-         zugeklappt (Nutzerwunsch, zu viel Scrollen v.a. am iPhone durch die
-         vielen Erweiterungen) - die Charttechnik bleibt bewusst offen (auf
-         erneuten Nutzerwunsch), der Chart ist der Einstiegspunkt der Seite. -->
-    <details class="acc" open>
+    <!-- Seit 2026-09-28 ist alles unter den Key Points zugeklappt (Nutzer-
+         wunsch, zu viel Scrollen am iPhone). Einzige Ausnahme: die
+         Charttechnik bleibt offen (frueherer ausdruecklicher Nutzerwunsch,
+         der Chart ist der Einstiegspunkt der Seite). -->
+    <details class="acc" id="acc-chart" open>
       <summary>🕯️ Charttechnik <span class="acc-sub">Live-Chart, Pivot-Armed-Detektor, Price-Action</span><span class="chev">▾</span></summary>
       <div class="acc-body">
         <div class="chart-wrap">
@@ -1879,19 +2036,21 @@ function render(sig, piv, pa, regime){
       </div>
     </details>
 
-    <details class="acc">
-      <summary>📈 Technische Analyse <span class="acc-sub">Minervini Trend-Template, relative Stärke, Volumen</span><span class="acc-count">${techErfuellt}/${TECH_KEYS.length} grün</span><span class="chev">▾</span></summary>
+    <details class="acc" id="acc-krit">
+      <summary>📋 Alle Kriterien <span class="acc-sub">jeder Score-Faktor einzeln</span><span class="acc-count">${erfuelltCount}/${qsAmpeln.length} grün</span><span class="chev">▾</span></summary>
       <div class="acc-body">
+        <div class="quickscan">${qsItems.join('')}</div>
+        <div class="subhead">📈 Technik</div>
         <div class="fgrid">${techCards}</div>
-        <div class="subhead">🔍 Unabhängige Gegenprüfung <span class="sub" title="${VERIFY_EXPLAIN}">Stage-2-Trend-Template, frisch aus eigenen Kursdaten</span></div>
-        <div id="verifywrap"><button class="deepbtn" onclick="ladeVerify('${esc(t.ticker)}','${esc(t.yahoo_symbol||t.ticker)}',${(t.faktoren && t.faktoren.stage2_trend && t.faktoren.stage2_trend.wert!=null) ? t.faktoren.stage2_trend.wert : 'null'})">🔍 Jetzt gegenprüfen</button></div>
+        <div class="subhead">💵 Fundamental</div>
+        <div class="fgrid">${fundCards}</div>
       </div>
     </details>
 
-    <details class="acc">
-      <summary>💵 Fundamentalanalyse <span class="acc-sub">CANSLIM/Code 33, Dividende, Innerer Wert, Buffett/Munger/Graham, Story</span><span class="chev">▾</span></summary>
+    <details class="acc" id="acc-fund">
+      <summary>💵 Fundamentalanalyse <span class="acc-sub">Code 33, Quartale, Dividende, Innerer Wert, Story</span><span class="chev">▾</span></summary>
       <div class="acc-body">
-        <div class="fgrid">${fundCards}
+        <div class="fgrid">
           <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
             <div class="fcard-head"><span class="fcard-lbl">📅 Nächste Earnings</span></div>
             <div class="fcard-detail">${earnText(t.earnings)}</div>
@@ -2119,6 +2278,8 @@ async function ladeStory(ticker, yahooSymbol, name){
     const d = await r.json();
     if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
     el.innerHTML = renderStory(d);
+    const story = d.story && !/fehlgeschlagen/i.test(d.story) ? ersteSaetze(d.story, 220) : '';
+    setzeKpStory(story, story ? 'KI-Zusammenfassung (Llama 3.1 8B) aus Yahoo-Daten' : 'keine KI-Zusammenfassung verfügbar', 1);
     setCode33(d.fundamentals && d.fundamentals.code33);
     setFundDeep(d.fundamentals);
     WERT_FX = d.fundamentals;
@@ -2128,6 +2289,7 @@ async function ladeStory(ticker, yahooSymbol, name){
       Fundamentalanalyse gerade nicht verfügbar (${esc((e && e.message) || e)}).
       <a href="https://finance.yahoo.com/quote/${encodeURIComponent(yahooSymbol || ticker)}" target="_blank" rel="noopener">Direkt bei Yahoo Finance nachsehen →</a>
     </div></div>`;
+    setzeKpStory('', 'Story gerade nicht verfügbar', 1);
     setCode33(null);
     setFundDeep(null);
     WERT_FX = null;
