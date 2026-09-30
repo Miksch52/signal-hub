@@ -81,7 +81,7 @@ jobs:
       - name: rclone installieren
         if: steps.tag.outputs.weiter == 'true'
         run: |
-          curl -sSL -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
+          curl -fsSL --retry 3 --retry-all-errors --http1.1 -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
           unzip -q /tmp/rclone.zip -d /tmp
           sudo cp /tmp/rclone-*-linux-amd64/rclone /usr/local/bin/rclone
           rclone --version | head -1
