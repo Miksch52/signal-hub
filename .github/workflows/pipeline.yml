@@ -233,6 +233,22 @@ jobs:
             python3 src/run.py --scheduled
           fi
 
+      # Truflation-Newsletter (seit 2026-09-30, Makro-Tab Markets 360): liest
+      # die Truman-Mails aus demselben Postfach und schreibt data/truflation.json
+      # (nur Fakten, keine Texte/Links - liegt oeffentlich auf Pages). Laeuft
+      # bei JEDEM Anstoss, unabhaengig vom Push-Slot. Historie je Ausgabe
+      # unveraenderlich in R2 truflation/history/ (--ignore-existing); ein
+      # Fehler hier bricht die Pipeline nie ab.
+      - name: Truflation-Newsletter einlesen (Makro-Tab Markets 360)
+        env:
+          SIGNALHUB_IMAP_PASSWORD: ${{ secrets.SIGNALHUB_IMAP_PASSWORD }}
+        run: |
+          H=~/"Library/Application Support/SignalHub/truflation-history"
+          mkdir -p "$H"
+          rclone copy r2:signalhub-magazine/truflation/history/ "$H/" --max-age 45d || true
+          python3 src/truflation_mail.py || echo "::warning::Truflation-Newsletter nicht gelesen"
+          rclone copy "$H/" r2:signalhub-magazine/truflation/history/ --ignore-existing || true
+
       # War frueher der letzte Schritt im Gesamtjob (if: always(), damit ein
       # Fehler in einem SPAETEREN Schritt - z.B. Price-Action-Hub-Pipeline -
       # die Sicherung nicht verhindert). Jetzt genuegt if: always() alleine
