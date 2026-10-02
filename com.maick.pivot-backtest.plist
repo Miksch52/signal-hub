@@ -5,15 +5,18 @@
     <key>Label</key>
     <string>com.maick.pivot-backtest</string>
 
-    <!-- Woechentlich: bewertet die GEREIFTEN Forward-Picks aus dem Pivot-Logbuch
-         gegen die aktuellen Yahoo-Kurse (echter, unverzerrter Forward-Test) und
-         rechnet den retrospektiven Walk-Forward neu. osascript-Wrapper wie bei
-         com.maick.signalhub (launchd-Python darf iCloud nicht direkt lesen). -->
+    <!-- Woechentlich: rechnet den retrospektiven Walk-Forward (RETRO) neu - den
+         Teil, den die Cloud-Pipeline bewusst NICHT rechnet - und laedt das
+         Ergebnis nach R2 (_deploy/signal-hub/), sonst sieht Pages es nie und der
+         Cloud-Spiegel ueberschreibt es lokal wieder (bis 2026-10-02 rief diese
+         plist pivot_backtest.py direkt auf: RETRO-Stand blieb ab 09.08. stehen).
+         osascript-Wrapper wie bei com.maick.signalhub.server (launchd-Python darf
+         iCloud nicht direkt lesen). -->
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/osascript</string>
         <string>-e</string>
-        <string>do shell script "cd '/Users/maickschwillo/Library/Mobile Documents/com~apple~CloudDocs/Trading-System/Maick Trading System/Signal-Hub' &amp;&amp; /usr/bin/python3 src/pivot_backtest.py --evaluate &amp;&amp; /usr/bin/python3 src/pivot_backtest.py >> /tmp/pivot-backtest.log 2>&amp;1"</string>
+        <string>do shell script "'/Users/maickschwillo/Library/Mobile Documents/com~apple~CloudDocs/Trading-System/Maick Trading System/Signal-Hub/scripts/weekly_backtest_upload.sh' >> /tmp/pivot-backtest.log 2>&amp;1"</string>
     </array>
 
     <!-- Sonntags 08:15 -->

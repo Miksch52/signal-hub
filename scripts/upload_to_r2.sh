@@ -10,6 +10,10 @@
 # Pfade relativ zu Signal-Hub/data/. Fehlende Dateien werden sauber uebersprungen
 # (kein Fehler - reift-ueber-Zeit-Dateien existieren anfangs oft noch nicht).
 set -e
+# launchd/osascript liefern ein PATH ohne /usr/local/bin bzw. /opt/homebrew/bin -
+# der Shebang "#!/usr/bin/env node" von npx scheitert dann mit "env: node: No such
+# file or directory" (wie im PDF-Sync, upload_magazine_to_r2.py::_mit_node_path).
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 
 HIER="$(cd "$(dirname "$0")" && pwd)"                 # .../Signal-Hub/scripts
 PROJ="$(cd "$HIER/../.." && pwd)"                      # .../Maick Trading System

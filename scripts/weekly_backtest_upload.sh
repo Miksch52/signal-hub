@@ -1,8 +1,12 @@
 #!/bin/bash
 # Woechentlicher Pivot-Backtest (com.maick.pivot-backtest.plist, So 08:15).
 #
-# 1) --evaluate + Retro-Lauf wie bisher - schreibt Signal-Hub/data/pivot_backtest.json
-#    aus den gereiften Forward-Picks (PIVOT_LOGBUCH, nur lokal auf diesem Mac).
+# 1) Nur der RETRO-Walk-Forward - der Teil, den die Cloud bewusst nicht rechnet.
+#    --evaluate laeuft seit 2026-08-23 bei jedem Cloud-Pipeline-Lauf; der RETRO-Lauf
+#    uebernimmt den Forward-Block aus dem vorhandenen data/pivot_backtest.json, das
+#    der Cloud-Spiegel (cloud_spiegel.sh) aktuell haelt. Ein lokales --evaluate wurde
+#    2026-10-02 entfernt: es konnte den "Pivot-Forward-Test reif"-Push ein zweites Mal
+#    senden, weil sein Anti-Spam-Zustand nur in der Cloud nach R2 zurueckgesichert wird.
 # 2) NEU (2026-08-09): laedt das frische Ergebnis zusaetzlich nach R2 hoch. Vorher
 #    sah nur ein manueller "deploy.command"-Doppelklick die frischen Daten - der
 #    automatisierte Cloud-Deploy (deploy.yml) zieht seine Daten ausschliesslich aus
@@ -27,7 +31,6 @@ HIER="$(cd "$(dirname "$0")" && pwd)"                 # .../Signal-Hub/scripts
 PROJ="$(cd "$HIER/../.." && pwd)"                      # .../Maick Trading System
 
 cd "$PROJ/Signal-Hub"
-/usr/bin/python3 src/pivot_backtest.py --evaluate
 /usr/bin/python3 src/pivot_backtest.py
 
 "$HIER/upload_to_r2.sh" pivot_backtest.json pivot_backtest.js
