@@ -28,4 +28,13 @@ for paar in "signal-hub:Signal-Hub/data" "price-action-hub:Price-Action-Hub/data
   if "$RCLONE" copy "r2:signalhub-magazine/_deploy/$quelle/" "$ziel/" \
        --include "*.json" --include "*.js" --update $TROCKEN 2>&1 | grep -E "Skipped copy|ERROR" | sed "s|^|  $quelle: |"; then :; fi
 done
+# iCloud-Auslagerung (seit 2026-10-02): ausgelagerte ("dataless") Projektdateien
+# kann ein launchd-Prozess nicht lesen (Errno 11 / 0 Bytes, 3. Fehlermodus in
+# CLAUDE.md). Der System-Waechter meldet das per ntfy (nur wenn sich die Liste
+# aendert). Zurueckholen geht nur interaktiv: unter diesem LaunchAgent verweigert
+# TCC auch brctl den Zugriff (NSCocoaErrorDomain 257, getestet 2026-10-02).
+if [ -z "$TROCKEN" ]; then
+  WAECHTER="$PROJ/agenten/system_waechter.py"
+  [ -f "$WAECHTER" ] && /usr/bin/python3 "$WAECHTER" --icloud --push >/dev/null 2>&1
+fi
 echo "$(date '+%F %T') Cloud-Spiegel ${TROCKEN:+(Trockenlauf) }abgeschlossen."
