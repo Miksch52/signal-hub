@@ -1,0 +1,108 @@
+name: Pivot-Retro (woechentlich)
+
+# Der RETRO-Walk-Forward von src/pivot_backtest.py (Lauf ohne Argument) lief bis
+# 2026-10-02 nur auf dem Mac mini (LaunchAgent com.maick.pivot-backtest, So 08:15).
+# Der Mac mini ist aber oft aus - ein ausgeschalteter Mac holt den Lauf nicht nach,
+# dann blieb der RETRO-Stand auf Pages eine Woche (09.08.-02.10.: acht Wochen) stehen.
+# Die Cloud-Pipeline (pipeline.yml) rechnet bewusst nur --log und --evaluate.
+#
+# Der RETRO-Pfad braucht nur data/signals.json und die Standardbibliothek: kein
+# Yahoo, keine config.json, kein pip-Paket.
+#
+# Zwei Restores sind Pflicht, nicht Kosmetik:
+# 1) pivot_backtest.json VOR dem Lauf: main() uebernimmt forward_realisiert/
+#    -einzelfaelle/-stand aus der vorhandenen Datei. Ohne Restore fehlte der
+#    Forward-Teil und die halbe Live-Seite waere leer (Spiegelbild des Restores
+#    in pipeline.yml).
+# 2) pivot_backtest.json direkt VOR dem Upload noch einmal: laeuft zwischendurch
+#    ein Pipeline-Lauf (--evaluate), gilt dessen frischerer Forward-Block, der
+#    RETRO-Block bleibt der eigene. Sonst hinge die Korrektheit an der Terminwahl.
+#
+# Kein eigener Deploy-Trigger: der naechste Pipeline-Lauf holt pivot_backtest.json
+# aus _deploy/ als Basis und veroeffentlicht ihn mit (spaetestens wenige Stunden).
+
+on:
+  schedule:
+    - cron: '23 8 * * 0'   # Sonntag 10:23 Berlin (Sommer) / 09:23 (Winter)
+  workflow_dispatch:
+
+concurrency:
+  group: pivot-retro
+  cancel-in-progress: false
+
+jobs:
+  retro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: DNS-Workaround fuer GitHub-Runner (wie pipeline.yml)
+        run: |
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 9.9.9.9\n' \
+            | sudo tee /etc/resolv.conf
+
+      - name: rclone installieren
+        run: |
+          curl -fsSL --retry 3 --retry-all-errors --http1.1 -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-amd64.zip"
+          unzip -q /tmp/rclone.zip -d /tmp
+          sudo cp /tmp/rclone-*-linux-amd64/rclone /usr/local/bin/rclone
+          rclone --version | head -1
+
+      - name: R2-Remote konfigurieren
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<CONF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret_access_key = ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          endpoint = ${{ secrets.R2_ENDPOINT }}
+          acl = private
+          no_check_bucket = true
+          CONF
+
+      - name: Eingaben aus R2 holen (signals.json + letzter pivot_backtest.json)
+        run: |
+          mkdir -p data
+          rclone copy r2:signalhub-magazine/_deploy/signal-hub/signals.json data/ --retries 5
+          rclone copy r2:signalhub-magazine/_deploy/signal-hub/pivot_backtest.json data/ --retries 5
+          test -s data/signals.json || { echo "signals.json fehlt in R2 - Abbruch"; exit 1; }
+          test -s data/pivot_backtest.json || { echo "pivot_backtest.json fehlt - ohne ihn ginge der Forward-Teil verloren, Abbruch"; exit 1; }
+
+      - name: RETRO-Walk-Forward rechnen
+        run: python3 src/pivot_backtest.py
+
+      - name: Frischesten Forward-Block uebernehmen (Rennen mit pipeline.yml)
+        run: |
+          mkdir -p /tmp/aktuell
+          rclone copy r2:signalhub-magazine/_deploy/signal-hub/pivot_backtest.json /tmp/aktuell/ --retries 5
+          python3 - <<'PY'
+          import json, os, sys
+          sys.path.insert(0, "src")
+          import pfade, pivot_backtest
+          neu = json.load(open(pfade.PIVOT_BACKTEST, encoding="utf-8"))
+          pfad = "/tmp/aktuell/pivot_backtest.json"
+          if os.path.exists(pfad):
+              akt = json.load(open(pfad, encoding="utf-8"))
+              for k in ("forward_realisiert", "forward_einzelfaelle", "forward_stand"):
+                  if k in akt:
+                      neu[k] = akt[k]
+          for k in ("ergebnis", "n_charts", "erstellt", "forward_realisiert"):
+              if k not in neu:
+                  sys.exit(f"Feld {k} fehlt im Ergebnis - nichts hochladen")
+          pivot_backtest._schreibe_backtest(neu)
+          print("RETRO erstellt:", neu["erstellt"], "| Charts:", neu["n_charts"],
+                "| Forward-Stand:", neu.get("forward_stand"))
+          PY
+
+      - name: Nach R2 _deploy/signal-hub/ hochladen
+        run: |
+          rclone copy data/pivot_backtest.json r2:signalhub-magazine/_deploy/signal-hub/ --retries 5
+          rclone copy data/pivot_backtest.js r2:signalhub-magazine/_deploy/signal-hub/ --retries 5
