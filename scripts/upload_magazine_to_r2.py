@@ -29,6 +29,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HIER, "..", "src"))
@@ -75,6 +76,30 @@ def speichere_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
+# iCloud lagert die Magazine bei Speicherdruck aus ("dataless", ls zeigt
+# trotzdem die volle Groesse). Unter launchd darf der Prozess sie beim Lesen
+# nicht zurueckholen - wrangler bricht dann sofort mit einem irrefuehrenden
+# "fetch failed" ab (Befund 2026-10-02: 11 von 20 Uploads, alle ausgelagert).
+# brctl beauftragt stattdessen den iCloud-Dienst selbst mit dem Download.
+SF_DATALESS = 0x40000000
+
+
+def ist_ausgelagert(pfad):
+    return bool(getattr(os.stat(pfad), "st_flags", 0) & SF_DATALESS)
+
+
+def hole_aus_icloud(pfad, warte_s=180):
+    if not ist_ausgelagert(pfad):
+        return True
+    subprocess.run(["/usr/bin/brctl", "download", pfad], capture_output=True)
+    ende = time.time() + warte_s
+    while time.time() < ende:
+        if not ist_ausgelagert(pfad):
+            return True
+        time.sleep(2)
+    return False
+
+
 def wrangler(*args):
     r = subprocess.run([NPX, "--yes", "wrangler", *args],
                         cwd=WRANGLER_CWD, capture_output=True, text=True,
@@ -100,6 +125,11 @@ def main():
         if state.get(name) == mtime:
             continue  # unveraendert, steht schon in R2
         pfad = os.path.join(ordner, name)
+        if not hole_aus_icloud(pfad):
+            fehler += 1
+            print(f"  ! {name}: in iCloud ausgelagert, Download nicht abgeschlossen "
+                  f"- naechster Lauf versucht es erneut")
+            continue
         ok, out = wrangler("r2", "object", "put", f"signalhub-magazine/{name}",
                             f"--file={pfad}", "--remote", "-y")
         if ok:
