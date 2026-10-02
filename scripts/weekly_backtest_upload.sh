@@ -1,5 +1,6 @@
 #!/bin/bash
-# Woechentlicher Pivot-Backtest (com.maick.pivot-backtest.plist, So 08:15).
+# Pivot-RETRO-Backtest von Hand (seit 2026-10-02 laeuft er woechentlich in der Cloud:
+# .github/workflows/retro-backtest.yml; der LaunchAgent com.maick.pivot-backtest ist abgeschaltet).
 #
 # 1) Nur der RETRO-Walk-Forward - der Teil, den die Cloud bewusst nicht rechnet.
 #    --evaluate laeuft seit 2026-08-23 bei jedem Cloud-Pipeline-Lauf; der RETRO-Lauf
