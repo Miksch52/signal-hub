@@ -302,6 +302,103 @@ def laengster_horizont(returns, horizonte=HORIZONTE_TAGE):
     return None, None
 
 
+# ---------------------------------------------------------------------------
+# Belegter Handelstag statt Schreibdatum (seit 2026-10-04)
+# ---------------------------------------------------------------------------
+# Bis dahin trugen alle Forward-Logbuecher als "datum" das SCHREIBdatum
+# (datetime.now()). Zwei Folgen, belegt am Rotations-Logbuch gegen echte
+# Yahoo-Schlusskurse: (1) der Signalkurs war fast immer der Schluss des
+# VORHERIGEN Handelstags (Morgenlauf vor Boersenstart), das Datum also um
+# einen Tag verschoben; (2) Sa, So und Mo - ebenso ein Feiertag und der Tag
+# danach - starteten in fenster_returns() am selben Bar und waren damit
+# Dubletten mit identischem Ergebnis (je nach Engine 15-32 % aller Episoden).
+# Neue Eintraege fuehren deshalb zusaetzlich "handelstag" (der juengste
+# abgeschlossene Handelstag, den der Lauf gesehen haben kann); "datum" bleibt
+# das Logdatum, weil die 120-Tage-Aufbewahrung daran haengt. Altbestand wird
+# nie umgeschrieben - die Auswertung filtert Dubletten ueber den Startbar
+# (ist_dublette), das wirkt auf alte und neue Eintraege gleichermassen.
+
+def _tag_danach(datum):
+    from datetime import datetime, timedelta
+    return (datetime.strptime(datum, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def letzter_handelstag(chart, vor_datum=None):
+    """Datum des letzten Bars STRIKT vor vor_datum (Standard: heute). Der Bar
+    des laufenden Tages zaehlt nie - er ist bis Handelsschluss ein Intraday-
+    Stand (gleiche Regel wie _stichtag_index). None ohne Datumsreihe."""
+    vor_datum = vor_datum or _heute()
+    dates = (chart or {}).get("dates") or []
+    kandidaten = [d for d in dates if d and d < vor_datum]
+    return max(kandidaten) if kandidaten else None
+
+
+def handelstag_fuer(idx_charts, markt, ticker=None, vor_datum=None):
+    """Belegter Handelstag fuer einen neuen Logbuch-Eintrag, bestimmt am
+    Leitindex SEINES Marktes (markt_fuer). Bewusst nicht am Ticker-Chart: die
+    Engines loggen bis zu ~400 Eintraege je Lauf, die Index-Charts holt
+    lade_index_charts() ohnehin. Ein boersenspezifischer Feiertag des Tickers
+    stoert nicht - die Dubletten-Pruefung der Auswertung arbeitet am echten
+    Ticker-Chart. None, wenn der Index-Chart fehlt (der Eintrag wird dann wie
+    bisher nur mit Logdatum geschrieben)."""
+    idx_charts = idx_charts or {}
+    idx_chart = idx_charts.get(markt_fuer(markt, ticker)) or idx_charts.get(STANDARD_MARKT)
+    return letzter_handelstag(idx_chart, vor_datum)
+
+
+def logbuch_schluessel(eintrag, *felder):
+    """Schluessel fuer die Doppel-Pruefung beim Loggen: belegter Handelstag
+    plus die genannten Felder (Ticker, Kohorte ...). Eintraege ohne
+    "handelstag" (Altbestand, Index nicht abrufbar) bekommen einen eigenen
+    Namensraum mit dem Logdatum - sonst wuerde ein altes Logdatum, das zufaellig
+    dem neuen Handelstag gleicht, einen echten neuen Eintrag blockieren."""
+    ht = eintrag.get("handelstag")
+    tag = ("HT", ht) if ht else ("LOG", eintrag.get("datum"))
+    return (tag,) + tuple(eintrag.get(f) for f in felder)
+
+
+def start_datum(eintrag):
+    """Ab welchem Datum fenster_returns() den Startbar sucht.
+
+    Neue Eintraege (mit "handelstag"): erster Bar NACH dem belegten
+    Handelstag - das Signal stand erst nach dessen Schluss fest, eingestiegen
+    werden kann fruehestens am naechsten Handelstag. Altbestand: erster Bar ab
+    Logdatum (bisherige Regel). Beides meint denselben Bar: ein Logdatum lag
+    bisher immer nach dem Handelstag, dessen Kurse der Lauf sah."""
+    ht = eintrag.get("handelstag")
+    if ht:
+        try:
+            return _tag_danach(ht)
+        except (ValueError, TypeError):
+            pass
+    return eintrag.get("datum")
+
+
+def episoden_start(chart, start_ab, vor_datum=None):
+    """Datum des Startbars einer Episode - der Schluessel, ueber den die
+    Auswertung Dubletten erkennt (Sa/So/Mo bzw. Feiertag + Folgetag landen
+    alle auf demselben Bar). None ohne Datumsreihe; fenster_returns() liefert
+    dann ohnehin keinen Wert, die Episode wird gar nicht erst gezaehlt."""
+    if not hat_datumsreihe(chart):
+        return None
+    dates = chart["dates"]
+    s = _start_index(dates, start_ab, vor_datum or _heute())
+    return dates[s] if s is not None else None
+
+
+def ist_dublette(gesehen, chart, start_ab, *kohorte):
+    """True, wenn dieselbe Episode (gleiche Kohorte, gleicher Startbar) in
+    diesem Lauf schon gezaehlt wurde; sonst wird sie in `gesehen` vermerkt.
+    Die erste - also aelteste - Nennung gewinnt, weil die Logbuecher
+    chronologisch angehaengt werden. Nichts wird geloescht: die Dublette
+    bleibt im Logbuch stehen und zaehlt nur nicht doppelt."""
+    schluessel = tuple(kohorte) + (episoden_start(chart, start_ab),)
+    if schluessel in gesehen:
+        return True
+    gesehen.add(schluessel)
+    return False
+
+
 def ergaenze_edge(stats, edge_rets):
     """Haengt die Index-Kennzahlen an ein fertiges _stats()-Ergebnis - gleiche
     Feldnamen wie score_backtest.py sie seit jeher schreibt, damit

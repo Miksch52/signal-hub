@@ -91,7 +91,8 @@ jobs:
           pfad = "/tmp/aktuell/pivot_backtest.json"
           if os.path.exists(pfad):
               akt = json.load(open(pfad, encoding="utf-8"))
-              for k in ("forward_realisiert", "forward_einzelfaelle", "forward_stand"):
+              for k in ("forward_realisiert", "forward_einzelfaelle", "forward_stand",
+                        "forward_dubletten_gefiltert"):
                   if k in akt:
                       neu[k] = akt[k]
           for k in ("ergebnis", "n_charts", "erstellt", "forward_realisiert"):

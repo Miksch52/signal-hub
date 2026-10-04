@@ -43,6 +43,7 @@ import index_vergleich
 import pfade
 
 HORIZONTE = [("4W", 21), ("8W", 50), ("12W", 78)]   # Mindest-KALENDERtage je Kohorte
+DUBLETTEN = 0   # vom letzten evaluate() herausgefilterte Dubletten (seit 2026-10-04)
 AMPELN = ("gruen", "gelb", "rot")
 # Leitindex je Markt fuer die Renditemessung - identisch zum ersten Eintrag
 # von config.json::maerkte.*.index_yahoo (dem "leit"-Index in scorer.py::
@@ -101,24 +102,30 @@ def log_heute():
     regime = json.load(open(pfade.SIGNALS_JSON, encoding="utf-8")).get("marktregime") or {}
     heute = datetime.now().strftime("%Y-%m-%d")
     lb = _logbuch_load()
-    bekannt = {(e["datum"], e["markt"]) for e in lb}
+    # Doppel-Pruefung ueber den belegten Handelstag des Leitindex statt das
+    # Schreibdatum (seit 2026-10-04, siehe index_vergleich.logbuch_schluessel):
+    # Sa-, So- und Mo-Lauf sehen dieselbe Freitags-Einstufung.
+    bekannt = {index_vergleich.logbuch_schluessel(e, "markt") for e in lb}
     cache = scorer.lade_cache()
     neu = 0
     for markt, sym in INDEX_SYMBOL.items():
-        key = (heute, markt)
-        if key in bekannt:
-            continue
         r = regime.get(markt) or {}
         if r.get("ampel") not in AMPELN:
             continue
         d = scorer.hole_chart_cached(sym, cache)
+        eintrag = {"datum": heute, "markt": markt}
+        ht = index_vergleich.letzter_handelstag(d)
+        if ht:
+            eintrag["handelstag"] = ht
+        key = index_vergleich.logbuch_schluessel(eintrag, "markt")
+        if key in bekannt:
+            continue
         kurs = d.get("closes")[-1] if d and d.get("closes") else None
         if not kurs:
             continue
-        lb.append({
-            "datum": heute, "markt": markt, "ampel": r["ampel"],
-            "index_symbol": sym, "index_kurs": kurs,
-        })
+        eintrag.update({"ampel": r["ampel"], "index_symbol": sym, "index_kurs": kurs})
+        lb.append(eintrag)
+        bekannt.add(key)
         neu += 1
     scorer.speichere_cache(cache)
     # Aufbewahrung nach ALTER statt nach Eintragszahl (seit 2026-09-13). Die
@@ -151,6 +158,12 @@ def evaluate():
     eimer = {a: {h: [] for h, _ in HORIZONTE} for a in AMPELN}
     einzelfaelle = []
     charts = {}
+    # Dubletten-Filter (seit 2026-10-04, siehe index_vergleich.ist_dublette):
+    # eine Einstufung je Markt und Startbar - Sa/So/Mo bzw. Feiertag +
+    # Folgetag zaehlten vorher mehrfach mit identischem Ergebnis.
+    global DUBLETTEN
+    DUBLETTEN = 0
+    gesehen = set()
     for e in lb:
         try:
             tage = (heute_dt - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
@@ -164,15 +177,20 @@ def evaluate():
         # Feste Fenster (seit 2026-09-13, Systempruefung Punkt 2): Leitindex vom
         # Tag der Einstufung bis genau 21/50/78 Kalendertage spaeter - jede
         # Einstufung zaehlt in jedem erreichten Horizont, ihr Wert bleibt fest.
-        rets = index_vergleich.fenster_returns(charts[sym], e["datum"], e.get("index_kurs"))
+        start = index_vergleich.start_datum(e)
+        rets = index_vergleich.fenster_returns(charts[sym], start, e.get("index_kurs"))
         bk, ret = index_vergleich.laengster_horizont(rets)
         if bk is None:
+            continue
+        if index_vergleich.ist_dublette(gesehen, charts[sym], start, e["markt"]):
+            DUBLETTEN += 1
             continue
         for h, r in rets.items():
             if r is not None:
                 eimer[e["ampel"]][h].append(r)
         einzelfaelle.append({
             "markt": e["markt"], "ampel": e["ampel"], "datum": e["datum"],
+            "handelstag": e.get("handelstag"),
             "index_symbol": sym, "index_kurs_signal": e["index_kurs"],
             "horizont": bk, "return_pct": round(ret * 100, 2),
             "fenster": {h: round(r * 100, 2) for h, r in rets.items() if r is not None},
@@ -215,14 +233,19 @@ def log_und_evaluate():
                     "erreichten Horizont, ihr Wert bleibt danach fest. Unverzerrt "
                     "(Einstufung stand vor dem Ergebnis fest). Kein Retro-Modus (siehe "
                     "Docstring in regime_backtest.py) - die Stichprobe waechst nur um "
-                    "zwei Eintraege pro Tag (ein Markt-Regime-Wert je Markt)."),
+                    "zwei Eintraege pro Tag (ein Markt-Regime-Wert je Markt). Je Markt und Starttag zaehlt nur eine Einstufung "
+                    "(seit 2026-10-04: Sa/So/Mo bzw. Feiertag + Folgetag waren vorher "
+                    "Dubletten)."),
         "forward_realisiert": fr,
         "forward_einzelfaelle": einzelfaelle,
+        "dubletten_gefiltert": DUBLETTEN,
     }
     _schreibe(out)
     if einzelfaelle:
         print(f"\n=== Markt-Regime Forward-Test ({len(einzelfaelle)} gereifte Einzelfaelle) ===")
         _druck_tabelle(fr)
+    if DUBLETTEN:
+        print(f"Dubletten herausgefiltert (gleicher Starttag): {DUBLETTEN}")
     print(f"Gespeichert: {pfade.REGIME_BACKTEST}")
     return fr, einzelfaelle
 

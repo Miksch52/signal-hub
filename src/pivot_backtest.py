@@ -74,6 +74,7 @@ import pfade
 import pivot
 
 HORIZONTE = [("4W", 20), ("8W", 40), ("12W", 60)]   # Forward-Fenster in Handelstagen
+DUBLETTEN = 0   # vom letzten evaluate() herausgefilterte Dubletten (seit 2026-10-04)
 RETRO_STEP = 2                                       # jeden 2. Tag (weniger Autokorrelation)
 GATE_GRUENDE = {"kein Aufwaertstrend (Stage 2)", "zu wenig Historie"}
 
@@ -282,6 +283,19 @@ def _archiv_load():
     return {}
 
 
+def _naechster_werktag(datum):
+    """Logdatum -> naechster Werktag ab diesem Tag (Sa/So -> Mo), ohne
+    Feiertagskalender. Nur fuer Archiv-Datensaetze von vor 2026-10-04, die
+    noch keinen echten Startbar fuehren (siehe evaluate)."""
+    try:
+        d = datetime.strptime(datum, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return datum
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d.isoformat()
+
+
 def _archiv_save(archiv):
     with open(pfade.PIVOT_FORWARD_ARCHIV, "w", encoding="utf-8") as f:
         json.dump(archiv, f, ensure_ascii=False, separators=(",", ":"))
@@ -346,15 +360,35 @@ def log_heute():
     it_map = _inst_trend_map()
     heute = datetime.now().strftime("%Y-%m-%d")
     lb = _logbuch_load()
-    bekannt = {(e["datum"], e["ticker"], e["status"]) for e in lb}
+    # Doppel-Pruefung ueber den belegten Handelstag statt das Schreibdatum
+    # (seit 2026-10-04, siehe index_vergleich.logbuch_schluessel): Sa-, So- und
+    # Mo-Lauf sehen dieselben Freitagskurse und legen nur EINEN Eintrag an.
+    bekannt = {index_vergleich.logbuch_schluessel(e, "ticker", "status") for e in lb}
+    idx_charts = {}
+    try:
+        import scorer
+        cache = scorer.lade_cache()
+        idx_charts = index_vergleich.lade_index_charts(scorer.hole_chart_cached, cache)
+        scorer.speichere_cache(cache)
+    except Exception as ex:
+        # Ohne Index-Chart kein belegter Handelstag - der Eintrag wird dann wie
+        # bisher nur mit Logdatum geschrieben, die Auswertung filtert trotzdem.
+        print(f"  ! Index-Charts nicht verfuegbar ({ex}) -> Logbuch ohne Handelstag.")
     neu = 0
     for e in daten.get("treffer", []):
         if e.get("pivot_status") not in ("ARMED", "BREAKOUT"):
             continue
-        key = (heute, e.get("ticker"), e.get("pivot_status"))
+        ht = index_vergleich.handelstag_fuer(idx_charts, e.get("markt"),
+                                             e.get("yahoo_symbol") or e.get("ticker"))
+        kopf = {"datum": heute, "ticker": e.get("ticker"), "status": e.get("pivot_status")}
+        if ht:
+            kopf["handelstag"] = ht
+        key = index_vergleich.logbuch_schluessel(kopf, "ticker", "status")
         if key in bekannt:
             continue
+        bekannt.add(key)
         lb.append({
+            **({"handelstag": ht} if ht else {}),
             "datum": heute, "ticker": e.get("ticker"),
             "yahoo_symbol": e.get("yahoo_symbol"), "markt": e.get("markt"),
             "status": e.get("pivot_status"), "qualitaet": e.get("qualitaet"),
@@ -528,6 +562,15 @@ def evaluate():
     # dieselbe Episode doppelt.
     archiv = _archiv_load()
     gesehen = set()
+    # Dubletten-Filter (seit 2026-10-04, siehe index_vergleich.ist_dublette):
+    # eine Episode je Ticker, Status und Startbar - Sa/So/Mo bzw. Feiertag +
+    # Folgetag zaehlten vorher mehrfach mit identischem Ergebnis. Die Dublette
+    # bleibt im Logbuch stehen; ihr Archiv-Datensatz (falls schon angelegt)
+    # bekommt "dublette_von" und wird unten nicht mehr nachgereicht.
+    global DUBLETTEN
+    DUBLETTEN = 0
+    episoden = set()
+    erster_schluessel = {}   # (ticker, status, startbar) -> Archiv-Schluessel der gezaehlten Episode
     for e in lb:
         try:
             tage = (heute - datetime.strptime(e["datum"], "%Y-%m-%d").date()).days
@@ -542,11 +585,12 @@ def evaluate():
         # Signalkurs bis zum Schlusskurs genau 21/50/78 Kalendertage spaeter,
         # nicht mehr "bis heute". Die Episode zaehlt in jedem erreichten
         # Horizont; bk/ret/edge meinen den laengsten davon (Einzelfall-Liste).
-        rets = index_vergleich.fenster_returns(charts[sym], e["datum"], e.get("preis_signal"))
+        start = index_vergleich.start_datum(e)
+        rets = index_vergleich.fenster_returns(charts[sym], start, e.get("preis_signal"))
         bk, ret = index_vergleich.laengster_horizont(rets)
         if bk is None:
             continue
-        edges = index_vergleich.fenster_edges(idx_charts, e.get("markt"), e["datum"], rets,
+        edges = index_vergleich.fenster_edges(idx_charts, e.get("markt"), start, rets,
                                               pick_chart=charts[sym], ticker=sym)
         erreicht = [(h, r, edges[h]) for h, r in rets.items() if r is not None]
         edge = edges[bk]
@@ -554,6 +598,17 @@ def evaluate():
         # return_pct, stand} ("bis heute") wird dabei einfach ueberschrieben.
         e["realisiert"] = {h: round(r * 100, 2) for h, r, _ in erreicht}
         e["realisiert"]["stand"] = heute.strftime("%Y-%m-%d")
+
+        schluessel = f"{e['datum']}|{e['ticker']}|{e['status']}"
+        startbar = index_vergleich.episoden_start(charts[sym], start)
+        if index_vergleich.ist_dublette(episoden, charts[sym], start, sym, e["status"]):
+            DUBLETTEN += 1
+            gesehen.add(schluessel)
+            if schluessel in archiv:
+                archiv[schluessel]["dublette_von"] = erster_schluessel.get(
+                    (e["ticker"], e["status"], startbar))
+            continue
+        erster_schluessel[(e["ticker"], e["status"], startbar)] = schluessel
 
         # lege() statt _ablegen_alle(): legt zusaetzlich fest, WELCHEN Kohorten
         # diese Episode angehoert. Ohne diese Liste liesse sich ein Fall, der
@@ -609,7 +664,7 @@ def evaluate():
         # Eintrag cachen (wie "realisiert") - kein erneutes Nachrechnen bei
         # spaeteren Laeufen, siehe Modul-Docstring.
         if e.get("exit_sim") is None and e.get("stop") is not None:
-            sim = _simulate_exit(charts.get(sym) or {}, e["datum"], e["preis_signal"], e["stop"])
+            sim = _simulate_exit(charts.get(sym) or {}, start, e["preis_signal"], e["stop"])
             if sim is not None:
                 e["exit_sim"] = sim
         if e.get("exit_sim") is not None:
@@ -623,6 +678,7 @@ def evaluate():
         einzelfaelle.append({
             "ticker": e["ticker"], "yahoo_symbol": sym, "status": e["status"],
             "qualitaet": e.get("qualitaet"), "datum": e["datum"],
+            "handelstag": e.get("handelstag"),
             "preis_signal": e["preis_signal"], "horizont": bk,
             "return_pct": round(ret * 100, 2),
             "edge_idx_pct": round(edge * 100, 2) if edge is not None else None,
@@ -639,10 +695,12 @@ def evaluate():
         # die vollstaendigere (8W/12W kommen erst mit der Zeit dazu). Wenn die
         # Episode nach 120 Tagen aus dem Logbuch faellt, sind alle Fenster
         # (laengstens 78 Tage) laengst final.
-        schluessel = f"{e['datum']}|{e['ticker']}|{e['status']}"
         gesehen.add(schluessel)
         archiv[schluessel] = {
             "status": e["status"], "ticker": e["ticker"],
+            # Startbar (seit 2026-10-04): Episoden-Schluessel fuer die
+            # Dubletten-Pruefung, auch nachdem der Fall aus dem Logbuch faellt.
+            "start": startbar,
             "kohorten": kohorten,
             "fenster": {h: r for h, r, _ in erreicht},
             "fenster_edge": {h: ed for h, _, ed in erreicht if ed is not None},
@@ -652,6 +710,7 @@ def evaluate():
             "follow_through_vol": e.get("follow_through_vol"),
         }
 
+    episoden_archiv = set(erster_schluessel)
     # Faelle, die inzwischen aus dem 120-Tage-Logbuch gefallen sind, kommen
     # hier zurueck in die Aggregate. Ohne diesen Block waere der Forward-Test
     # ein rollierendes Fenster: alte Evidenz ginge genauso schnell verloren,
@@ -662,6 +721,18 @@ def evaluate():
     for schluessel, rec in archiv.items():
         if schluessel in gesehen:
             continue
+        if "dublette_von" in rec:
+            continue
+        # Auch unter den nachgereichten Faellen nur eine Episode je Startbar.
+        # Datensaetze von vor 2026-10-04 ohne "start" naehern ihn ueber den
+        # naechsten Werktag ab Logdatum (ohne Feiertage) - die Faelle sind
+        # mindestens 120 Tage alt, ihr Chart wird dafuer nicht mehr geholt.
+        startbar = rec.get("start") or _naechster_werktag(schluessel.split("|")[0])
+        ek = (rec.get("ticker"), rec.get("status"), startbar)
+        if ek in episoden_archiv:
+            DUBLETTEN += 1
+            continue
+        episoden_archiv.add(ek)
         erreicht_alt = [(h, r, rec.get("fenster_edge", {}).get(h))
                         for h, r in (rec.get("fenster") or {}).items()]
         if not erreicht_alt:
@@ -830,9 +901,12 @@ def main():
         bestand["forward_realisiert"] = fr
         bestand["forward_einzelfaelle"] = einzelfaelle
         bestand["forward_stand"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        bestand["forward_dubletten_gefiltert"] = DUBLETTEN
         _schreibe_backtest(bestand)
         if fr:
             _druck_tabelle("=== FORWARD realisiert (unverzerrt, reift ueber Zeit) ===", fr)
+        if DUBLETTEN:
+            print(f"Dubletten herausgefiltert (gleicher Starttag): {DUBLETTEN}")
         print(f"\nGespeichert: {pfade.PIVOT_BACKTEST} ({len(einzelfaelle)} Einzelfaelle)")
         return
 
@@ -856,7 +930,8 @@ def main():
     if os.path.exists(pfade.PIVOT_BACKTEST):
         try:
             alt = json.load(open(pfade.PIVOT_BACKTEST, encoding="utf-8"))
-            for k in ("forward_realisiert", "forward_einzelfaelle", "forward_stand"):
+            for k in ("forward_realisiert", "forward_einzelfaelle", "forward_stand",
+                      "forward_dubletten_gefiltert"):
                 if k in alt:
                     out[k] = alt[k]
         except Exception:
