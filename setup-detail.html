@@ -358,6 +358,8 @@
   .qtable th:first-child,.qtable td:first-child{text-align:left;color:var(--muted)}
   .qtable th{font-size:10.5px;color:var(--muted2);font-weight:600;text-transform:uppercase;letter-spacing:.02em}
   .qtable td.qpos{color:var(--ok)} .qtable td.qneg{color:var(--bad)}
+  .qtable .mj-d{display:block;font-size:10.5px;color:var(--muted)}
+  .qtable .mj-d.qpos{color:var(--ok)} .qtable .mj-d.qneg{color:var(--bad)}
 
   /* Story-Zitat (seit 2026-08-09): einzige Serif-Stelle der Seite - siehe
      renderStory() im Script, dort in .story-quote gewrappt.
@@ -492,6 +494,11 @@ const CODE33_EXPLAIN = 'Code 33 (Mark Minervini): Qualitätsmerkmal für Wachstu
 // Yahoo-Route liefert nur ~5 Quartale, das reicht fuer maximal einen
 // YoY-Vergleich (siehe Code33 oben), aber fuer 4 durchgehende QoQ-Vergleiche.
 const QUARTAL_EXPLAIN = 'Umsatz und Gewinn je Aktie der letzten verfügbaren Quartale, mit Veränderung zum jeweiligen Vorquartal (QoQ). Ergänzt Code 33 oben, das nur das jüngste Quartal gegen dasselbe Quartal im Vorjahr (YoY) prüft. Datenquelle: Yahoo Finance, dieselbe Zeitreihe wie Code 33.';
+// Mehrjahreszahlen (seit 2026-10-04, Setup-Analyse-Fahrplan Nr. 10): eigener
+// Worker-Endpunkt /mehrjahr, kostenlos, 24 h gecacht. US-Melder und Europaeer
+// mit US-Listing aus den SEC-Jahresberichten (bis acht Jahre, um Aktiensplits
+// bereinigt), alle anderen vier Geschaeftsjahre von Yahoo.
+const MEHRJAHR_EXPLAIN = 'Umsatz und Gewinn je Aktie (verwässert) je Geschäftsjahr mit Veränderung zum Vorjahr. Für CAN SLIM „A“ verlangt O\'Neil ein Gewinnwachstum von rund 25 % pro Jahr über drei Jahre. Quelle: die Jahresberichte bei der US-Börsenaufsicht SEC (US-Werte und Europäer mit US-Listing, bis acht Jahre, ältere Jahre um spätere Aktiensplits bereinigt), sonst Yahoo Finance (vier Jahre). Reine Anzeige, kein Score-Bestandteil.';
 const KENNZ_EXPLAIN = {
   'Pivot': 'Widerstandsniveau - höchster Schlusskurs der Basis. Der Kurs, den ein Ausbruch überwinden muss.',
   'Abstand zum Pivot': 'Wie weit der aktuelle Kurs noch unter dem Pivot liegt (negativ = bereits darüber).',
@@ -685,6 +692,9 @@ function renderDirekt(t){
         <div class="subhead">📊 Quartalsergebnisse <span class="sub" title="${QUARTAL_EXPLAIN}">Umsatz &amp; Gewinn je Aktie je Quartal, Veränderung ggü. Vorquartal - ~5 Quartale, kostenlose Yahoo-Route liefert nicht mehr</span></div>
         <div id="quartalwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Quartalsdaten …</div></div></div>
 
+        <div class="subhead">📅 Mehrjahreszahlen <span class="sub" title="${MEHRJAHR_EXPLAIN}">Umsatz &amp; Gewinn je Aktie je Geschäftsjahr - Grundlage für CAN SLIM „A“</span></div>
+        <div id="mehrjahrwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Mehrjahreszahlen …</div></div></div>
+
         <div class="subhead">💰 Dividendenkontinuität</div>
         <div class="fgrid" id="divwrap">
           <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
@@ -730,6 +740,7 @@ function renderDirekt(t){
   document.getElementById('content').style.display = '';
   tvWidget('tv-chart', tvSymbol(t.ticker));
   ladeStory(t.ticker, t.ticker, t.name);
+  ladeMehrjahr(t.ticker, t.name);
   ladeDividenden(t.ticker, t.ticker);
   starteTiefenanalyse(t);
   document.getElementById('stand').textContent = 'Live-Kurs · kein Signal-Hub-Scan';
@@ -2016,6 +2027,9 @@ function render(sig, piv, pa, regime){
         <div class="subhead">📊 Quartalsergebnisse <span class="sub" title="${QUARTAL_EXPLAIN}">Umsatz &amp; Gewinn je Aktie je Quartal, Veränderung ggü. Vorquartal - ~5 Quartale, kostenlose Yahoo-Route liefert nicht mehr</span></div>
         <div id="quartalwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Quartalsdaten …</div></div></div>
 
+        <div class="subhead">📅 Mehrjahreszahlen <span class="sub" title="${MEHRJAHR_EXPLAIN}">Umsatz &amp; Gewinn je Aktie je Geschäftsjahr - Grundlage für CAN SLIM „A“</span></div>
+        <div id="mehrjahrwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Mehrjahreszahlen …</div></div></div>
+
         <div class="subhead">💰 Dividendenkontinuität</div>
         <div class="fgrid" id="divwrap">
           <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
@@ -2067,6 +2081,7 @@ function render(sig, piv, pa, regime){
   // (dynamisch per innerHTML eingefuegte <script>-Tags fuehren sich sonst nicht aus).
   tvWidget('tv-chart', tvSymbol(t.ticker));
   ladeStory(t.ticker, t.yahoo_symbol, t.name);
+  ladeMehrjahr(t.yahoo_symbol || t.ticker, t.name);
   ladeDividenden(t.ticker, t.yahoo_symbol);
   zeigeKatalysator(t.ticker);
   starteTiefenanalyse(t);
@@ -2212,6 +2227,56 @@ function renderQuartalstabelle(serie){
 function setQuartalstabelle(serie){
   const el = document.getElementById('quartalwrap');
   if(el) el.innerHTML = renderQuartalstabelle(serie);
+}
+
+function renderMehrjahr(d){
+  if(!d || !(d.jahre||[]).length){
+    return '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Keine Mehrjahreszahlen verfügbar.</div></div>';
+  }
+  const w = d.waehrung ? ' ' + esc(d.waehrung) : '';
+  // Drei Spalten, die Veraenderung klein unter dem Wert: passt ohne seitliches
+  // Wischen in die Karte am iPhone (fuenf Spalten brauchten 470 px).
+  const zelle = (wert, pct) => `<td>${wert}${pct==null ? '' : `<span class="mj-d ${pct>0?'qpos':pct<0?'qneg':''}">${pct>0?'+':''}${pct.toFixed(1)}%</span>`}</td>`;
+  const zeile = (ende, umsatz, uPct, eps, ePct) => `<tr><td>${fmtQuartalDatum(ende)}</td>${zelle(fmtQuartalGeld(umsatz), uPct)}${zelle(eps!=null ? eps.toFixed(2) : '—', ePct)}</tr>`;
+  const jahre = d.jahre.slice().reverse().map(j => zeile(j.ende, j.umsatz, j.umsatz_pct, j.eps, j.eps_pct)).join('');
+  const quartale = (d.quartale||[]).slice().reverse().map(q => zeile(q.ende, q.umsatz, q.umsatz_yoy_pct, q.eps, q.eps_yoy_pct)).join('');
+  let a = '';
+  if(d.eps_wachstum_3j_pct!=null || d.eps_steigt_3j!=null){
+    const pct = d.eps_wachstum_3j_pct;
+    const farbe = pct==null ? 'var(--muted)' : pct >= 25 ? 'var(--ok)' : pct > 0 ? 'var(--warn)' : 'var(--bad)';
+    a = `<div class="pdetail"><b>Gewinn je Aktie über drei Jahre:</b> <span style="color:${farbe};font-weight:700">${pct==null ? 'nicht berechenbar (Verlustjahr)' : (pct>0?'+':'') + dzahl(pct) + ' % pro Jahr'}</span>`
+      + ` · in jedem Jahr gestiegen: <b>${d.eps_steigt_3j ? 'ja' : 'nein'}</b>`
+      + `<span style="color:var(--muted)"> · O'Neil verlangt für „A“ rund 25 % pro Jahr</span></div>`;
+  }
+  const quelle = d.quelle === 'sec'
+    ? `Quelle: ${d.sec_url ? `<a href="${esc(d.sec_url)}" target="_blank" rel="noopener">Jahresberichte bei der SEC</a>` : 'Jahresberichte bei der SEC'}${d.split_bereinigt ? ((d.splits||[]).length ? `, Gewinn je Aktie um ${d.splits.length===1?'den Aktiensplit':'die Aktiensplits'} vom ${d.splits.map(x=>tagKurz(x.datum)+' ('+dzahl(x.faktor, Number.isInteger(x.faktor)?0:1)+':1)').join(', ')} bereinigt` : '') : ', ohne Split-Daten nur die jüngsten drei Jahre'}`
+    : 'Quelle: Yahoo Finance, vier Geschäftsjahre';
+  return `<div class="pivotcard">
+    ${a}
+    <div class="qtable-wrap"><table class="qtable">
+      <thead><tr><th>GJ bis</th><th>Umsatz${w}</th><th>EPS${w}</th></tr></thead>
+      <tbody>${jahre}</tbody>
+    </table></div>
+    ${quartale ? `<div class="pdetail" style="margin-top:12px"><b>Quartale im Vorjahresvergleich</b> <span style="color:var(--muted)">(das vierte Quartal steht bei der SEC nur im Jahresbericht)</span></div>
+    <div class="qtable-wrap"><table class="qtable">
+      <thead><tr><th>Quartal bis</th><th>Umsatz${w}</th><th>EPS${w}</th></tr></thead>
+      <tbody>${quartale}</tbody>
+    </table></div>` : ''}
+    <div class="fcard-gew" style="margin-top:8px">Unter jedem Wert die Veränderung zum Vorjahr · ${quelle} · nicht Teil des Scores, keine Kauf-/Verkaufsempfehlung</div>
+  </div>`;
+}
+async function ladeMehrjahr(symbol, name){
+  const el = document.getElementById('mehrjahrwrap');
+  if(!el || !symbol) return;
+  try{
+    const u = MTS_PROXY + 'mehrjahr?ticker=' + encodeURIComponent(symbol) + '&name=' + encodeURIComponent(name || '');
+    const r = await fetch(u, {signal: AbortSignal.timeout(25000)});
+    const d = await r.json();
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
+    el.innerHTML = renderMehrjahr(d);
+  }catch(e){
+    el.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Mehrjahreszahlen gerade nicht verfügbar (${esc((e && e.message) || e)}).</div></div>`;
+  }
 }
 
 async function ladeStory(ticker, yahooSymbol, name){
@@ -2410,8 +2475,11 @@ function renderTiefenanalyse(a){
   const absatz = (titel, text) => text ? `<div class="pdetail"><b>${titel}</b><br>${esc(text)}</div>` : '';
   const punkte = (titel, liste) => (liste||[]).length ? `<div class="pdetail"><b>${titel}</b><ul class="ta-liste">${liste.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
   const pm = q.pressemitteilung;
+  const mw = q.management_web;
   const quellen = [];
   if(pm) quellen.push(tiefLink(pm.url, `Ergebnis-Pressemitteilung (${pm.form}) vom ${tagKurz(pm.datum)}`));
+  if(mw) (mw.quellen||[]).filter(nurHttps).forEach((u, i) => quellen.push(tiefLink(u, i===0 && mw.bericht ? mw.bericht : katHostname(u) + ' (Unternehmensseite)')));
+  if(q.mehrjahr) quellen.push(q.mehrjahr.quelle==='sec' && q.mehrjahr.sec_url ? tiefLink(q.mehrjahr.sec_url, 'Mehrjahreszahlen: Jahresberichte bei der SEC') : 'Mehrjahreszahlen: Yahoo Finance, vier Geschäftsjahre');
   if(q.sec && q.sec.jahresbericht) quellen.push(tiefLink(q.sec.jahresbericht.url, `Jahresbericht (${q.sec.jahresbericht.form}) vom ${tagKurz(q.sec.jahresbericht.filingDate)}`));
   if(q.sec && q.sec.quartalsbericht) quellen.push(tiefLink(q.sec.quartalsbericht.url, `Quartalsbericht (10-Q) vom ${tagKurz(q.sec.quartalsbericht.filingDate)}`));
   (q.schlagzeilen||[]).forEach(s => quellen.push(`${tiefLink(s.url, s.titel)}<span style="color:var(--muted);font-size:11px"> · ${esc(s.quelle||'')}${s.datum?' · '+esc(s.datum):''}</span>`));
@@ -2422,7 +2490,8 @@ function renderTiefenanalyse(a){
   return `
     <div class="pivotcard">
       ${absatz('📌 Kurzfazit', a.kurzfazit)}
-      ${absatz(`🗣️ Was das Management sagt${pm ? ` <span style="color:var(--muted);font-weight:400;font-size:11px">(Pressemitteilung vom ${esc(tagKurz(pm.datum))})</span>` : ''}`, a.management)}
+      ${absatz(`🗣️ Was das Management sagt${pm ? ` <span style="color:var(--muted);font-weight:400;font-size:11px">(Pressemitteilung vom ${esc(tagKurz(pm.datum))})</span>`
+        : mw ? ` <span style="color:var(--muted);font-weight:400;font-size:11px">(laut ${esc(mw.domain)}${mw.datum ? ', Bericht vom ' + esc(tagKurz(mw.datum)) : ''} · Websuche, sinngemäß zusammengefasst)</span>` : ''}`, a.management)}
       ${absatz('📊 Zahlen im Trend', a.zahlen)}
       ${absatz('🔭 Was der Markt übersehen könnte', a.uebersehen)}
       ${punkte('⚠️ Risiken', a.risiken)}
