@@ -320,12 +320,14 @@
   .kp-links button{font:inherit;font-size:12px;font-weight:600;color:var(--primary);background:var(--teal-dim);
     border:1px solid rgba(31,110,102,.3);border-radius:20px;padding:0 13px;min-height:44px;cursor:pointer}
   .acc{scroll-margin-top:76px}
-  #canslimwrap{scroll-margin-top:76px}
   .acc-dots{margin-left:auto;display:flex;gap:5px;align-items:center}
   .acc-pill{margin-left:auto;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;white-space:nowrap}
   .acc-pill.u-gruen{background:rgba(46,139,87,.12);color:var(--ok)}
   .acc-pill.u-gelb{background:rgba(192,138,46,.14);color:var(--warn)}
   .acc-pill.u-rot{background:rgba(178,58,46,.12);color:var(--bad)}
+  .acc-pill.u-na{background:var(--line2);color:var(--muted)}
+  .ta-liste{margin:6px 0 0;padding-left:18px;display:grid;gap:5px;font-size:12.5px;line-height:1.45}
+  .ta-knoepfe{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   @media (max-width:720px){
     .tv-box{height:360px}
     .kp-z{grid-template-columns:74px 1fr;gap:8px}
@@ -358,7 +360,7 @@
   .qtable td.qpos{color:var(--ok)} .qtable td.qneg{color:var(--bad)}
 
   /* Story-Zitat (seit 2026-08-09): einzige Serif-Stelle der Seite - siehe
-     renderStory()/renderDeep() im Script, dort in .story-quote gewrappt.
+     renderStory() im Script, dort in .story-quote gewrappt.
      Alles andere bleibt Sans/Mono, damit der Akzent nicht verwaessert. */
   .story-quote{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
                font-style:italic;font-size:15.5px;line-height:1.55;color:var(--txt);
@@ -461,8 +463,6 @@ const FAKTOR_INFO = {
     'Minervini/TraderFox: EPS-Wachstum über 40 %, Umsatzwachstum über 7 % und um mehr als 2 Prozentpunkte verbesserte Nettomarge - jeweils Quartal gegen Vorjahresquartal. Strenger als der Fundamental-Faktor, weil die Marge mitgeprüft wird: Wachstum muss beim Gewinn ankommen, nicht nur beim Umsatz. Seit 2026-09-06 Score-Faktor. Ohne verfügbare Quartalsreihe neutral gewertet, kein Malus.'},
 };
 const VERIFY_EXPLAIN = 'Unabhängige Gegenprüfung des Stage-2-Trend-Templates: berechnet die 8 Kriterien frisch aus eigenen Yahoo-Kursdaten (Cloudflare Worker, sieht die Pipeline-Begründung nicht) und vergleicht sie mit dem gespeicherten Wert. Rein deterministisch, kein KI-Aufruf - Prinzip "wer etwas berechnet hat, prüft es nicht selbst nach".';
-const BUSINESSQUANT_EXPLAIN = 'Institutioneller Besitz (SEC Form 13F), Insider-Transaktionen (SEC Form 4) und Analysten-EPS-Schätzungen von Business Quant - manuell abrufbar, nur für US-börsennotierte Werte. Ergänzt die automatische institutionelle Trendkennzahl der Pipeline um echte Insider-Trades und Analysten-Konsens. Free-Plan (30 Anfragen/Tag insgesamt) - deshalb bewusst nicht automatisch für jedes Setup geladen.';
-const CANSLIM_EXPLAIN = 'KI-Tiefenanalyse nach CAN SLIM (O\'Neil), Minervini-Trend-Template-Check, Smart-Money-Akkumulation, Widerstands-/Unterstützungszonen und Investment-These - nutzt die auf dieser Seite bereits berechneten Werte (Score, Pivot, Fundamentaldaten, Innerer Wert, Institutionelles) als Faktengrundlage, ergänzt um frische Nachrichten/SEC-Filings. Manuell abrufbar, rein informativ, keine Kauf-/Verkaufsempfehlung.';
 const PIVOT_EXPLAIN = 'Pivot-Armed-Detektor (ergänzt den nachlaufenden Score um die Entstehung des Ausbruchs): BREAKOUT = frischer Ausbruch über die Basis auf hohem Volumen. ARMED = enge, ausgetrocknete Basis knapp unter dem Pivot (Pre-Breakout). WATCH = Trend intakt, Basis noch nicht reif. CHEAT = früher Ausbruch vor vollem Trend-Template, klein positionieren.';
 const PA_EXPLAIN = 'Unabhängige Candlestick-Musteranalyse (Trendbar, Breakout, Gap, Bar-Counting) aus dem Price-Action-Hub - positiver Wert = bullisches Chartbild, kein Ersatz für den Score.';
 const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufwärtsphase, Distribution/Declining = Abwärtsphase - gemessen an Kurs gegen den gleitenden 200-Tage-Durchschnitt und dessen Steigung.';
@@ -573,8 +573,8 @@ function finde(liste, ticker){
 // eine Sackgasse, obwohl fast der ganze Rest der Seite (Chart, Fundamental-
 // daten, Code 33, Quartalszahlen, Dividendenkontinuitaet, Innerer Wert,
 // KI-Vertiefung) ohnehin schon live und PRO TICKER laeuft, unabhaengig von
-// signals.json (ladeStory/ladeDividenden/renderCanslimButton/renderBqButton/
-// renderKatalysatorButton nehmen nur ticker/yahoo_symbol/name/markt entgegen -
+// signals.json (ladeStory/ladeDividenden/starteTiefenanalyse nehmen nur
+// ticker/yahoo_symbol/name/markt entgegen -
 // keiner davon liest t.faktoren o.ae.). Nur Score/Tier, Pivot-Armed-Status,
 // Price-Action-Muster, das Momentum-Dashboard und die Minervini-Regel-Gates
 // sind untrennbar an den taeglichen Scan ueber das GANZE Universum gebunden
@@ -592,7 +592,7 @@ const US_EXCHANGES = new Set(['NMS','NYQ','NGM','ASE','PCX','BTS','NCM','NSI','S
 function marktVonMeta(meta){
   // 1:1-Portierung von scorer.py::markt_von_meta - dieselbe Logik, damit
   // "USA"/"Europa" ueberall im System identisch bedeutet (z.B. gated
-  // renderBqButton() Business Quant auf markt==='USA').
+  // die Tiefenanalyse die Business-Quant-Abfrage auf markt==='USA').
   const exch = ((meta && (meta.exchangeName || meta.fullExchangeName)) || '').toUpperCase();
   const cur = ((meta && meta.currency) || '').toUpperCase();
   return (US_EXCHANGES.has(exch) || cur === 'USD') ? 'USA' : 'Europa';
@@ -627,7 +627,7 @@ function renderDirekt(t){
   // Globale Zustaende wie render() setzen, damit die wiederverwendeten
   // Bausteine (Innerer Wert, Dividende, sammleKontext fuer die KI-Vertiefung)
   // exakt so funktionieren wie bei einem echten Signal-Hub-Treffer.
-  CUR_SIG = t; CUR_PIV = null; CUR_PA = null;
+  CUR_SIG = t; CUR_PIV = null; CUR_PA = null; CUR_REGIME = null;
   WERT_PREIS = t.preis; WERT_CURRENCY = t.currency; WERT_FX = null; WERT_DIVIDENDE = null;
   const tvSym = encodeURIComponent(t.ticker);
   const tvChartSym = encodeURIComponent(tvSymbol(t.ticker));
@@ -651,10 +651,12 @@ function renderDirekt(t){
       das ganze Aktienuniversum — relative Kennzahlen wie RS-Rating oder Branchenrang brauchen den Vergleich
       gegen alle anderen Treffer und lassen sich für einen Einzeltitel nicht nachbauen. Das sagt nichts über
       die Qualität dieses Werts aus, nur dass er (noch) kein Kandidat im Scan ist. Alles Übrige unten (Chart,
-      Fundamentaldaten, Quartalszahlen, Code 33, Dividendenkontinuität, Innerer Wert, optionale KI-Analysen)
+      Fundamentaldaten, Quartalszahlen, Code 33, Dividendenkontinuität, Innerer Wert, 🔬 Tiefenanalyse)
       läuft live und unabhängig vom Scan — genau wie bei jedem erfassten Ticker.
       <a href="signal-hub.html">→ zum Signal Hub</a>
     </div>
+
+    ${tiefenanalyseBlock()}
 
     <details class="acc" open>
       <summary>🕯️ Chart <span class="acc-sub">Live-Chart</span><span class="chev">▾</span></summary>
@@ -707,15 +709,8 @@ function renderDirekt(t){
           </div></div>
         </div>
 
-        <div class="subhead">🏦 Institutionelle Daten, Insider &amp; Analysten-Schätzungen <span class="sub" title="${BUSINESSQUANT_EXPLAIN}">optional, manuell abrufbar (Business Quant, Free-Plan mit begrenztem Tageskontingent)</span></div>
-        <div id="bqwrap"></div>
-
-        <div class="subhead">🧬 Vertiefung <span class="sub" title="${CANSLIM_EXPLAIN}">CAN SLIM · Minervini-Check · Accumulation · Widerstand/Unterstützung · These — optional, manuell</span></div>
-        <div id="canslimwrap"></div>
-
         <div class="subhead">📰 Story &amp; News <span class="sub">live Yahoo Finance/KI-Zusammenfassung</span></div>
         <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
-        <div id="deepwrap" style="margin-top:10px"></div>
       </div>
     </details>
 
@@ -736,15 +731,7 @@ function renderDirekt(t){
   tvWidget('tv-chart', tvSymbol(t.ticker));
   ladeStory(t.ticker, t.ticker, t.name);
   ladeDividenden(t.ticker, t.ticker);
-  renderDeepButton(t.ticker, t.ticker, t.name);
-  renderBqButton(t.ticker, t.ticker, t.markt);
-  renderCanslimButton(t.ticker, t.ticker, t.name);
-  // KEIN renderKatalysatorButton() hier: dessen Container #katwrap gehoert
-  // im Original zum dashboardBlock() (Momentum-Dashboard-Karte "Warum
-  // gerade jetzt?"), nicht zur Fundamentalanalyse - und das Dashboard
-  // braucht institutional_trend/Score/Sektor-Rang aus dem Scan, die es hier
-  // nicht gibt. Ein Aufruf ohne passenden Container waere nur ein
-  // wirkungsloser Blindgriff.
+  starteTiefenanalyse(t);
   document.getElementById('stand').textContent = 'Live-Kurs · kein Signal-Hub-Scan';
 }
 
@@ -1091,7 +1078,7 @@ let WERT_PREIS = null, WERT_CURRENCY = null, WERT_FX = null, WERT_DIVIDENDE = nu
 // Button) - render() setzt diese bei jedem Ticker-Wechsel neu, damit
 // sammleKontext() (weiter unten) darauf zugreifen kann, ohne die Werte ein
 // zweites Mal aus dem DOM auszulesen.
-let CUR_SIG = null, CUR_PIV = null, CUR_PA = null;
+let CUR_SIG = null, CUR_PIV = null, CUR_PA = null, CUR_REGIME = null;
 function renderInnererWert(){
   const el = document.getElementById('wertwrap');
   if(!el) return;
@@ -1464,15 +1451,11 @@ function dashSektor(t){
 }
 
 // ─── Katalysator: "Warum gerade jetzt?" (seit 2026-09-09) ─────────────────
-// Stufe 2 des Narrativ-Fahrplans (Stufe 1 = Sektor-Kontext oben, reiner
-// JSON-Join). Prueft zuerst den kostenlosen Tages-Batch der Top-Setups
-// (Price-Action-Hub/src/katalysator.py, laeuft taeglich in der Cloud-
-// Pipeline, window.TOP_SETUPS_KATALYSATOR - derselbe Ladepfad wie auf der
-// Startseite) - ist der Ticker heute ohnehin unter den Top-Setups, kostet
-// die Anzeige hier nichts extra. Erst wenn dort nichts vorliegt, zeigt sich
-// ein manueller Button (wie "Tiefere Analyse"): ein Klick ruft den
-// Cloudflare-Worker /katalysator auf (Perplexity-Sonar-Websuche,
-// ~5$/1000 Anfragen) - deshalb bewusst NIE automatisch.
+// Zeigt das kostenlose Ergebnis des taeglichen Top-Setups-Laufs
+// (Price-Action-Hub/src/katalysator.py, window.TOP_SETUPS_KATALYSATOR -
+// derselbe Ladepfad wie auf der Startseite). Steht der Ticker dort nicht,
+// sucht seit 2026-10-04 die Tiefenanalyse selbst nach einem Anlass; der
+// fruehere Einzelknopf fuer die kostenpflichtige Websuche ist entfallen.
 const KAT_KLASSE_LABEL = {
   zahlen: 'Quartalszahlen', guidance: 'Prognose-Änderung', auftrag: 'Großauftrag',
   zulassung: 'Behördliche Zulassung', analyst: 'Analysten-Rating', index: 'Indexaufnahme',
@@ -1487,48 +1470,17 @@ function ladeTopSetupsKatalysatorJs(){
     document.head.appendChild(s);
   });
 }
-async function renderKatalysatorButton(ticker, yahooSymbol, name, markt){
+function katalysatorAusTageslauf(ticker){
+  return (window.TOP_SETUPS_KATALYSATOR && window.TOP_SETUPS_KATALYSATOR[ticker]) || null;
+}
+async function zeigeKatalysator(ticker){
   const wrap = document.getElementById('katwrap');
   if(!wrap) return;
   await ladeTopSetupsKatalysatorJs();
-  const batch = window.TOP_SETUPS_KATALYSATOR && window.TOP_SETUPS_KATALYSATOR[ticker];
-  if(batch){
-    wrap.innerHTML = renderKatalysatorCard({ ticker, name, markt, klasse: batch.klasse, text: batch.text, quellen: batch.quellen, erstellt: batch.stand }, false);
-    katalysatorInKeyPoints(batch.klasse, batch.text);
-    return;
-  }
-  wrap.innerHTML = `<button id="katbtn" class="deepbtn" onclick="ladeKatalysator('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}','${esc(markt||'')}')">⚡ Warum gerade jetzt? <span style="opacity:.7;font-weight:400">(kostenpflichtige Websuche)</span></button>`;
-}
-async function ladeKatalysator(ticker, yahooSymbol, name, markt, erzwingen){
-  const wrap = document.getElementById('katwrap');
-  if(!wrap) return;
-  const symbol = yahooSymbol || ticker;
-  const cacheKey = 'kat_' + symbol;
-  if(!erzwingen){
-    try{
-      const cached = sessionStorage.getItem(cacheKey);
-      if(cached){ wrap.innerHTML = renderKatalysatorCard(JSON.parse(cached), true); return; }
-    }catch(e){ /* sessionStorage evtl. gesperrt - dann einfach neu laden */ }
-  }
-  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Suche nach einem fundamentalen Anlass der letzten 7 Tage …</div></div>';
-  try{
-    const u = MTS_PROXY + 'katalysator?ticker=' + encodeURIComponent(symbol)
-      + '&name=' + encodeURIComponent(name || '')
-      + '&markt=' + encodeURIComponent(markt || '')
-      + (erzwingen ? '&_r=' + Date.now() : '');
-    const r = await fetch(u, {signal: AbortSignal.timeout(45000)});
-    const d = await r.json();
-    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
-    d.markt = markt;
-    wrap.innerHTML = renderKatalysatorCard(d, true);
-    katalysatorInKeyPoints(d.klasse, d.text);
-    try{ sessionStorage.setItem(cacheKey, JSON.stringify(d)); }catch(e){ /* Speicher voll/gesperrt - ignorieren */ }
-  }catch(e){
-    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
-      Katalysator-Abfrage gerade nicht verfügbar (${esc((e && e.message) || e)}).
-    </div></div>
-    <button class="deepbtn" onclick="ladeKatalysator('${esc(ticker)}','${esc(symbol)}','${esc(name||'')}','${esc(markt||'')}',true)">🔄 Erneut versuchen</button>`;
-  }
+  const batch = katalysatorAusTageslauf(ticker);
+  if(!batch) return;
+  wrap.innerHTML = renderKatalysatorCard({ klasse: batch.klasse, text: batch.text, quellen: batch.quellen, erstellt: batch.stand });
+  katalysatorInKeyPoints(batch.klasse, batch.text);
 }
 // "Kein Anlass gefunden" ist keine Story - dann bleibt die KI-Zusammenfassung.
 function katalysatorInKeyPoints(klasse, text){
@@ -1540,24 +1492,24 @@ function katalysatorInKeyPoints(klasse, text){
 function katHostname(q){
   try{ return new URL(q).hostname.replace(/^www\./,''); }catch(e){ return q; }
 }
+const nurHttps = u => /^https:\/\//.test(String(u||''));
 // klasse/text/quellen sind FREMDINHALT AUS DEM NETZ (Perplexity-Sonar-
 // Suchergebnis) - immer ueber esc() escapen, nie als rohes HTML einfuegen,
 // nie in einen weiteren Prompt zurueckspeisen (siehe Sicherheitshinweis in
 // Price-Action-Hub/src/katalysator.py).
-function renderKatalysatorCard(d, kannErneuern){
+function renderKatalysatorCard(d){
   const gefunden = d.klasse && d.klasse !== 'keiner';
   const label = KAT_KLASSE_LABEL[d.klasse] || d.klasse || '—';
   const stand = d.erstellt ? new Date(d.erstellt).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
-  const quellen = (d.quellen||[]).filter(Boolean);
+  const quellen = (d.quellen||[]).filter(nurHttps);
   return `<div class="dash-sektor">
     <div class="dsk-kopf">⚡ Katalysator <span class="sub">warum gerade jetzt?</span>
       <span class="dash-chip${gefunden?' c-gruen':''}">${esc(label)}</span>
     </div>
     <div class="dsk-text">${esc(d.text) || '—'}</div>
     ${quellen.length ? `<div class="dsk-fuss">Quellen: ${quellen.map(q=>`<a href="${esc(q)}" target="_blank" rel="noopener noreferrer">${esc(katHostname(q))}</a>`).join(' · ')}</div>` : ''}
-    ${stand ? `<div class="dsk-fuss">Stand ${esc(stand)} Uhr${kannErneuern?'':' · aus dem täglichen Top-Setups-Lauf, kostenlos'}</div>` : ''}
-  </div>
-  ${kannErneuern ? `<button class="deepbtn" style="margin-top:8px" onclick="ladeKatalysator('${esc(d.ticker)}','${esc(d.ticker)}','${esc(d.name||'')}','${esc(d.markt||'')}',true)">🔄 Erneut versuchen</button>` : ''}`;
+    ${stand ? `<div class="dsk-fuss">Stand ${esc(stand)} Uhr · aus dem täglichen Top-Setups-Lauf, kostenlos</div>` : ''}
+  </div>`;
 }
 
 // ─── Minervini-Analyse (seit 2026-09-07) ───────────────────────────────────
@@ -1742,8 +1694,6 @@ function minerviniBlock(t, v){
       ${v.stufen}
       <div id="verifywrap" style="margin-top:10px"><button class="deepbtn" title="${VERIFY_EXPLAIN}" onclick="ladeVerify('${esc(t.ticker)}','${esc(t.yahoo_symbol||t.ticker)}',${claimed})">🔍 Trend-Template frisch nachrechnen</button></div>
       ${minerviniLexikonKarte()}
-      <div class="subhead" style="margin-top:16px">🧬 Vertiefung <span class="sub" title="${CANSLIM_EXPLAIN}">CAN SLIM · Minervini-Check · Accumulation · Widerstand/Unterstützung · These — optional, manuell</span></div>
-      <div id="canslimwrap"></div>
     </div>
   </details>`;
 }
@@ -1850,7 +1800,7 @@ function keyPointsBlock(t, regime, p, v, s){
     <div class="kp-links">
       <button type="button" onclick="springeZu('acc-mv')">🎓 Minervini-Stufen</button>
       <button type="button" onclick="springeZu('acc-dash')">📊 Säulen &amp; Sektor</button>
-      <button type="button" onclick="springeZu('acc-mv','canslimwrap')">🧬 Tiefere Analyse</button>
+      <button type="button" onclick="springeZu('acc-tief')">🔬 Tiefenanalyse</button>
       <button type="button" onclick="springeZu('acc-fund','storyblock')">📰 Story &amp; Zahlen</button>
     </div>
   </div>`;
@@ -1885,7 +1835,7 @@ function springeZu(accId, zielId){
 
 function render(sig, piv, pa, regime){
   const t = sig, p = piv, m = (pa && pa.muster) || null;
-  CUR_SIG = sig; CUR_PIV = piv; CUR_PA = pa;
+  CUR_SIG = sig; CUR_PIV = piv; CUR_PA = pa; CUR_REGIME = regime;
   // Zustand der "Innerer Wert"-Sektion pro Ticker zuruecksetzen - sonst
   // wuerden bei einem Ticker-Wechsel (siehe wechsleTicker) kurzzeitig die
   // Bewertungsergebnisse des vorherigen Tickers stehen bleiben, bis die neuen
@@ -2016,6 +1966,8 @@ function render(sig, piv, pa, regime){
 
     ${minerviniBlock(t, mv)}
 
+    ${tiefenanalyseBlock()}
+
     <!-- Seit 2026-09-28 ist alles unter den Key Points zugeklappt (Nutzer-
          wunsch, zu viel Scrollen am iPhone). Einzige Ausnahme: die
          Charttechnik bleibt offen (frueherer ausdruecklicher Nutzerwunsch,
@@ -2088,12 +2040,8 @@ function render(sig, piv, pa, regime){
           </div></div>
         </div>
 
-        <div class="subhead">🏦 Institutionelle Daten, Insider &amp; Analysten-Schätzungen <span class="sub" title="${BUSINESSQUANT_EXPLAIN}">optional, manuell abrufbar (Business Quant, Free-Plan mit begrenztem Tageskontingent)</span></div>
-        <div id="bqwrap"></div>
-
         <div class="subhead">📰 Story &amp; News <span class="sub">live Yahoo Finance/KI-Zusammenfassung</span></div>
         <div id="storyblock"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Fundamentaldaten, News und Story …</div></div></div>
-        <div id="deepwrap" style="margin-top:10px"></div>
       </div>
     </details>
 
@@ -2120,10 +2068,8 @@ function render(sig, piv, pa, regime){
   tvWidget('tv-chart', tvSymbol(t.ticker));
   ladeStory(t.ticker, t.yahoo_symbol, t.name);
   ladeDividenden(t.ticker, t.yahoo_symbol);
-  renderDeepButton(t.ticker, t.yahoo_symbol, t.name);
-  renderBqButton(t.ticker, t.yahoo_symbol, t.markt);
-  renderCanslimButton(t.ticker, t.yahoo_symbol, t.name);
-  renderKatalysatorButton(t.ticker, t.yahoo_symbol, t.name, t.markt);
+  zeigeKatalysator(t.ticker);
+  starteTiefenanalyse(t);
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
     if(!isNaN(dt)) document.getElementById('stand').textContent =
@@ -2297,239 +2243,26 @@ async function ladeStory(ticker, yahooSymbol, name){
   }
 }
 
-// ─── Erweiterter Bericht (seit 2026-08-08) ──────────────────────────────
-// Manuell per Button, NICHT automatisch: mehr externe Aufrufe (Yahoo-Schlagzeilen +
-// ggf. Reddit) als /story, daher spuerbar langsamer. Reddit-Abschnitt taucht
-// nur auf, wenn der Worker REDDIT_CLIENT_ID/-SECRET gesetzt hat (reddit_aktiv).
-function renderDeepButton(ticker, yahooSymbol, name){
-  const wrap = document.getElementById('deepwrap');
-  if(!wrap) return;
-  wrap.innerHTML = `<button id="deepbtn" class="deepbtn" onclick="ladeDeepStory('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🔬 Erweiterter Bericht</button>`;
-}
-
-function renderDeep(d){
-  const newsHtml = (d.news || []).map(n => {
-    const href = /^https?:\/\//.test(n.link||'') ? n.link : null;
-    const titel = esc(n.title);
-    return `<div style="margin-top:8px;font-size:12.5px">
-      ${href ? `<a href="${esc(href)}" target="_blank" rel="noopener">${titel}</a>` : titel}
-      <div style="color:var(--muted);font-size:11px">${esc(n.publisher)||''}${n.zeit ? ' · '+esc(n.zeit) : ''}</div>
-    </div>`;
-  }).join('') || '<div style="color:var(--muted);font-size:12.5px">Keine weiteren Schlagzeilen gefunden.</div>';
-
-  const redditHtml = (d.reddit || []).map(p => `<div style="margin-top:8px;font-size:12.5px">
-      <a href="${esc(p.link)}" target="_blank" rel="noopener">${esc(p.title)}</a>
-      <div style="color:var(--muted);font-size:11px">${esc(p.subreddit)} · ${p.num_comments} Kommentare${p.zeit?' · '+esc(p.zeit):''}</div>
-    </div>`).join('');
-  const redditBlock = d.reddit_aktiv
-    ? `<div class="pivotcard">
-        <div class="pdetail" style="margin-bottom:0">💬 Reddit-Diskussionen (r/stocks, r/investing, r/wallstreetbets, r/StockMarket)</div>
-        ${redditHtml || '<div style="color:var(--muted);font-size:12.5px">Keine Treffer im letzten Monat.</div>'}
-      </div>`
-    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">
-        💬 Reddit-Anbindung noch nicht eingerichtet (Worker-Secrets fehlen) — Bericht basiert nur auf Yahoo-Schlagzeilen.
-      </div></div>`;
-
-  // SEC-EDGAR-Filings (seit 2026-08-09): echte offizielle Einreichungen statt
-  // eines IR-Website-Scrapes, siehe cloudflare-worker/mts-cors-proxy.js::
-  // handleDeepStory-Kommentar fuer die Begruendung. US-Melder (10-K/10-Q/8-K)
-  // und seit 2026-10-04 auch Europaeer mit US-Listing (20-F/6-K) - fuer alle
-  // anderen erscheint ein Hinweis statt einer leeren Karte.
-  const edgarLabel = { '10-K': 'Jahresbericht (10-K)', '20-F': 'Jahresbericht (20-F)', '40-F': 'Jahresbericht (40-F)',
-    '10-Q': 'Quartalsbericht (10-Q)', '8-K': 'Ad-hoc-Meldung (8-K)', '6-K': 'Meldung (6-K)' };
-  const edgarZeile = (f, label) => f ? `<div style="margin-top:8px;font-size:12.5px">
-      <a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(label || edgarLabel[f.form] || f.form)}</a>
-      <div style="color:var(--muted);font-size:11px">eingereicht am ${esc(f.filingDate)}</div>
-    </div>` : '';
-  const em = d.edgar && d.edgar.ergebnisMeldung;
-  const edgarHtml = d.edgar ? [edgarZeile(em, `Ergebnis-Pressemitteilung (${em && em.form})`), edgarZeile(d.edgar.latest10K), edgarZeile(d.edgar.latest10Q),
-      ...(d.edgar.latest8Ks || []).map(f => edgarZeile(f))].join('') : '';
-  const edgarBlock = d.edgar_aktiv
-    ? `<div class="pivotcard">
-        <div class="pdetail" style="margin-bottom:0">📑 Offizielle SEC-Einreichungen (EDGAR)</div>
-        ${edgarHtml || '<div style="color:var(--muted);font-size:12.5px">Bei der SEC registriert, aber keine aktuellen Berichte oder Meldungen gefunden.</div>'}
-      </div>`
-    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">
-        📑 Keine SEC-Einreichungen: das Unternehmen meldet nicht bei der US-Börsenaufsicht (europäischer Wert ohne US-Listing).
-      </div></div>`;
-
-  const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
-  return `
-    <div class="pivotcard">
-      <div class="pdetail"><b>Unternehmen:</b> ${esc(d.profil) || '—'}</div>
-      <div class="story-quote">${d.story ? '„'+esc(d.story)+'"' : '—'}</div>
-      <div class="pdetail"><b>🗣️ Was das Management sagt</b>${em ? ` <span style="color:var(--muted);font-size:11px">(Ergebnis-Pressemitteilung vom ${esc(em.filingDate)}, KI-Zusammenfassung)</span>` : ''}:<br>${esc(d.management) || '—'}</div>
-      <div class="pdetail"><b>Unternehmensberichte (SEC):</b> ${esc(d.unternehmensberichte) || '—'}</div>
-      <div class="pdetail"><b>Marktstimmung/Diskussion:</b> ${esc(d.diskussion) || '—'}</div>
-      <div class="pdetail"><b>Risiken:</b> ${esc(d.risiken) || '—'}</div>
-    </div>
-    ${edgarBlock}
-    ${redditBlock}
-    <div class="pivotcard">
-      <div class="pdetail" style="margin-bottom:0">📰 Weitere Schlagzeilen (Yahoo Finance)</div>
-      ${newsHtml}
-    </div>
-    <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
-      KI-generierter erweiterter Bericht (Llama 3.1 8B über Cloudflare Workers AI · Yahoo Finance${d.reddit_aktiv?' + Reddit':''}${d.edgar_aktiv?' + SEC EDGAR':''}) · rein informativ, keine
-      Anlageberatung, keine Kauf-/Verkaufsempfehlung · Stand ${stand} Uhr
-    </div>`;
-}
-
-async function ladeDeepStory(ticker, yahooSymbol, name){
-  const wrap = document.getElementById('deepwrap');
-  if(!wrap) return;
-  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt erweiterten Bericht (Yahoo Finance' +
-    ', ggf. Reddit/SEC EDGAR) — kann etwas länger dauern …</div></div>';
-  try{
-    const u = MTS_PROXY + 'deep-story?ticker=' + encodeURIComponent(yahooSymbol || ticker)
-      + '&name=' + encodeURIComponent(name || '');
-    const r = await fetch(u, {signal: AbortSignal.timeout(40000)});
-    const d = await r.json();
-    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
-    wrap.innerHTML = renderDeep(d);
-  }catch(e){
-    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
-      Erweiterter Bericht gerade nicht verfügbar (${esc((e && e.message) || e)}).
-    </div></div>
-    <button class="deepbtn" onclick="ladeDeepStory('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🔄 Erneut versuchen</button>`;
-  }
-}
-
-// ─── Institutionelle Daten / Insider / Analysten-Schätzungen (seit 2026-08-30) ──
-// Manueller Button wie "Erweiterter Bericht" - Business Quant erlaubt im
-// Free-Plan insgesamt nur 30 Requests/Tag (nicht pro Ticker), deshalb bewusst
-// NICHT automatisch beim Öffnen der Seite geladen. Nur für US-Werte sinnvoll
-// (SEC-Meldepflicht) - der Worker würde für andere Börsen ohnehin leere Daten
-// liefern. Ergebnis wird pro Ticker in sessionStorage gecacht, damit erneutes
-// Öffnen derselben Setup-Seite nicht unnötig das Tageskontingent verbraucht.
+// ─── Tiefenanalyse (seit 2026-10-04) ─────────────────────────────────────
+// Ein Knopf statt vier (Erweiterter Bericht, Tiefere Analyse, Business-Quant-
+// Knopf, manueller Katalysator). Der Worker-Endpunkt /tiefenanalyse holt alle
+// Quellen einmal, laesst gpt-oss-120b einen gegliederten Bericht schreiben und
+// speichert ihn in R2 je Ticker und Tag. Beim Oeffnen der Seite wird nur
+// gelesen (kein KI-Aufruf): eine auf dem iPhone erstellte Analyse steht
+// danach auch am Mac. Kursziele und Kurszonen gibt es bewusst nicht mehr,
+// Pivot, Stop und Minervini-Stufen bleiben regelbasiert.
 function fmtBqZahl(x, nachkomma){
   if(x==null || isNaN(x)) return '—';
   return Number(x).toLocaleString('de-DE', {maximumFractionDigits: nachkomma ?? 0});
 }
 function fmtBqPct(x){
   if(x==null || isNaN(x)) return '—';
-  return (x>=0?'+':'') + x.toFixed(1) + '%';
-}
-function renderBqButton(ticker, yahooSymbol, markt){
-  const wrap = document.getElementById('bqwrap');
-  if(!wrap) return;
-  if(markt !== 'USA'){
-    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">
-      🏦 Nur für US-börsennotierte Werte verfügbar (SEC-Meldepflicht für 13F/Form 4).
-    </div></div>`;
-    return;
-  }
-  wrap.innerHTML = `<button id="bqbtn" class="deepbtn" onclick="ladeBusinessQuant('${esc(ticker)}','${esc(yahooSymbol||ticker)}')">🏦 Institutionelle Daten, Insider &amp; Analysten abrufen</button>`;
-}
-function renderBusinessQuant(d){
-  if(d.kontingent_erschoepft){
-    return `<div class="pivotcard"><div class="pdetail" style="color:var(--warn)">
-      ⚠️ Business-Quant-Tageskontingent erschöpft (Free-Plan: 30 Anfragen/Tag insgesamt) — später erneut versuchen.
-    </div></div>
-    <button class="deepbtn" onclick="ladeBusinessQuant('${esc(d.ticker)}','${esc(d.ticker)}')">🔄 Erneut versuchen</button>`;
-  }
-
-  const inst = d.institutional;
-  const instHtml = inst ? `<div class="pivotcard">
-      <div class="pdetail" style="margin-bottom:0">🏦 Institutioneller Besitz (SEC Form 13F, Stand ${esc(String(inst.quarter||'').slice(0,10)) || '?'})</div>
-      <div class="fgrid" style="margin-top:8px">
-        <div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
-          <div class="fcard-head"><span class="fcard-lbl">Anteil ausstehender Aktien</span></div>
-          <div class="fcard-detail">${fmtBqZahl(inst.institutions_shares_pct_outstanding,1)}%</div>
-        </div></div>
-        <div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
-          <div class="fcard-head"><span class="fcard-lbl">Δ ggü. Vorquartal</span></div>
-          <div class="fcard-detail">${fmtBqPct(inst.shares_changed_qoq_pct)}</div>
-        </div></div>
-        <div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
-          <div class="fcard-head"><span class="fcard-lbl">Δ ggü. Vorjahr</span></div>
-          <div class="fcard-detail">${fmtBqPct(inst.shares_changed_yoy_pct)}</div>
-        </div></div>
-        <div class="fcard fcard-na">${dot('na')}<div class="fcard-body">
-          <div class="fcard-head"><span class="fcard-lbl">Käufer / Verkäufer</span></div>
-          <div class="fcard-detail">${fmtBqZahl(inst.institutions_bought_count)} / ${fmtBqZahl(inst.institutions_sold_count)} von ${fmtBqZahl(inst.institutions_total_count)}</div>
-        </div></div>
-      </div>
-      <div class="fcard-gew" style="margin-top:8px">reine Kontextzahl, kein Score-Bestandteil - ergänzt die automatische institutionelle Trendkennzahl der Pipeline um den aktuellen Quartalsstand</div>
-    </div>`
-    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">🏦 Keine SEC-13F-Daten bei Business Quant gefunden.</div></div>`;
-
-  const insiderListe = (d.insider || []).filter(i => i.shares_bought || i.shares_sold).slice(0, 10);
-  const insiderRows = insiderListe.map(i => `<tr>
-      <td>${esc(i.name_insider)}${i.relationship_title ? '<div style="color:var(--muted);font-size:10.5px">'+esc(i.relationship_title)+'</div>' : ''}</td>
-      <td style="color:var(--ok)">${i.shares_bought ? '+'+fmtBqZahl(i.shares_bought) : '—'}</td>
-      <td style="color:var(--bad)">${i.shares_sold ? '−'+fmtBqZahl(i.shares_sold) : '—'}</td>
-    </tr>`).join('');
-  const insiderHtml = insiderListe.length ? `<div class="pivotcard">
-      <div class="pdetail" style="margin-bottom:0">👤 Insider-Transaktionen (SEC Form 4)</div>
-      <div class="qtable-wrap" style="margin-top:8px"><table class="qtable">
-        <thead><tr><th>Insider</th><th>Gekauft</th><th>Verkauft</th></tr></thead>
-        <tbody>${insiderRows}</tbody>
-      </table></div>
-    </div>`
-    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">👤 Keine Insider-Transaktionen bei Business Quant gefunden.</div></div>`;
-
-  const annualDim = (d.estimates || []).find(x => x.dimension === 'annual');
-  const estRows = (annualDim ? annualDim.estimates : []).slice(-6).map(e => `<tr>
-      <td>${esc(e.period)}</td>
-      <td>${e.data_type === 'reported' ? 'Ist' : 'Schätzung'}</td>
-      <td>${e.value_reported!=null ? Number(e.value_reported).toFixed(2) : '—'}</td>
-      <td>${e.value_estimate!=null ? Number(e.value_estimate).toFixed(2) : '—'}</td>
-      <td>${(e.low_estimate!=null && e.high_estimate!=null) ? Number(e.low_estimate).toFixed(2)+'–'+Number(e.high_estimate).toFixed(2) : '—'}</td>
-    </tr>`).join('');
-  const estHtml = estRows ? `<div class="pivotcard">
-      <div class="pdetail" style="margin-bottom:0">📈 Analysten-EPS-Schätzungen (jährlich)</div>
-      <div class="qtable-wrap" style="margin-top:8px"><table class="qtable">
-        <thead><tr><th>Jahr</th><th>Typ</th><th>Ist-EPS</th><th>Konsens</th><th>Spanne</th></tr></thead>
-        <tbody>${estRows}</tbody>
-      </table></div>
-      <div class="fcard-gew" style="margin-top:8px">Free-Plan: nur 1 Jahr Ist-Historie, 2 Jahre Vorschau - reine Kontextzahl, kein Score-Bestandteil</div>
-    </div>`
-    : `<div class="pivotcard"><div class="pdetail" style="color:var(--muted);font-size:12.5px">📈 Keine Analysten-Schätzungen bei Business Quant gefunden.</div></div>`;
-
-  const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
-  return `${instHtml}${insiderHtml}${estHtml}
-    <div style="font-size:10.5px;color:var(--muted);margin-top:2px">
-      Quelle: Business Quant (Free-Plan, 30 Anfragen/Tag insgesamt) · rein informativ, keine Anlageberatung · Stand ${stand} Uhr
-    </div>`;
-}
-async function ladeBusinessQuant(ticker, yahooSymbol){
-  const wrap = document.getElementById('bqwrap');
-  if(!wrap) return;
-  const symbol = yahooSymbol || ticker;
-  const cacheKey = 'bq_' + symbol;
-  try{
-    const cached = sessionStorage.getItem(cacheKey);
-    if(cached){ wrap.innerHTML = renderBusinessQuant(JSON.parse(cached)); return; }
-  }catch(e){ /* sessionStorage evtl. gesperrt (privater Modus) - dann einfach neu laden */ }
-
-  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt institutionelle Daten, Insider-Transaktionen und Analysten-Schätzungen …</div></div>';
-  try{
-    const u = MTS_PROXY + 'businessquant?ticker=' + encodeURIComponent(symbol);
-    const r = await fetch(u, {signal: AbortSignal.timeout(20000)});
-    const d = await r.json();
-    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
-    wrap.innerHTML = renderBusinessQuant(d);
-    if(!d.kontingent_erschoepft){
-      try{ sessionStorage.setItem(cacheKey, JSON.stringify(d)); }catch(e){ /* Speicher voll/gesperrt - ignorieren */ }
-    }
-  }catch(e){
-    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
-      Business-Quant-Daten gerade nicht verfügbar (${esc((e && e.message) || e)}).
-    </div></div>
-    <button class="deepbtn" onclick="ladeBusinessQuant('${esc(ticker)}','${esc(symbol)}')">🔄 Erneut versuchen</button>`;
-  }
+  return (x>=0?'+':'') + dzahl(x) + ' %';
 }
 
-// ─── Tiefere Analyse: CAN SLIM / Minervini / Accumulation / S&R / These (seit 2026-09-04) ──
-// Manueller Button wie Erweiterter Bericht/BusinessQuant - ruft ein groesseres
-// KI-Modell auf (siehe cloudflare-worker/mts-cors-proxy.js::handleCanslimReport),
-// deshalb bewusst nicht automatisch. sammleKontext() fasst alle auf dieser
-// Seite bereits geladenen/berechneten Systemwerte (Score, Pivot, Price-Action,
-// Fundamentaldaten inkl. Code 33/Quartalsserie, Innerer Wert, ggf. bereits
-// abgerufene Business-Quant-Daten) kompakt zusammen, damit der Worker sie als
-// Faktengrundlage in den Prompt einbetten kann statt sie ein zweites Mal (und
-// potenziell abweichend) selbst zu schaetzen.
+// Systemwerte, die die Seite schon berechnet hat, gehen als Kontext mit, damit
+// die KI sie einordnet statt sie neu zu schaetzen. Kennzahlen, Quartale und
+// Nachrichten holt der Worker selbst.
 function sammleKontext(){
   const t = CUR_SIG, p = CUR_PIV, pa = CUR_PA;
   if(!t) return {};
@@ -2542,77 +2275,42 @@ function sammleKontext(){
   });
   const fcfProAktie = (fx.freeCashflow!=null && fx.sharesOutstanding) ? fx.freeCashflow/fx.sharesOutstanding : null;
   const kontext = {
-    ticker: t.ticker, name: t.name, markt: t.markt, sektor: t.sektor, branche: t.branche,
-    preis: t.preis, currency: t.currency, score: t.score, tier: t.tier, einstufung: t.einstufung,
-    faktoren,
+    ticker: t.ticker, preis: t.preis, currency: t.currency,
+    score: t.score, tier: t.tier, einstufung: t.einstufung, rs_rating: t.rs_rating,
+    trend_template: t.trend_template, basis_nr: t.basis_nr, extended_pct: t.extended_pct,
+    faktoren: Object.keys(faktoren).length ? faktoren : undefined,
     pivot: p ? { status: p.pivot_status, pivot: p.pivot, dist_pct: p.dist_pct, stop: p.stop,
-      stop_pct: p.stop_pct, chance_risiko: p.chance_risiko, qualitaet: p.qualitaet,
-      supply_score: p.supply_score, dryup: p.dryup, contraction: p.contraction } : null,
+      stop_pct: p.stop_pct, qualitaet: p.qualitaet, dryup: p.dryup, contraction: p.contraction } : null,
     priceAction: pa ? { pa_score: pa.pa_score, marktstadium: m && m.marktstadium && m.marktstadium.stadium } : null,
-    fundamental: {
-      trailingPE: fx.trailingPE, forwardPE: fx.forwardPE, priceToSales: fx.priceToSales,
-      priceToSalesForward: fx.priceToSalesForward, freeCashflow: fx.freeCashflow,
-      revenueGrowth: fx.revenueGrowth, earningsGrowth: fx.earningsGrowth, grossMargins: fx.grossMargins,
-      returnOnEquity: fx.returnOnEquity, debtToEquity: fx.debtToEquity,
-      code33: fx.code33 && fx.code33.verfuegbar ? {
-        ampel: fx.code33.ampel, eps_yoy_pct: fx.code33.eps_yoy_pct,
-        umsatz_yoy_pct: fx.code33.umsatz_yoy_pct, marge_delta_pp: fx.code33.marge_delta_pp,
-      } : null,
-      quartalsserie: fx.code33 && fx.code33.quartalsserie,
-    },
+    markt_regime: CUR_REGIME && t.markt && CUR_REGIME[t.markt] ? CUR_REGIME[t.markt].ampel : undefined,
     dividende: WERT_DIVIDENDE ? { serie: WERT_DIVIDENDE.serie, trend: WERT_DIVIDENDE.trend } : null,
-    innererWert: {
-      graham: grahamNumber(fx.trailingEps, fx.bookValue),
-      dcf: dcfFairValue(fcfProAktie, fx.earningsGrowth ?? fx.revenueGrowth),
-      kurs: WERT_PREIS,
-    },
+    innererWert: innererWertKontext(fx, fcfProAktie),
     earnings: t.earnings,
   };
-  try{
-    const bq = sessionStorage.getItem('bq_' + (t.yahoo_symbol || t.ticker));
-    if(bq){
-      const d = JSON.parse(bq);
-      kontext.institutionell = {
-        anteil_pct: d.institutional && d.institutional.institutions_shares_pct_outstanding,
-        delta_qoq_pct: d.institutional && d.institutional.shares_changed_qoq_pct,
-        insider_transaktionen: (d.insider || []).filter(i => i.shares_bought || i.shares_sold).length,
-      };
-    }
-  }catch(e){ /* kein BusinessQuant-Cache vorhanden - kontext.institutionell bleibt weg */ }
+  if(t.faktoren){
+    const mv = minerviniVerdikt(t, CUR_REGIME, p);
+    kontext.minervini = mv.satz.replace(/<[^>]+>/g, '');
+  }
+  const kat = katalysatorAusTageslauf(t.ticker);
+  if(kat) kontext.katalysator = { klasse: kat.klasse, text: kat.text, quellen: kat.quellen };
   return kontext;
 }
 
-function renderCanslimButton(ticker, yahooSymbol, name){
-  const wrap = document.getElementById('canslimwrap');
-  if(!wrap) return;
-  wrap.innerHTML = `<button id="canslimbtn" class="deepbtn" onclick="ladeCanslim('${esc(ticker)}','${esc(yahooSymbol||ticker)}','${esc(name||'')}')">🧬 Tiefere Analyse erstellen</button>`;
+// Abstand zum Kurs fertig ausgerechnet: das Modell hat beim Vergleichen
+// selbst schon einen Schaetzwert unter dem Kurs als "darueber" beschrieben.
+function innererWertKontext(fx, fcfProAktie){
+  const kurs = WERT_PREIS;
+  const abstand = w => (w!=null && kurs) ? Math.round((w - kurs) / kurs * 1000) / 10 : null;
+  const graham = grahamNumber(fx.trailingEps, fx.bookValue);
+  const dcf = dcfFairValue(fcfProAktie, fx.earningsGrowth ?? fx.revenueGrowth);
+  return { kurs, graham, graham_abstand_zum_kurs_pct: abstand(graham), dcf, dcf_abstand_zum_kurs_pct: abstand(dcf),
+    hinweis: 'negativer Abstand = Schaetzwert liegt unter dem Kurs' };
 }
-// ─── Darstellung Tiefere Analyse: Dashboard statt Fließtext (seit 2026-09-04) ──
-// Nutzerfeedback zur ersten Version ("nur Text-Files von erfüllten
-// Kriterien"): CAN SLIM/Minervini-Check/Accumulation werden jetzt geparst und
-// als Ampel-Karten im selben fcard/dot-Vokabular wie die übrigen
-// Fundamentaldaten-Kennzahlen (Buffett/Munger/Graham, Innerer Wert) gezeigt -
-// "zusammengeführt" im Sinne derselben visuellen Sprache, nicht nur derselben
-// Überschrift. Jede Karte behält den vollen KI-Begründungstext darunter, das
-// Parsen ergänzt nur eine Ampel/Balken-Zusammenfassung obendrauf - schlägt das
-// Parsen fehl (KI-Format weicht ab), bleibt der Rohtext trotzdem sichtbar,
-// nichts geht verloren.
+
 const CANSLIM_LABELS = {
   C: 'Aktuelles Quartalswachstum', A: 'Mehrjähriges Gewinnwachstum', N: 'Neue Produkte/Katalysatoren',
   S: 'Angebot/Nachfrage', L: 'Führungsposition/rel. Stärke', I: 'Institutionelle Eigentümerschaft', M: 'Marktrichtung',
 };
-function parseCanslim(text){
-  if(!text) return [];
-  const treffer = {};
-  const re = /\b([CANSLIM])\s*:\s*(\d{1,2})\s*\/\s*10\s*[-–:]\s*([\s\S]*?)(?=(?:;\s*[CANSLIM]\s*:\s*\d)|$)/g;
-  let m;
-  while((m = re.exec(text))){
-    const buchstabe = m[1].toUpperCase();
-    if(!CANSLIM_LABELS[buchstabe] || treffer[buchstabe]) continue;
-    treffer[buchstabe] = { buchstabe, label: CANSLIM_LABELS[buchstabe], score: Math.max(0,Math.min(10, parseInt(m[2],10))), begruendung: m[3].replace(/[;.\s]+$/,'').trim() };
-  }
-  return Object.keys(CANSLIM_LABELS).map(b => treffer[b]).filter(Boolean);
-}
 function ampelFuerScore(score){
   if(score==null || isNaN(score)) return 'na';
   return score>=7 ? 'gruen' : score>=4 ? 'gelb' : 'rot';
@@ -2635,117 +2333,113 @@ function canslimCard(item){
     <div class="fcard-detail">${esc(item.begruendung)||'—'}</div>
   </div></div>`;
 }
-function parseMinerviniVerdikt(text){
-  const m = (text||'').match(/Minervini-tauglich:?\s*(JA|NEIN)/i);
-  return m ? m[1].toUpperCase() : null;
+
+let TIEF = { symbol: null, name: null, markt: null, tage: [] };
+const heuteBerlin = () => new Date().toLocaleDateString('sv-SE', {timeZone: 'Europe/Berlin'});
+const tagKurz = tag => { const [j,m,d] = String(tag||'').split('-'); return d ? `${d}.${m}.${j}` : (tag||''); };
+
+function tiefenanalyseBlock(){
+  return `<details class="acc" id="acc-tief">
+    <summary>🔬 Tiefenanalyse <span class="acc-sub">Management, Zahlen, Chancen, Risiken, CAN SLIM</span><span class="acc-pill u-na" id="tief-pill">…</span><span class="chev">▾</span></summary>
+    <div class="acc-body"><div id="tiefwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Prüft, ob schon eine Analyse gespeichert ist …</div></div></div></div>
+  </details>`;
 }
-function parseErsteZahlVonZehn(text){
-  const m = (text||'').match(/(\d{1,2})\s*\/\s*10/);
-  return m ? Math.max(0,Math.min(10, parseInt(m[1],10))) : null;
+function starteTiefenanalyse(t){
+  TIEF = { symbol: t.yahoo_symbol || t.ticker, name: t.name || '', markt: t.markt || '', tage: [] };
+  ladeTiefenanalyse({});
 }
-function urteilsCard(icon, titel, text, ampel, wertText, score){
-  return `<div class="fcard fcard-${ampel}">${dot(ampel)}<div class="fcard-body">
-    <div class="fcard-head">
-      <span class="fcard-lbl">${icon} ${esc(titel)}</span>
-      ${wertText ? `<span class="fcard-wert">${esc(wertText)}</span>` : ''}
-    </div>
-    ${score!=null ? scoreBar(score, ampel) : ''}
-    <div class="fcard-detail">${esc(text)||'—'}</div>
-  </div></div>`;
+function tiefKnopf(beschriftung, opts){
+  return `<button class="deepbtn" onclick='ladeTiefenanalyse(${JSON.stringify(opts)})'>${beschriftung}</button>`;
 }
-function renderCanslim(d){
-  if(!d.kerngeschaeft && !d.these && !d.canslim){
-    return `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Keine auswertbare Antwort erhalten.</div></div>
-      <button class="deepbtn" onclick="ladeCanslim('${esc(d.ticker)}','${esc(d.ticker)}','${esc(d.name||'')}')">🔄 Erneut versuchen</button>`;
+function setzeTiefPill(a){
+  const pill = document.getElementById('tief-pill');
+  if(!pill) return;
+  pill.textContent = a ? 'Stand ' + tagKurz(a.tag) : 'noch keine';
+  pill.className = 'acc-pill ' + (a && a.tag===heuteBerlin() ? 'u-gruen' : 'u-na');
+}
+async function ladeTiefenanalyse(opts){
+  const wrap = document.getElementById('tiefwrap');
+  if(!wrap || !TIEF.symbol) return;
+  const symbol = TIEF.symbol;
+  const q = new URLSearchParams({ ticker: symbol, name: TIEF.name, markt: TIEF.markt });
+  if(opts.datum) q.set('datum', opts.datum);
+  if(opts.erstellen){
+    q.set('erstellen', '1');
+    if(opts.erzwingen) q.set('erzwingen', '1');
+    q.set('kontext', JSON.stringify(sammleKontext()));
+    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Erstellt die Tiefenanalyse: holt Kennzahlen, Ergebnis-Pressemitteilung, Schlagzeilen und Katalysator${TIEF.markt==='USA'?', dazu Insider- und Analystendaten,':''} und lässt sie auswerten. Das dauert etwa 30–60 Sekunden …</div></div>`;
   }
-  const statusUp = (d.status||'').toUpperCase();
-  const statusAmpel = statusUp==='BULLISH' ? 'gruen' : statusUp==='BEARISH' ? 'rot' : statusUp==='NEUTRAL' ? 'gelb' : 'na';
-  const statusFarbe = AMPEL_FARBE[statusAmpel];
-  const statusIcon = statusAmpel==='gruen' ? '📈' : statusAmpel==='rot' ? '📉' : '➖';
-
-  const canslimItems = parseCanslim(d.canslim);
-  const minerviniVerdikt = parseMinerviniVerdikt(d.minervini_check);
-  const minerviniAmpel = minerviniVerdikt==='JA' ? 'gruen' : minerviniVerdikt==='NEIN' ? 'rot' : 'na';
-  const akkuScore = parseErsteZahlVonZehn(d.accumulation);
-  const akkuAmpel = ampelFuerScore(akkuScore);
-
-  const srZeilen = (d.sr_tabelle||'').split('\n').map(z=>z.trim()).filter(Boolean)
-    .map(z => z.split('|').map(t=>t.trim()).filter(Boolean));
-  const srIstTabelle = srZeilen.length && srZeilen.every(t => t.length>=3);
-  const srRows = srIstTabelle ? srZeilen.map(t => {
-    const typ = (t[1]||'').toLowerCase();
-    const typKlasse = typ.includes('wider') ? 'qneg' : typ.includes('unter') ? 'qpos' : '';
-    return `<tr><td>${esc(t[0]||'—')}</td><td class="${typKlasse}">${esc(t[1]||'—')}</td><td>${esc(t[2]||'—')}</td><td>${esc(t[3]||'—')}</td><td>${esc(t[4]||'—')}</td></tr>`;
-  }).join('') : '';
-
-  const stand = d.erstellt ? new Date(d.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) : '';
+  try{
+    const r = await fetch(MTS_PROXY + 'tiefenanalyse?' + q, {signal: AbortSignal.timeout(opts.erstellen ? 150000 : 15000)});
+    const d = await r.json();
+    if(TIEF.symbol !== symbol) return;
+    if(!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+    TIEF.tage = d.tage || [];
+    wrap.innerHTML = d.analyse ? renderTiefenanalyse(d.analyse) : tiefLeer();
+    setzeTiefPill(d.analyse);
+    // Hoechstens eine Woche alt, sonst bleibt die Story-Zeile beim Tageslauf/Yahoo.
+    if(d.analyse && d.analyse.kurzfazit && (Date.now() - Date.parse(d.analyse.tag)) < 8*86400000)
+      setzeKpStory(d.analyse.kurzfazit, `Tiefenanalyse vom ${tagKurz(d.analyse.tag)} · KI-Zusammenfassung`, 3);
+  }catch(e){
+    if(TIEF.symbol !== symbol) return;
+    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
+      ${opts.erstellen ? 'Tiefenanalyse gerade nicht möglich' : 'Gespeicherte Analyse gerade nicht abrufbar'}: ${esc((e && e.message) || e)}
+    </div></div>${tiefKnopf(opts.erstellen ? '🔄 Erneut versuchen' : '🔬 Tiefenanalyse erstellen', {erstellen: true, erzwingen: !!opts.erzwingen})}`;
+  }
+}
+function tiefLeer(){
+  return `<div class="pivotcard"><div class="pdetail">Für diesen Wert ist noch keine Tiefenanalyse gespeichert.</div>
+    <div class="pdetail" style="color:var(--muted);font-size:12.5px;margin-bottom:0">Sie holt Kennzahlen, die jüngste Ergebnis-Pressemitteilung bei der SEC (US-Werte und Europäer mit US-Listing), Schlagzeilen, den Katalysator der letzten 7 Tage${TIEF.markt==='USA'?' sowie Insider- und Analystendaten':''} und lässt sie auswerten. Das Ergebnis wird gespeichert und ist danach auf allen Geräten sichtbar.</div></div>
+    ${tiefKnopf('🔬 Tiefenanalyse erstellen', {erstellen: true})}`;
+}
+function tiefLink(url, text){
+  return nurHttps(url) ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>` : esc(text);
+}
+function tiefBusinessQuant(bq){
+  if(!bq) return '';
+  if(bq.kontingent_erschoepft) return '<div class="pdetail" style="color:var(--muted);font-size:12.5px">🏦 Business Quant: Tageskontingent war erschöpft, Insider- und Analystendaten fehlen in dieser Analyse.</div>';
+  const i = bq.institutionell;
+  const teile = [];
+  if(i) teile.push(`<div class="pdetail" style="font-size:12.5px"><b>🏦 Institutionelle (SEC 13F, Stand ${esc(i.quartal||'?')}):</b> ${fmtBqZahl(i.anteil_pct,1)} % der Aktien · ${fmtBqPct(i.veraenderung_quartal_pct)} ggü. Vorquartal · ${fmtBqZahl(i.kaeufer)} Käufer / ${fmtBqZahl(i.verkaeufer)} Verkäufer</div>`);
+  if((bq.insider||[]).length) teile.push(`<div class="qtable-wrap"><table class="qtable"><thead><tr><th>Insider (Form 4)</th><th>Gekauft</th><th>Verkauft</th></tr></thead><tbody>${bq.insider.map(x => `<tr><td>${esc(x.name)}${x.rolle?`<div style="color:var(--muted);font-size:10.5px">${esc(x.rolle)}</div>`:''}</td><td class="qpos">${x.gekauft?'+'+fmtBqZahl(x.gekauft):'—'}</td><td class="qneg">${x.verkauft?'−'+fmtBqZahl(x.verkauft):'—'}</td></tr>`).join('')}</tbody></table></div>`);
+  if((bq.eps_schaetzungen||[]).length) teile.push(`<div class="qtable-wrap" style="margin-top:8px"><table class="qtable"><thead><tr><th>Jahr</th><th>Art</th><th>Ist-EPS</th><th>Konsens</th></tr></thead><tbody>${bq.eps_schaetzungen.map(e => `<tr><td>${esc(e.jahr)}</td><td>${e.art==='Ist'?'Ist':'Schätzung'}</td><td>${e.ist!=null?Number(e.ist).toFixed(2):'—'}</td><td>${e.konsens!=null?Number(e.konsens).toFixed(2):'—'}</td></tr>`).join('')}</tbody></table></div>`);
+  return teile.length ? `<div class="subhead" style="margin-top:18px">🏦 Insider und Analysten <span class="sub">Business Quant, nur US-Werte</span></div><div class="pivotcard">${teile.join('')}</div>` : '';
+}
+function renderTiefenanalyse(a){
+  const q = a.quellen || {};
+  const absatz = (titel, text) => text ? `<div class="pdetail"><b>${titel}</b><br>${esc(text)}</div>` : '';
+  const punkte = (titel, liste) => (liste||[]).length ? `<div class="pdetail"><b>${titel}</b><ul class="ta-liste">${liste.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
+  const pm = q.pressemitteilung;
+  const quellen = [];
+  if(pm) quellen.push(tiefLink(pm.url, `Ergebnis-Pressemitteilung (${pm.form}) vom ${tagKurz(pm.datum)}`));
+  if(q.sec && q.sec.jahresbericht) quellen.push(tiefLink(q.sec.jahresbericht.url, `Jahresbericht (${q.sec.jahresbericht.form}) vom ${tagKurz(q.sec.jahresbericht.filingDate)}`));
+  if(q.sec && q.sec.quartalsbericht) quellen.push(tiefLink(q.sec.quartalsbericht.url, `Quartalsbericht (10-Q) vom ${tagKurz(q.sec.quartalsbericht.filingDate)}`));
+  (q.schlagzeilen||[]).forEach(s => quellen.push(`${tiefLink(s.url, s.titel)}<span style="color:var(--muted);font-size:11px"> · ${esc(s.quelle||'')}${s.datum?' · '+esc(s.datum):''}</span>`));
+  const kat = q.katalysator;
+  const katText = kat && kat.klasse ? `<div class="pdetail" style="font-size:12.5px"><b>⚡ Katalysator (${esc(KAT_KLASSE_LABEL[kat.klasse]||kat.klasse)}, ${kat.herkunft==='tageslauf'?'aus dem Tageslauf':'Websuche'}):</b> ${esc(kat.text)||'—'}${(kat.quellen||[]).filter(nurHttps).length?` <span style="color:var(--muted)">Quellen: ${kat.quellen.filter(nurHttps).map(u=>tiefLink(u, katHostname(u))).join(' · ')}</span>`:''}</div>` : '';
+  const heute = a.tag === heuteBerlin();
+  const fruehere = TIEF.tage.filter(tag => tag !== a.tag).slice(-6).reverse();
   return `
     <div class="pivotcard">
-      <div class="phead">
-        <span class="badge" style="background:color-mix(in srgb, ${statusFarbe} 18%, transparent);color:${statusFarbe};border-color:${statusFarbe};font-size:13px;padding:6px 14px">${statusIcon} ${esc(d.status)||'—'}</span>
-        ${d.confidence ? `<span class="badge">Confidence ${esc(d.confidence)}</span>` : ''}
-      </div>
-      <div class="pdetail"><b>🏢 Kerngeschäft &amp; Geschäftsmodell</b><br>${esc(d.kerngeschaeft)||'—'}</div>
-      <div class="pdetail" style="margin-bottom:0"><b>📰 Aktuelle Nachrichtenlage</b><br>${esc(d.aktuelle_lage)||'—'}</div>
+      ${absatz('📌 Kurzfazit', a.kurzfazit)}
+      ${absatz(`🗣️ Was das Management sagt${pm ? ` <span style="color:var(--muted);font-weight:400;font-size:11px">(Pressemitteilung vom ${esc(tagKurz(pm.datum))})</span>` : ''}`, a.management)}
+      ${absatz('📊 Zahlen im Trend', a.zahlen)}
+      ${absatz('🔭 Was der Markt übersehen könnte', a.uebersehen)}
+      ${punkte('⚠️ Risiken', a.risiken)}
+      ${punkte('❓ Offene Fragen vor einem Kauf', a.offene_fragen)}
     </div>
-
-    <div class="subhead" style="margin-top:18px">🧬 CAN SLIM <span class="sub">O'Neil-Kriterien, je Buchstabe 1–10</span></div>
-    <div class="fgrid">${canslimItems.length ? canslimItems.map(canslimCard).join('') : `<div class="pivotcard"><div class="pdetail" style="white-space:pre-wrap">${esc(d.canslim)||'—'}</div></div>`}</div>
-
-    <div class="subhead" style="margin-top:18px">🎯 Minervini-Check &amp; Accumulation</div>
-    <div class="fgrid">
-      ${urteilsCard('📐', 'Minervini-tauglich', d.minervini_check, minerviniAmpel, minerviniVerdikt)}
-      ${urteilsCard('🏦', 'Accumulation / Smart Money', d.accumulation, akkuAmpel, akkuScore!=null?akkuScore+'/10':null, akkuScore)}
+    <div class="subhead" style="margin-top:18px">🧬 CAN SLIM <span class="sub">O'Neil-Kriterien, je Buchstabe 1–10, KI-Einschätzung aus den Daten</span></div>
+    <div class="fgrid">${(a.canslim||[]).map(c => canslimCard({buchstabe: c.buchstabe, label: CANSLIM_LABELS[c.buchstabe]||'', score: c.note, begruendung: c.begruendung})).join('')}</div>
+    ${tiefBusinessQuant(q.business_quant)}
+    <div class="subhead" style="margin-top:18px">🔗 Quellen dieser Analyse</div>
+    <div class="pivotcard">${katText}${quellen.length ? `<ul class="ta-liste">${quellen.map(x=>`<li>${x}</li>`).join('')}</ul>` : '<div class="pdetail" style="color:var(--muted)">Keine Quellen gespeichert.</div>'}</div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:4px">
+      KI-Bericht (${esc(a.modell||'')} über Cloudflare Workers AI) vom ${tagKurz(a.tag)}, ${a.erstellt ? new Date(a.erstellt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr' : ''}${a.neuronen?` · ${a.neuronen} von 10.000 kostenlosen Neuronen am Tag`:''} · rein informativ, keine Anlageberatung, keine Kauf-/Verkaufsempfehlung
     </div>
-
-    <div class="subhead" style="margin-top:18px">📍 Widerstands-/Unterstützungszonen</div>
-    ${srIstTabelle ? `<div class="pivotcard"><div class="qtable-wrap"><table class="qtable">
-        <thead><tr><th>Preis</th><th>Typ</th><th>Stärke</th><th>Kontext</th><th>Aktion</th></tr></thead>
-        <tbody>${srRows}</tbody>
-      </table></div></div>`
-      : `<div class="pivotcard">${srZeilen.length ? srZeilen.map(t=>`<div style="font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--line)">${esc(t.join(' · '))}</div>`).join('') : '<div style="color:var(--muted);font-size:12.5px">—</div>'}</div>`}
-
-    <div class="subhead" style="margin-top:18px">💡 Investment-/Trading-These</div>
-    <div class="pivotcard"><div class="pdetail" style="margin-bottom:0">${esc(d.these)||'—'}</div></div>
-
-    <div style="font-size:10.5px;color:var(--muted);margin-top:10px">
-      ${esc(d.disclaimer)||'Rein informativ, keine Anlageberatung.'} · KI-generiert (${esc(d.modell)||'Workers AI'}${d.edgar_aktiv?' + SEC EDGAR':''}) · Stand ${stand} Uhr
-    </div>
-    <button class="deepbtn" style="margin-top:8px" onclick="ladeCanslim('${esc(d.ticker)}','${esc(d.ticker)}','${esc(d.name||'')}',true)">🔄 Neu erstellen</button>`;
-}
-async function ladeCanslim(ticker, yahooSymbol, name, erzwingen){
-  const wrap = document.getElementById('canslimwrap');
-  if(!wrap) return;
-  const symbol = yahooSymbol || ticker;
-  const cacheKey = 'canslim_' + symbol;
-  if(!erzwingen){
-    try{
-      const cached = sessionStorage.getItem(cacheKey);
-      if(cached){ wrap.innerHTML = renderCanslim(JSON.parse(cached)); return; }
-    }catch(e){ /* sessionStorage evtl. gesperrt - dann einfach neu laden */ }
-  }
-  wrap.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Erstelle Tiefenanalyse (CAN SLIM, Minervini-Check, Accumulation, Widerstand/Unterstützung, These) — kann eine Weile dauern …</div></div>';
-  try{
-    const kontext = sammleKontext();
-    // Bei "Neu erstellen" (erzwingen) einen Cache-Buster anhaengen - sonst
-    // liefert der 30-Minuten-Edge-Cache des Workers (Cache-Key = volle URL
-    // inkl. kontext) exakt dieselbe Antwort wie beim ersten Klick zurueck,
-    // weil sich Ticker und kontext dabei ja nicht geaendert haben.
-    const u = MTS_PROXY + 'canslim-report?ticker=' + encodeURIComponent(symbol)
-      + '&name=' + encodeURIComponent(name || '')
-      + '&kontext=' + encodeURIComponent(JSON.stringify(kontext))
-      + (erzwingen ? '&_r=' + Date.now() : '');
-    const r = await fetch(u, {signal: AbortSignal.timeout(60000)});
-    const d = await r.json();
-    if(!r.ok || d.error) throw new Error(d.error || ('HTTP '+r.status));
-    wrap.innerHTML = renderCanslim(d);
-    try{ sessionStorage.setItem(cacheKey, JSON.stringify(d)); }catch(e){ /* Speicher voll/gesperrt - ignorieren */ }
-  }catch(e){
-    wrap.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
-      Tiefenanalyse gerade nicht verfügbar (${esc((e && e.message) || e)}).
-    </div></div>
-    <button class="deepbtn" onclick="ladeCanslim('${esc(ticker)}','${esc(symbol)}','${esc(name||'')}',true)">🔄 Erneut versuchen</button>`;
-  }
+    <div class="ta-knoepfe">
+      ${tiefKnopf(heute ? '🔄 Neu erstellen' : '🔬 Für heute neu erstellen', {erstellen: true, erzwingen: heute})}
+      ${fruehere.map(tag => tiefKnopf('📅 ' + tagKurz(tag), {datum: tag})).join('')}
+    </div>`;
 }
 
 // ─── Unabhängige Gegenprüfung (seit 2026-08-09) ─────────────────────────
