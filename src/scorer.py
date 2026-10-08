@@ -21,6 +21,7 @@ Test:  python3 scorer.py            # alle Roh-Signale
        python3 scorer.py --limit 40 # nur Top-40 nach Konsens (schnell, schonend)
 """
 
+import bisect
 import concurrent.futures
 import json
 import math
@@ -984,6 +985,181 @@ def f_institutional_trend(ergebnisse, gew, gew_summe, schwellen):
     print(f"Institutioneller Trend (13F): {treffer} mit Daten, "
           f"{steigend} davon >= {TREND_FOLGE_MIN} Quartale in Folge steigend "
           f"(Gewicht {gew.get('institutional_trend', 0)})")
+
+# --- Besitzbreite: "underowned" (Minervini, seit 2026-09-15) ---------------
+# Minervinis Besitz-Kriterium hat zwei Haelften. Die RICHTUNG deckt
+# f_institutional_trend ab (13F-Aktiensummen, quermarkt-normiert). Die zweite
+# Haelfte fehlte bis hier: er will Werte, die noch NICHT bei jeder Adresse im
+# Depot liegen ("underowned"), bei denen aber gerade NEUE Adressen einsteigen -
+# "institutional sponsorship, aber noch nicht ausgereizt".
+#
+# Gemessen wird sie an der ZAHL DER MELDER je Titel aus 13F
+# (institutional_13f.py: melder/melder_delta_pct/melder_pctl), nicht am
+# Besitzanteil. Begruendung steht ausfuehrlich im dortigen Modul-Docstring;
+# die drei Punkte, die hier zaehlen:
+#   1. Yahoos heldPercentInstitutions (f_institutional) taugt NICHT als Niveau:
+#      es rechnet gegen den Streubesitz (Median 89,8 %, 77 von 288 Werten ueber
+#      100 %). Ein "unter 30 % = underowned" waere genau der Aepfel-Birnen-
+#      Vergleich, der am 2026-08-30 schon einmal ausgebaut wurde.
+#   2. Ein Abzaehlen von Meldungen ist von der 13F-Doppelzaehlung (Leihe,
+#      Konzernstrukturen) weit weniger betroffen als die Stueckzahlsumme.
+#   3. Die Melderzahl trennt, was die Aktiensumme vermischt: bestehende Halter
+#      kaufen nach (Summe steigt, Melderzahl flach) gegen neue Adressen steigen
+#      ein (Melderzahl steigt). Nur Letzteres ist Minervinis Kriterium.
+#
+# NIVEAU IMMER RELATIV, nie als erfundene Grenze: das Perzentil aus der
+# 13F-Tabelle (ganzes Universum inkl. Micro Caps, ADRs, Warrants) sagt fuer
+# diese Kandidatenliste wenig - Screener-Treffer liegen dort fast alle oben.
+# Die operative Einordnung ist deshalb der Rang INNERHALB der bewerteten
+# Kandidaten (pool_pctl): "welcher meiner Kandidaten ist am wenigsten
+# besetzt". Das Universum-Perzentil laeuft als Kontextzahl mit.
+#
+# KEIN SCORE-EINFLUSS (wie f_code33/f_institutional bei ihrer Einfuehrung):
+# es gibt fuer die Breite bis jetzt keinen Forward-Test. Die Kohorte dafuer
+# wird ab heute aufgebaut (pivot_backtest.py: uo_*-Kohorten). Ohne diese
+# Reihenfolge waere es genau das Raten, das dieses System vermeiden soll -
+# zumal die Breite dem Systemziel teilweise zuwiderlaeuft: wer fuehrende
+# Momentum-Werte sucht, findet ueberwiegend schon entdeckte Titel, und eine
+# kleine Melderzahl ist auch ein Liquiditaetsrisiko, kein reiner Vorteil.
+UNDEROWNED_POOL_UNTER = 33    # Pool-Perzentil bis hier: "unterbesetzt"
+UNDEROWNED_POOL_BREIT = 67    # ab hier: "breit gehalten"
+# Unterhalb so vieler Melder wird die RICHTUNG nicht mehr beurteilt: bei 6
+# Meldungen ist eine einzige neue Adresse +17 % und reisst jede Schwelle,
+# ohne dass etwas passiert waere (im Test mit kleinen Melderzahlen genau so
+# aufgetreten). Der Fall ist ausserdem inhaltlich ein eigener: fast keine
+# institutionelle Basis ist bei Minervini kein Vorteil ("underowned"),
+# sondern fehlende Sponsorship.
+UNDEROWNED_MIN_MELDER = 10
+
+def f_underowned(ergebnisse):
+    """Post-Pass: fuellt e['underowned'] (reines Messfeld, kein Score).
+
+    e['underowned'] = {verfuegbar, melder, melder_reihe, melder_delta_pct,
+                       melder_folge, melder_pctl, pool_pctl, pool_n, stufe,
+                       richtung, ampel, urteil, stand} - bei verfuegbar=False
+    stattdessen ein kurzes 'hinweis' mit dem Grund.
+    Fuer ALLE Treffer gesetzt (wie f_institutional), damit "nicht verfuegbar"
+    in setup-detail.html sichtbar bleibt statt stillschweigend zu fehlen -
+    nicht-US-Werte haben grundsaetzlich keine 13F-Melder."""
+    tab = institutional_13f.lade()
+    werte = (tab or {}).get("werte") or {}
+    def _v(e):
+        for k in ((e.get("ticker") or "").upper(), (e.get("yahoo_symbol") or "").upper()):
+            if k and k in werte:
+                return werte[k]
+        return None
+    # Pool-Rang: alle bewerteten Kandidaten mit Melderzahl, aufsteigend.
+    # Bewusst der GANZE Pool und nicht nur die Treffer ab Beobachten-Schwelle -
+    # ein Rang wird stabiler, je breiter die Vergleichsmenge ist.
+    zahlen = []
+    for e in ergebnisse:
+        v = _v(e) or {}
+        reihe = [x for x in (v.get("melder") or []) if x is not None]
+        if reihe:
+            zahlen.append(reihe[-1])
+    zahlen.sort()
+    pool_n = len(zahlen)
+    mit_daten = unterbesetzt = zufluss = 0
+    for e in ergebnisse:
+        v = _v(e) or {}
+        reihe = [x for x in (v.get("melder") or []) if x is not None]
+        if not reihe:
+            # Zwei verschiedene Gruende, die nicht verwechselt werden duerfen:
+            # der Ticker ist nicht 13F-meldepflichtig (Normalfall Europa) ODER
+            # die Quartalstabelle stammt noch aus der Zeit vor der Breiten-
+            # Messung und hat die Spalte gar nicht.
+            e["underowned"] = {
+                "verfuegbar": False, "melder": None, "melder_reihe": None,
+                "melder_delta_pct": None, "melder_folge": None, "melder_pctl": None,
+                "pool_pctl": None, "pool_n": pool_n, "stufe": None, "richtung": None,
+                "ampel": "na", "urteil": None,
+                "hinweis": ("nicht in 13F gemeldet (nur US-meldepflichtige "
+                            "Institutionelle)" if (tab or {}).get("melder_vorhanden")
+                            else "13F-Tabelle ohne Melderzahlen - "
+                                 "src/institutional_13f.py --bauen"),
+            }
+            continue
+        mit_daten += 1
+        melder = reihe[-1]
+        pool_pctl = round(bisect.bisect_left(zahlen, melder) / pool_n * 100)
+        deltas = [x for x in (v.get("melder_delta_pct") or []) if x is not None]
+        delta = deltas[-1] if deltas else None
+        folge = v.get("melder_folge") or 0
+        schwelle = (tab or {}).get("melder_steigend_min_pct") or 1.0
+        stufe = ("unterbesetzt" if pool_pctl <= UNDEROWNED_POOL_UNTER
+                 else "breit gehalten" if pool_pctl >= UNDEROWNED_POOL_BREIT
+                 else "mittel besetzt")
+        duenn = melder < UNDEROWNED_MIN_MELDER
+        if duenn:
+            richtung = "zu dünn gemeldet"
+        elif folge >= 1:
+            richtung = "neue Adressen"
+        elif delta is not None and delta <= -schwelle:
+            richtung = "Adressen gehen"
+        else:
+            richtung = "flach"
+        # Ampel bewusst zurueckhaltend: gruen nur, wo BEIDE Haelften von
+        # Minervinis Kriterium zusammenkommen (noch Luft nach oben UND neue
+        # Adressen). "Breit gehalten" bleibt selbst mit Zufluss gelb - dort
+        # ist die Kaufkraft-Reserve, um die es bei underowned geht, klein.
+        if duenn:
+            ampel = "gelb"
+        elif richtung == "Adressen gehen":
+            ampel = "rot"
+        elif richtung == "neue Adressen" and stufe != "breit gehalten":
+            ampel = "gruen"
+        else:
+            ampel = "gelb"
+        if stufe == "unterbesetzt":
+            unterbesetzt += 1
+        if richtung == "neue Adressen":
+            zufluss += 1
+        # Der Vergleich mit der Aktien-Richtung ist die eigentliche Pointe:
+        # steigende Summe OHNE neue Melder heisst "bestehende Halter kaufen
+        # nach", nicht "neue Sponsoren steigen ein".
+        it = e.get("institutional_trend") or {}
+        summe_steigt = bool(it.get("verfuegbar") and (it.get("steigend_folge") or 0) >= 1)
+        if duenn:
+            urteil = (f"nur {melder} meldende Adressen – kaum institutionelle "
+                      "Basis, und die Richtung ist aus so wenigen Meldungen "
+                      "nicht ablesbar")
+        elif richtung == "neue Adressen":
+            urteil = ("noch wenig besetzt, neue Adressen steigen ein"
+                      if stufe == "unterbesetzt" else
+                      "breit gehalten, es kommen weiter Adressen hinzu"
+                      if stufe == "breit gehalten" else
+                      "mittel besetzt, neue Adressen steigen ein")
+        elif richtung == "Adressen gehen":
+            urteil = "Adressen ziehen sich zurück" + (
+                " (Aktiensumme steigt trotzdem – bestehende Halter kaufen nach)"
+                if summe_steigt else "")
+        else:
+            urteil = ("Melderzahl flach" + (
+                " – die steigende Aktiensumme kommt von bestehenden Haltern, "
+                "nicht von neuen Adressen" if summe_steigt else ""))
+        e["underowned"] = {
+            "verfuegbar": True,
+            "melder": melder,
+            "melder_reihe": v.get("melder"),
+            "melder_delta_pct": delta,
+            "melder_folge": folge,
+            "melder_pctl": v.get("melder_pctl"),
+            "pool_pctl": pool_pctl,
+            "pool_n": pool_n,
+            "stufe": stufe,
+            "richtung": richtung,
+            "ampel": ampel,
+            "urteil": urteil,
+            "stand": tab.get("erstellt"),
+            # Kein erklaerender Dauertext je Treffer: die Einordnung ("Rang
+            # unter den N Kandidaten", "Quartalsdaten, bis zu 4,5 Monate alt")
+            # steht in setup-detail.html an der Anzeige. 535 Treffer x 200
+            # Zeichen Boilerplate waeren rund 100 kB signals.json fuer eine
+            # Information, die sich nie je Ticker unterscheidet.
+        }
+    print(f"Besitzbreite (underowned): {mit_daten} mit Melderzahlen, "
+          f"{unterbesetzt} davon im untersten Pool-Drittel, "
+          f"{zufluss} mit neuen Adressen (kein Score-Einfluss)")
 
 def lade_depot_namen(datei):
     """Namen offener Positionen (status 'Offen'). Lokal aus mts_data.json;
@@ -2567,6 +2743,7 @@ def score_alle(limit=None):
     f_code33(ergebnisse, yop, ycrumb, schwellen, gew, gew_summe)
     f_institutional_trend(ergebnisse, gew, gew_summe, schwellen)
     f_institutional(ergebnisse, yop, ycrumb, schwellen)
+    f_underowned(ergebnisse)
     f_marktampel_dynamik(ergebnisse, regime, cfg.get("marktregime", {}), schwellen)
     # BEWUSST ALS LETZTER Post-Pass: f_sektor_staerke/f_fundamental/
     # f_marktampel_dynamik schreiben tier+einstufung jeweils NEU aus dem
@@ -2634,19 +2811,21 @@ def score_alle(limit=None):
 
     # Erstladung auf Mobilfunkmass (Systempruefung Punkt 9, 13.09.2026):
     # signals.json ist mit "chart" (6 Monate OHLCV + 3 SMAs je Ticker, ~70%
-    # der Dateigroesse) und den drei NUR von setup-detail.html gelesenen
-    # Feldern trend_template/institutional/institutional_trend (~7,5%) fuer
+    # der Dateigroesse) und den vier NUR von setup-detail.html gelesenen
+    # Feldern trend_template/institutional/institutional_trend/underowned
+    # (~7,5%, underowned seit 2026-09-15 dazu) fuer
     # eine Uebersicht ueber alle ~535 Ticker massiv ueberdimensioniert -
     # signal-hub.html rendert die Karten-Liste ausschliesslich aus den
     # uebrigen, kleinen Feldern (siehe karte()/qscan/badges dort). Zwei
     # zusaetzliche, schlanke Ausgaben statt signals.json zu veraendern -
     # setup-detail.html liest weiterhin unveraendert aus der vollen Datei:
     #   signals_uebersicht.json - wie signals.json, aber je Treffer ohne
-    #     chart/trend_template/institutional/institutional_trend.
+    #     chart/trend_template/institutional/institutional_trend/underowned.
     #   signals_charts.json     - NUR die chart-Objekte, nach Ticker
     #     geschluesselt; signal-hub.html laedt sie erst beim ersten
     #     aufgeklappten Mini-Chart, nicht beim Erstladen.
-    _UEBERSICHT_AUSSCHLUSS = ("chart", "trend_template", "institutional", "institutional_trend")
+    _UEBERSICHT_AUSSCHLUSS = ("chart", "trend_template", "institutional",
+                              "institutional_trend", "underowned")
     treffer_schlank = [
         {k: v for k, v in e.items() if k not in _UEBERSICHT_AUSSCHLUSS}
         for e in ergebnisse

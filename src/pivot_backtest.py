@@ -350,6 +350,31 @@ def _inst_trend_map():
     return out
 
 
+def _underowned_map():
+    """Ticker -> (Zufluss-Quadrant True/False/None, Pool-Perzentil).
+
+    Die Breiten-Haelfte von Minervinis Besitz-Kriterium (scorer.f_underowned,
+    seit 2026-09-15): True = noch nicht breit besetzt UND neue Adressen
+    steigen ein. Sie hat bewusst KEIN Score-Gewicht, solange diese Kohorte
+    nicht reif ist - genau dafuer wird sie hier ab sofort mitgeloggt.
+    None = keine 13F-Melderzahlen (systematisch alle nicht-US-Werte), wie bei
+    _inst_trend_map() ausdruecklich KEIN "Kriterium nicht erfuellt"."""
+    try:
+        signale = json.load(open(pfade.SIGNALS_JSON, encoding="utf-8")).get("treffer", [])
+    except Exception:
+        return {}
+    out = {}
+    for e in signale:
+        uo = e.get("underowned") or {}
+        if not uo.get("verfuegbar"):
+            out[e.get("ticker")] = (None, None)
+            continue
+        zufluss = (uo.get("richtung") == "neue Adressen"
+                   and uo.get("stufe") != "breit gehalten")
+        out[e.get("ticker")] = (zufluss, uo.get("pool_pctl"))
+    return out
+
+
 def log_heute():
     if not os.path.exists(pfade.PIVOT_JSON):
         print("Keine pivot.json -> nichts zu loggen.")
@@ -358,6 +383,7 @@ def log_heute():
     earn_map = _earnings_tage_map()
     tt_map = _trend_template_map()
     it_map = _inst_trend_map()
+    uo_map = _underowned_map()
     heute = datetime.now().strftime("%Y-%m-%d")
     lb = _logbuch_load()
     # Doppel-Pruefung ueber den belegten Handelstag statt das Schreibdatum
@@ -414,6 +440,13 @@ def log_heute():
             # Minervinis Besitz-Richtung (SEC 13F, quartalsweise). None bei
             # nicht-US-Werten - siehe _inst_trend_map().
             "inst_trend": it_map.get(e.get("ticker")),
+            # Besitzbreite ("underowned", seit 2026-09-15): Quadrant und
+            # Pool-Perzentil - siehe _underowned_map(). Aeltere Eintraege
+            # haben die Felder nicht und bleiben bis zu ihrer Reife in der
+            # "unbekannt"-Kohorte (kein rueckwirkendes Backfill, wie bei den
+            # SEPA-Feldern oben).
+            "uo_zufluss": uo_map.get(e.get("ticker"), (None, None))[0],
+            "uo_pctl": uo_map.get(e.get("ticker"), (None, None))[1],
             "realisiert": None,        # wird von --evaluate gefuellt
         })
         neu += 1
@@ -539,6 +572,11 @@ def evaluate():
             "vcp_ge3", "vcp_lt3",              # Minervini: 3-4 Kontraktionen
             "eng_le5", "eng_gt5",              # Minervini: Endkontraktion 3-5 %
             "insttrend_ja", "insttrend_nein",  # institutioneller Besitz steigend?
+            # Breite statt nur Richtung (seit 2026-09-15): noch nicht breit
+            # besetzt UND neue Adressen steigen ein ("underowned"). Erst wenn
+            # diese Kohorte SCHWELLE_PUSH erreicht UND besser laeuft, darf die
+            # Breite ein Score-Gewicht bekommen - vorher ist sie ein Messfeld.
+            "uo_ja", "uo_nein",
         )
     ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")   # Folgevolumen nur bei Ausbruechen sinnvoll
     eimer = {s: {h: [] for h, _ in HORIZONTE}
@@ -656,6 +694,9 @@ def evaluate():
         it = e.get("inst_trend")
         if it is not None:
             lege(f"{e['status']}_insttrend_{'ja' if it else 'nein'}")
+        uo = e.get("uo_zufluss")
+        if uo is not None:
+            lege(f"{e['status']}_uo_{'ja' if uo else 'nein'}")
         ft = e.get("follow_through_vol")
         if ft is not None and e["status"] == "BREAKOUT":
             lege("BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach")
@@ -688,6 +729,7 @@ def evaluate():
             "kontraktionen": kt, "basis_wochen": bw,
             "follow_through_vol": e.get("follow_through_vol"), "tt_pass": tt,
             "eng_pct": e.get("eng_pct"), "inst_trend": it,
+            "uo_zufluss": uo, "uo_pctl": e.get("uo_pctl"),
         })
 
         # Archiv fortschreiben. Der Eintrag wird bei jedem Lauf ueberschrieben,

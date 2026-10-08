@@ -65,7 +65,11 @@
      Substanz (keine Eintagsfliege?). Speist sich ausschliesslich aus Feldern,
      die signals.json ohnehin liefert - mehrere davon (rs_rating,
      institutional_trend, basis_nr, extended_pct) waren bis dahin auf dieser
-     Seite nirgends sichtbar, obwohl sie genau die Leitfrage beantworten. */
+     Seite nirgends sichtbar, obwohl sie genau die Leitfrage beantworten.
+     Seit 2026-09-15 zeigt die Geldfluss-Saeule zusaetzlich die BESITZBREITE
+     ("underowned", Feld underowned aus scorer.py::f_underowned): nicht nur,
+     ob institutionelles Geld zufliesst, sondern ob der Wert dafuer noch Luft
+     hat und ob NEUE Adressen einsteigen. */
   .dash-verdikt{background:var(--card);border:1px solid var(--line);border-radius:14px;
     box-shadow:var(--shadow);padding:16px 18px;margin-bottom:12px;border-top:3px solid var(--line)}
   .dash-verdikt.v-gruen{border-top-color:var(--ok)}
@@ -109,6 +113,11 @@
   .dz .dz-k{color:var(--muted)}
   .dz .dz-v{font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
   .dz-v.w-gruen{color:var(--ok)} .dz-v.w-gelb{color:var(--warn)} .dz-v.w-rot{color:var(--bad)}
+  /* Eine Zeile Deutung am Fuss einer Saeule - fuer Kennzahlen, deren nackte
+     Zahl nichts sagt (Besitzbreite/underowned, seit 2026-09-15). */
+  .ds-note{font-size:11px;color:var(--muted2);line-height:1.45;margin-top:2px;
+    border-top:1px dashed var(--line2);padding-top:6px}
+  .ds-note b{color:var(--muted)}
 
   /* Institutioneller Besitz - Info-Block (neutral, keine Ampelfarben) */
   .dz-inst{font-size:12px;border-top:1px solid var(--line2);padding-top:6px;margin-top:1px}
@@ -298,6 +307,35 @@
   .fcard-gelb{border-color:rgba(192,138,46,.4)}
   .fcard-rot,.fcard-na{opacity:.55;box-shadow:none}
 
+  /* Bilanzforensik (seit 2026-10-05): eigene Kartenklasse statt .fcard, weil
+     dort ROT ausgegraut wird (.fcard-rot{opacity:.55}) - bei den uebrigen
+     Fundamentalkarten heisst rot "Kriterium nicht erfuellt, weniger
+     interessant". Hier heisst rot "hier nachlesen" und muss auffallen. */
+  .ffcard{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+          display:flex;gap:10px;box-shadow:var(--shadow)}
+  .ffcard .dot{margin-top:4px}
+  .ffcard.ff-gruen{border-color:rgba(46,139,87,.4)}
+  .ffcard.ff-gelb{border-color:rgba(192,138,46,.45);background:rgba(192,138,46,.05)}
+  .ffcard.ff-rot{border-color:rgba(178,58,46,.5);background:rgba(178,58,46,.07)}
+  .ffcard.ff-rot .fcard-lbl{color:var(--bad)}
+  .ffcard.ff-na{opacity:.6;box-shadow:none}
+  .ff-frage{font-size:11.5px;color:var(--txt);margin-top:6px;line-height:1.4;font-style:italic}
+  .ff-teile{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:7px;font-size:10.5px;color:var(--muted2);
+            font-variant-numeric:tabular-nums}
+  .ff-liste{margin-top:7px;display:grid;gap:3px;font-size:11px}
+  .ff-k{color:var(--muted)}
+  .ff-k-ja{color:var(--ok)} .ff-k-nein{color:var(--bad)} .ff-k-na{color:var(--muted2)}
+  .ffverdikt{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+             padding:14px 16px;margin-bottom:12px;border-left:3px solid var(--line)}
+  .ffverdikt.ffv-gruen{border-left-color:var(--ok)}
+  .ffverdikt.ffv-gelb{border-left-color:var(--warn)}
+  .ffverdikt.ffv-rot{border-left-color:var(--bad)}
+  .ffv-frage{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .ffv-satz{font-size:14px;font-weight:600;line-height:1.45;text-wrap:balance}
+  .ffbasis{font-size:10.5px;color:var(--muted2);line-height:1.5;margin-top:10px;
+           border-top:1px dashed var(--line2);padding-top:8px}
+  .ffbasis b{color:var(--muted)}
+
   .klimax-warn{background:rgba(178,58,46,.08);border:1px solid rgba(178,58,46,.35);border-radius:12px;
                padding:10px 14px;font-size:12.5px;color:var(--bad);margin-bottom:12px}
 
@@ -427,6 +465,13 @@
 const params = new URLSearchParams(location.search);
 let TICKER = (params.get('ticker') || '').toUpperCase();
 
+// Bilanzforensik (seit 2026-10-05): Jahresabschluesse direkt von Yahoo ueber
+// den generischen ?url=-Proxy, umgesetzt sind die quantitativ fassbaren Red
+// Flags aus Schilit/Perler "Financial Shenanigans" und die Grundordnung aus
+// Graham/Meredith "The Interpretation of Financial Statements" - siehe den
+// ausfuehrlichen Block bei FORENSIK_FELDER weiter unten, inklusive der
+// Grenzen dieser Datenbasis.
+//
 // Fundamentalanalyse/News/Story (seit 2026-08-02): live bei jedem Aufruf ueber
 // denselben Cloudflare-Worker, den Hauptapp/Coach/Markets-360 schon als
 // MTS_PROXY fuer Yahoo/FRED nutzen (siehe cloudflare-worker/README.md) - der
@@ -464,7 +509,7 @@ const FAKTOR_INFO = {
   code33:              {icon:'🥇', label:'Code 33 (EPS/Umsatz/Marge)', explain:
     'Minervini/TraderFox: EPS-Wachstum über 40 %, Umsatzwachstum über 7 % und um mehr als 2 Prozentpunkte verbesserte Nettomarge - jeweils Quartal gegen Vorjahresquartal. Strenger als der Fundamental-Faktor, weil die Marge mitgeprüft wird: Wachstum muss beim Gewinn ankommen, nicht nur beim Umsatz. Seit 2026-09-06 Score-Faktor. Ohne verfügbare Quartalsreihe neutral gewertet, kein Malus.'},
 };
-const VERIFY_EXPLAIN = 'Unabhängige Gegenprüfung des Stage-2-Trend-Templates: berechnet die 8 Kriterien frisch aus eigenen Yahoo-Kursdaten (Cloudflare Worker, sieht die Pipeline-Begründung nicht) und vergleicht sie mit dem gespeicherten Wert. Rein deterministisch, kein KI-Aufruf - Prinzip "wer etwas berechnet hat, prüft es nicht selbst nach".';
+const VERIFY_EXPLAIN = 'Unabhängige Gegenprüfung des Stage-2-Trend-Templates: berechnet die 8 Kriterien frisch aus eigenen Yahoo-Kursdaten (Cloudflare Worker, sieht die Pipeline-Begründung nicht) und vergleicht sie mit dem gespeicherten Wert. Rein deterministisch, kein KI-Aufruf - Prinzip „wer etwas berechnet hat, prüft es nicht selbst nach“.';
 const PIVOT_EXPLAIN = 'Pivot-Armed-Detektor (ergänzt den nachlaufenden Score um die Entstehung des Ausbruchs): BREAKOUT = frischer Ausbruch über die Basis auf hohem Volumen. ARMED = enge, ausgetrocknete Basis knapp unter dem Pivot (Pre-Breakout). WATCH = Trend intakt, Basis noch nicht reif. CHEAT = früher Ausbruch vor vollem Trend-Template, klein positionieren.';
 const PA_EXPLAIN = 'Unabhängige Candlestick-Musteranalyse (Trendbar, Breakout, Gap, Bar-Counting) aus dem Price-Action-Hub - positiver Wert = bullisches Chartbild, kein Ersatz für den Score.';
 const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufwärtsphase, Distribution/Declining = Abwärtsphase - gemessen an Kurs gegen den gleitenden 200-Tage-Durchschnitt und dessen Steigung.';
@@ -484,6 +529,7 @@ const STADIUM_EXPLAIN = 'Weinstein-Stadium-Modell: Advancing/Accumulation = Aufw
 // proprietäre TraderFox-Kennzahl ohne öffentlich dokumentierte Formel, die
 // zudem 3 Jahre Quartalshistorie bräuchte (die kostenlose Yahoo-Route liefert
 // nur ~5 Quartale).
+const FORENSIK_EXPLAIN = 'Bilanzforensik aus den Jahresabschlüssen (Yahoo Finance, bis zu 5 Jahre): die quantitativen Red Flags aus Howard Schilit/Jeremy Perler, „Financial Shenanigans“ (4. Auflage) - vorgezogene Umsatzerfassung, aufgeblähte Gewinne, aktivierte Kosten, Cashflow-Kosmetik, auffällige Forderungen und Vorräte, Zukäufe als Verschleierung - plus die Grundordnung aus Benjamin Graham/Spencer Meredith, „The Interpretation of Financial Statements“: verdienter Gewinn gegen Cashflow, finanzielle Stabilität, Gewinnkontinuität, Verwässerung. Dazu drei veröffentlichte Gesamtmaße (Beneish M-Score, Piotroski F-Score, Altman Z\u2033). WICHTIG: Schilits eigentliche Arbeit steckt in Fußnoten, Lagebericht und Segmentangaben - rechnerisch erfassbar ist nur ein Teil. Rot heißt deshalb „hier im Geschäftsbericht nachlesen“, nie „Betrug“. Stark wachsende Unternehmen lösen mehrere dieser Kennzahlen systematisch aus, ohne etwas falsch zu machen. Kein Score-Bestandteil, keine Anlageberatung.';
 const CODE33_EXPLAIN = 'Code 33 (Mark Minervini): Qualitätsmerkmal für Wachstumsaktien nach TraderFox-Screening-Schwellen - EPS-Wachstum Quartal ggü. Vorjahr über 40 %, Umsatzwachstum Quartal ggü. Vorjahr über 7 %, Nettogewinnmarge um mehr als 2 Prozentpunkte verbessert (2-3 Quartale zurückgerechnet). Signalisiert institutionelles Interesse, weil das Gewinnwachstum durch echtes Umsatzwachstum getragen wird statt nur durch Kostensenkungen. Datenquelle: Yahoo Finance.';
 // Quartalsergebnisse-Tabelle (seit 2026-08-24): zeigt dieselben rohen
 // Umsatz-/EPS-Zeitreihen, aus denen Code 33 oben schon seine YoY-Bewertung
@@ -658,7 +704,7 @@ function renderDirekt(t){
       das ganze Aktienuniversum — relative Kennzahlen wie RS-Rating oder Branchenrang brauchen den Vergleich
       gegen alle anderen Treffer und lassen sich für einen Einzeltitel nicht nachbauen. Das sagt nichts über
       die Qualität dieses Werts aus, nur dass er (noch) kein Kandidat im Scan ist. Alles Übrige unten (Chart,
-      Fundamentaldaten, Quartalszahlen, Code 33, Dividendenkontinuität, Innerer Wert, 🔬 Tiefenanalyse)
+      Fundamentaldaten, Quartalszahlen, Code 33, Bilanzforensik, Dividendenkontinuität, Innerer Wert, 🔬 Tiefenanalyse)
       läuft live und unabhängig vom Scan — genau wie bei jedem erfassten Ticker.
       <a href="signal-hub.html">→ zum Signal Hub</a>
     </div>
@@ -680,7 +726,7 @@ function renderDirekt(t){
     </details>
 
     <details class="acc" open>
-      <summary>💵 Fundamentalanalyse <span class="acc-sub">CANSLIM/Code 33, Dividende, Innerer Wert, Buffett/Munger/Graham, Story</span><span class="chev">▾</span></summary>
+      <summary>💵 Fundamentalanalyse <span class="acc-sub">CANSLIM/Code 33, Bilanzforensik (Schilit/Graham), Dividende, Innerer Wert, Story</span><span class="chev">▾</span></summary>
       <div class="acc-body">
         <div class="fgrid">
           <div class="fcard fcard-na" id="code33wrap"><span class="dot d-na"></span><div class="fcard-body">
@@ -710,6 +756,9 @@ function renderDirekt(t){
             <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
           </div></div>
         </div>
+
+        <div class="subhead">🕵️ Bilanzforensik &amp; Bilanzanalyse <span class="sub" title="${FORENSIK_EXPLAIN}">Schilit „Financial Shenanigans" + Graham „Interpretation of Financial Statements" - Jahresabschlüsse, kein Score-Bestandteil</span></div>
+        <div id="forensikwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Jahresabschlüsse …</div></div></div>
 
         <div class="subhead">🎯 Innerer Wert <span class="sub">Graham Number, Owner-Earnings-DCF, DDM - Sicherheitsmarge ≥20% grün, 0–20% gelb, Kurs über Schätzwert rot</span></div>
         <div class="fgrid" id="wertwrap">
@@ -743,6 +792,7 @@ function renderDirekt(t){
   ladeMehrjahr(t.ticker, t.name);
   ladeDividenden(t.ticker, t.ticker);
   starteTiefenanalyse(t);
+  ladeForensik(t.ticker, t.ticker);
   document.getElementById('stand').textContent = 'Live-Kurs · kein Signal-Hub-Scan';
 }
 
@@ -1118,6 +1168,697 @@ function renderInnererWert(){
   ].join('');
 }
 
+// ─── Erweiterte Fundamentalanalyse: Bilanzforensik (seit 2026-10-05) ───────
+// Umsetzung der beiden Buchgrundlagen, die dieser Seite bisher fehlten:
+//
+//  * Howard Schilit / Jeremy Perler, "Financial Shenanigans" (4. Auflage):
+//    die Red Flags, mit denen sich geschoente Abschluesse erkennen lassen.
+//    Das Buch gliedert sie in Earnings Manipulation Shenanigans (EM 1-7),
+//    Cash Flow Shenanigans (CF 1-4) und Key Metric Shenanigans (KM 1-2);
+//    jede Karte unten nennt die Nummer, unter der der Fall dort steht.
+//  * Benjamin Graham / Spencer Meredith, "The Interpretation of Financial
+//    Statements": die Ordnung der Grundlagen - was ist wirklich verdienter
+//    Gewinn, wie unterscheidet er sich vom Cashflow, wie stabil ist die
+//    Finanzlage, welche Positionen verdienen besondere Aufmerksamkeit.
+//
+// WAS DAS HIER NICHT IST: Schilits eigentliche Arbeit steckt in Fussnoten,
+// Lageberichten, Segmentangaben, Related-Party-Notes und Aenderungen der
+// Bilanzierungsmethode. Enron (Special Purpose Entities), Lucent (Channel
+// Stuffing), Valeant (Philidor) oder Wirecard (Treuhandkonten) waeren mit
+// KEINER der Kennzahlen unten gefunden worden. Berechenbar ist nur der
+// quantitative Teil: Verhaeltniszahlen, die zeigen, WO im Abschluss sich das
+// Nachlesen lohnt. Jede Karte formuliert deshalb eine Frage an den
+// Geschaeftsbericht, kein Urteil ueber das Unternehmen - und rot heisst
+// "hier nachlesen", nie "Betrug".
+//
+// ZWEITE EINSCHRAENKUNG, genauso wichtig: Wachstumsaktien - also genau das,
+// was dieses System sucht - loesen mehrere dieser Flags systematisch aus.
+// Wer 40 % waechst, hat wachsende Forderungen, wachsende Vorraete und
+// negative Abgrenzungsposten, ohne etwas falsch zu machen. Die Flags sind
+// deshalb relativ zum Umsatzwachstum gerechnet, wo das moeglich ist, und
+// KEINE davon hat Score-Einfluss.
+//
+// Datenquelle: Yahoos fundamentals-timeseries (Jahresabschluesse, bis zu 5
+// Jahre) ueber den bestehenden ?url=-CORS-Proxy - derselbe Weg, den schon
+// ladeDividenden() nutzt, kein neuer Worker-Endpunkt. Quartalszahlen liefert
+// die kostenlose Route nur ~5 Quartale weit (siehe QUARTAL_EXPLAIN), fuer
+// Trendvergleiche ueber mehrere Perioden taugt deshalb nur die Jahresreihe.
+// Beneish/Piotroski/Altman sind ohnehin auf Jahresdaten definiert.
+const FORENSIK_JAHRE = 5;
+
+// Konzept -> Yahoo-Feldnamen, in Reihenfolge der Praeferenz. Mehrere
+// Kandidaten, weil Yahoo je Unternehmen (und besonders bei IFRS-Bilanzen
+// europaeischer Werte) unterschiedliche Zeilen fuellt - und weil die
+// Feldnamen in dieser Session NICHT live gegen Yahoo pruefbar waren
+// (Netzpolitik der Build-Umgebung blockiert query1.finance.yahoo.com).
+// Die Karte "Datenbasis" unten zeigt deshalb bei jedem Aufruf, welche Felder
+// tatsaechlich ankamen - ein falsch geratener Name fuehrt zu "nicht
+// verfuegbar", nie zu einer falschen Zahl.
+const FORENSIK_FELDER = {
+  umsatz:            ['TotalRevenue', 'OperatingRevenue'],
+  materialaufwand:   ['CostOfRevenue'],
+  bruttoergebnis:    ['GrossProfit'],
+  vertriebsverwalt:  ['SellingGeneralAndAdministration', 'GeneralAndAdministrativeExpense'],
+  betriebsergebnis:  ['OperatingIncome', 'TotalOperatingIncomeAsReported'],
+  vorsteuerergebnis: ['PretaxIncome'],
+  nettogewinn:       ['NetIncome', 'NetIncomeCommonStockholders'],
+  nettogewinn_fort:  ['NetIncomeContinuousOperations',
+                      'NetIncomeFromContinuingOperationNetMinorityInterest'],
+  ebit:              ['EBIT'],
+  zinsaufwand:       ['InterestExpense', 'InterestExpenseNonOperating'],
+  abschreibungen:    ['ReconciledDepreciation', 'DepreciationAndAmortization',
+                      'DepreciationAmortizationDepletion'],
+  aktien:            ['DilutedAverageShares', 'BasicAverageShares'],
+  summe_aktiva:      ['TotalAssets'],
+  umlaufvermoegen:   ['CurrentAssets'],
+  kurzfr_schulden:   ['CurrentLiabilities'],
+  forderungen:       ['AccountsReceivable', 'Receivables', 'NetReceivables'],
+  vorraete:          ['Inventory'],
+  lieferverbind:     ['AccountsPayable', 'Payables'],
+  sachanlagen:       ['NetPPE'],
+  goodwill:          ['Goodwill'],
+  immaterielle:      ['OtherIntangibleAssets'],
+  goodwill_immat:    ['GoodwillAndOtherIntangibleAssets'],
+  eigenkapital:      ['StockholdersEquity', 'TotalEquityGrossMinorityInterest'],
+  gewinnruecklagen:  ['RetainedEarnings'],
+  fremdkapital:      ['TotalLiabilitiesNetMinorityInterest', 'TotalLiabilities'],
+  langfr_schulden:   ['LongTermDebt'],
+  operativer_cf:     ['OperatingCashFlow', 'CashFlowFromContinuingOperatingActivities'],
+  investitionen:     ['CapitalExpenditure'],
+  freier_cf:         ['FreeCashFlow'],
+};
+// Aufteilung in zwei Abrufe: GuV+Cashflow und Bilanz. Haelt die URLs kurz
+// und laesst eine Haelfte ausfallen, ohne die andere mitzunehmen.
+const FORENSIK_GRUPPEN = [
+  ['umsatz','materialaufwand','bruttoergebnis','vertriebsverwalt','betriebsergebnis',
+   'vorsteuerergebnis','nettogewinn','nettogewinn_fort','ebit','zinsaufwand',
+   'abschreibungen','aktien','operativer_cf','investitionen','freier_cf'],
+  ['summe_aktiva','umlaufvermoegen','kurzfr_schulden','forderungen','vorraete',
+   'lieferverbind','sachanlagen','goodwill','immaterielle','goodwill_immat',
+   'eigenkapital','gewinnruecklagen','fremdkapital','langfr_schulden'],
+];
+
+function forensikTypen(konzepte){
+  const out = [];
+  konzepte.forEach(k => (FORENSIK_FELDER[k] || []).forEach(f => out.push('annual' + f)));
+  return out;
+}
+
+// Yahoo liefert je Feld ein Array {asOfDate, reportedValue:{raw}}. Daraus eine
+// nach Datum aufsteigende Jahresreihe bauen; bei mehreren gefuellten
+// Kandidaten gewinnt der in FORENSIK_FELDER zuerst genannte.
+function forensikParse(resultate){
+  const prio = {}, konzeptVon = {};
+  Object.keys(FORENSIK_FELDER).forEach(k =>
+    FORENSIK_FELDER[k].forEach((f, i) => { konzeptVon['annual' + f] = k; prio['annual' + f] = i; }));
+  const jahre = {}, quellen = {};
+  (resultate || []).forEach(res => (res || []).forEach(eintrag => {
+    const typ = eintrag && eintrag.meta && eintrag.meta.type && eintrag.meta.type[0];
+    const konzept = typ && konzeptVon[typ];
+    if(!konzept || !Array.isArray(eintrag[typ])) return;
+    eintrag[typ].forEach(p => {
+      const roh = p && p.reportedValue && p.reportedValue.raw;
+      if(roh==null || !p.asOfDate) return;
+      const jahr = String(p.asOfDate).slice(0,10);
+      jahre[jahr] = jahre[jahr] || {};
+      const bisher = quellen[jahr+'|'+konzept];
+      if(bisher!=null && bisher <= prio[typ]) return;   // schon besseres Feld gesetzt
+      jahre[jahr][konzept] = roh;
+      quellen[jahr+'|'+konzept] = prio[typ];
+    });
+  }));
+  const reihe = Object.keys(jahre).sort().map(d => Object.assign({_datum: d}, jahre[d]));
+  return reihe.slice(-FORENSIK_JAHRE);
+}
+
+// --- Hilfsrechnungen -------------------------------------------------------
+const fz = (j, k) => (j && typeof j[k] === 'number' && isFinite(j[k])) ? j[k] : null;
+function fdiv(a, b){ return (a==null || b==null || b===0) ? null : a/b; }
+function fwachstum(neu, alt){ return (neu==null || alt==null || alt===0) ? null : (neu-alt)/Math.abs(alt); }
+// Immaterielle ohne Goodwill: Yahoo fuellt je Unternehmen entweder die
+// Einzelzeile oder nur die Summe - zweite Variante wird zurueckgerechnet.
+function fImmateriell(j){
+  const einzeln = fz(j,'immaterielle');
+  if(einzeln!=null) return einzeln;
+  const summe = fz(j,'goodwill_immat'), gw = fz(j,'goodwill');
+  return (summe!=null && gw!=null) ? summe-gw : (summe!=null ? summe : null);
+}
+function fEbit(j){
+  const e = fz(j,'ebit');
+  if(e!=null) return e;
+  const vs = fz(j,'vorsteuerergebnis'), zins = fz(j,'zinsaufwand');
+  return (vs!=null && zins!=null) ? vs+Math.abs(zins) : fz(j,'betriebsergebnis');
+}
+
+// --- Beneish M-Score (8 Variablen, Beneish 1999) ---------------------------
+// Publizierte Formel mit publizierter Schwelle (-1,78) - bewusst keine
+// selbst erfundene Gewichtung. Braucht zwei vollstaendige Jahre; fehlt eine
+// Variable, faellt der Score aus (kein Teilscore, der Vergleichbarkeit
+// vortaeuscht). Beneish selbst: ein Screening-Werkzeug mit erheblicher
+// Falsch-Positiv-Rate, besonders bei stark wachsenden Unternehmen.
+function beneishMScore(v, p){
+  const g = {};
+  const u = fz(v,'umsatz'), uP = fz(p,'umsatz');
+  const forderungen = fz(v,'forderungen'), forderungenP = fz(p,'forderungen');
+  g.DSRI = fdiv(fdiv(forderungen, u), fdiv(forderungenP, uP));
+  const bm = fdiv(fz(v,'bruttoergebnis') ?? (u!=null && fz(v,'materialaufwand')!=null ? u-fz(v,'materialaufwand') : null), u);
+  const bmP = fdiv(fz(p,'bruttoergebnis') ?? (uP!=null && fz(p,'materialaufwand')!=null ? uP-fz(p,'materialaufwand') : null), uP);
+  g.GMI = fdiv(bmP, bm);
+  const qual = (j) => {
+    const ta = fz(j,'summe_aktiva'), ca = fz(j,'umlaufvermoegen'), ppe = fz(j,'sachanlagen');
+    return (ta==null || ca==null || ppe==null || ta===0) ? null : 1 - (ca+ppe)/ta;
+  };
+  g.AQI = fdiv(qual(v), qual(p));
+  g.SGI = fdiv(u, uP);
+  const abschreibungsrate = (j) => {
+    const d = fz(j,'abschreibungen'), ppe = fz(j,'sachanlagen');
+    return (d==null || ppe==null || d+ppe===0) ? null : d/(d+ppe);
+  };
+  g.DEPI = fdiv(abschreibungsrate(p), abschreibungsrate(v));
+  g.SGAI = fdiv(fdiv(fz(v,'vertriebsverwalt'), u), fdiv(fz(p,'vertriebsverwalt'), uP));
+  const hebel = (j) => {
+    const ta = fz(j,'summe_aktiva'), cl = fz(j,'kurzfr_schulden'), ltd = fz(j,'langfr_schulden');
+    return (ta==null || cl==null || ltd==null || ta===0) ? null : (cl+ltd)/ta;
+  };
+  g.LVGI = fdiv(hebel(v), hebel(p));
+  const ergebnis = fz(v,'nettogewinn_fort') ?? fz(v,'nettogewinn');
+  const cfV = fz(v,'operativer_cf');
+  g.TATA = (ergebnis==null || cfV==null) ? null : fdiv(ergebnis - cfV, fz(v,'summe_aktiva'));
+  const fehlend = Object.keys(g).filter(k => g[k]==null || !isFinite(g[k]));
+  if(fehlend.length) return {wert: null, teile: g, fehlend};
+  const m = -4.84 + 0.920*g.DSRI + 0.528*g.GMI + 0.404*g.AQI + 0.892*g.SGI
+          + 0.115*g.DEPI - 0.172*g.SGAI + 4.679*g.TATA - 0.327*g.LVGI;
+  return {wert: m, teile: g, fehlend: []};
+}
+
+// --- Piotroski F-Score (9 Kriterien, Piotroski 2000) ----------------------
+function piotroskiFScore(v, p){
+  const pruef = [];
+  const roa = fdiv(fz(v,'nettogewinn'), fz(v,'summe_aktiva'));
+  const roaP = fdiv(fz(p,'nettogewinn'), fz(p,'summe_aktiva'));
+  const cf = fz(v,'operativer_cf');
+  pruef.push(['Gesamtkapitalrendite positiv', roa==null ? null : roa > 0]);
+  pruef.push(['Operativer Cashflow positiv', cf==null ? null : cf > 0]);
+  pruef.push(['Gesamtkapitalrendite gestiegen', (roa==null||roaP==null) ? null : roa > roaP]);
+  pruef.push(['Cashflow über Gewinn (Ertragsqualität)',
+              (cf==null || fz(v,'nettogewinn')==null) ? null : cf > fz(v,'nettogewinn')]);
+  const hebel = (j) => fdiv(fz(j,'langfr_schulden'), fz(j,'summe_aktiva'));
+  pruef.push(['Langfristige Verschuldung nicht gestiegen',
+              (hebel(v)==null||hebel(p)==null) ? null : hebel(v) <= hebel(p)]);
+  const liq = (j) => fdiv(fz(j,'umlaufvermoegen'), fz(j,'kurzfr_schulden'));
+  pruef.push(['Liquidität verbessert', (liq(v)==null||liq(p)==null) ? null : liq(v) > liq(p)]);
+  const akt = fz(v,'aktien'), aktP = fz(p,'aktien');
+  pruef.push(['Keine neuen Aktien ausgegeben', (akt==null||aktP==null) ? null : akt <= aktP*1.01]);
+  const bm = (j) => fdiv(fz(j,'bruttoergebnis'), fz(j,'umsatz'));
+  pruef.push(['Bruttomarge verbessert', (bm(v)==null||bm(p)==null) ? null : bm(v) > bm(p)]);
+  const umschlag = (j) => fdiv(fz(j,'umsatz'), fz(j,'summe_aktiva'));
+  pruef.push(['Kapitalumschlag verbessert',
+              (umschlag(v)==null||umschlag(p)==null) ? null : umschlag(v) > umschlag(p)]);
+  const bewertbar = pruef.filter(x => x[1]!=null);
+  return {
+    punkte: bewertbar.filter(x => x[1]).length,
+    bewertbar: bewertbar.length,
+    kriterien: pruef,
+  };
+}
+
+// --- Altman Z''-Score (Altman 1995, Nicht-Produzenten/Schwellenmaerkte) ---
+// Bewusst die Z''-Variante statt des Original-Z von 1968: dieses Universum
+// ist ueberwiegend Technologie/Dienstleistung, und Z'' laesst den
+// Umsatz/Aktiva-Term weg, der Nicht-Produzenten systematisch abwertet.
+// Schwellen nach Altman: > 2,6 unkritisch, 1,1-2,6 Graubereich, < 1,1
+// angespannt. Nutzt Buchwerte statt Marktkapitalisierung (X4 der Z''-Form).
+function altmanZZ(v){
+  const ta = fz(v,'summe_aktiva'), fk = fz(v,'fremdkapital');
+  const wc = (fz(v,'umlaufvermoegen')!=null && fz(v,'kurzfr_schulden')!=null)
+    ? fz(v,'umlaufvermoegen') - fz(v,'kurzfr_schulden') : null;
+  const x1 = fdiv(wc, ta), x2 = fdiv(fz(v,'gewinnruecklagen'), ta);
+  const x3 = fdiv(fEbit(v), ta), x4 = fdiv(fz(v,'eigenkapital'), fk);
+  if([x1,x2,x3,x4].some(x => x==null)) return {wert: null, teile: {x1,x2,x3,x4}};
+  return {wert: 6.56*x1 + 3.26*x2 + 6.72*x3 + 1.05*x4, teile: {x1,x2,x3,x4}};
+}
+
+// --- Red Flags nach Schilit + Graham-Grundlagen ---------------------------
+// Jedes Flag: id, Buchbezug, Zahl, Ampel, Deutung. Reihenfolge = Reihenfolge
+// der Darstellung (Ertragsqualitaet zuerst, weil sie laut Schilit die
+// zentrale Frage ist: kommt der ausgewiesene Gewinn als Geld herein?).
+function forensikFlags(reihe){
+  const flags = [];
+  const n = reihe.length;
+  const v = n ? reihe[n-1] : null, p = n > 1 ? reihe[n-2] : null;
+  const add = (f) => flags.push(f);
+  const pct = (x) => x==null ? null : x*100;
+  if(!v) return flags;
+
+  // 1. Gewinn gegen Cashflow (Graham: "Was ist tatsaechlich verdienter
+  //    Gewinn?"; Schilit CF-Teil). Mehrjahresmittel daneben, weil ein
+  //    einzelnes Jahr durch Arbeitskapital-Schwankungen taeuscht.
+  const cfNi = fdiv(fz(v,'operativer_cf'), fz(v,'nettogewinn'));
+  const summeCf = reihe.reduce((s,j) => s + (fz(j,'operativer_cf') ?? 0), 0);
+  const summeNi = reihe.reduce((s,j) => s + (fz(j,'nettogewinn') ?? 0), 0);
+  const cfNiMehrjahr = fdiv(summeCf, summeNi);
+  add({
+    id: 'cfo_ni', icon: '💧', titel: 'Cashflow deckt den Gewinn',
+    buch: 'Graham, Kap. „Gewinn vs. Cashflow" · Schilit, Cash Flow Shenanigans',
+    wert: cfNi==null ? '—' : cfNi.toFixed(2) + '×',
+    ampel: fz(v,'nettogewinn')!=null && fz(v,'nettogewinn') <= 0 ? 'na'
+         : cfNi==null ? 'na' : cfNi >= 1 ? 'gruen' : cfNi >= 0.8 ? 'gelb' : 'rot',
+    detail: cfNi==null
+      ? 'Operativer Cashflow oder Jahresüberschuss fehlt in der Jahresreihe.'
+      : `Operativer Cashflow ${cfNi.toFixed(2)}× Jahresüberschuss`
+        + (cfNiMehrjahr!=null ? ` · ${n}-Jahres-Mittel ${cfNiMehrjahr.toFixed(2)}×` : '')
+        + '. Unter 1 heißt: der ausgewiesene Gewinn kommt nicht als Geld herein.',
+    frage: 'Woher kommt die Lücke – Arbeitskapital, Abgrenzungen, Einmaleffekte?',
+  });
+
+  // 2. Abgrenzungsposten (Sloan 1996 Accrual Ratio). Die robusteste
+  //    Einzelzahl fuer Ertragsqualitaet, die aus diesen Daten entsteht.
+  const taMittel = (p && fz(v,'summe_aktiva')!=null && fz(p,'summe_aktiva')!=null)
+    ? (fz(v,'summe_aktiva')+fz(p,'summe_aktiva'))/2 : fz(v,'summe_aktiva');
+  const accrual = (fz(v,'nettogewinn')!=null && fz(v,'operativer_cf')!=null)
+    ? fdiv(fz(v,'nettogewinn') - fz(v,'operativer_cf'), taMittel) : null;
+  add({
+    id: 'accruals', icon: '🧾', titel: 'Abgrenzungsposten (Accruals)',
+    buch: 'Sloan 1996 · Schilit, Earnings Manipulation',
+    wert: accrual==null ? '—' : (accrual>0?'+':'') + pct(accrual).toFixed(1) + ' %',
+    ampel: accrual==null ? 'na' : accrual <= 0.05 ? 'gruen' : accrual <= 0.10 ? 'gelb' : 'rot',
+    detail: accrual==null ? 'Nicht berechenbar (Gewinn, Cashflow oder Bilanzsumme fehlt).'
+      : `(Gewinn − operativer Cashflow) / Bilanzsumme = ${(accrual>0?'+':'')}${pct(accrual).toFixed(1)} %. `
+        + 'Je höher, desto mehr Gewinn steckt in Buchungen statt in Zahlungen.',
+    frage: 'Welche Positionen treiben die Abgrenzung – Forderungen, Vorräte, aktivierte Kosten?',
+  });
+
+  // 3. Forderungslaufzeit (Schilit EM 1: Umsatz zu frueh erfasst).
+  const dso = (j) => fdiv(fz(j,'forderungen'), fz(j,'umsatz'));
+  const dsoTage = dso(v)!=null ? dso(v)*365 : null;
+  const dsoDelta = fwachstum(dso(v), dso(p));
+  const umsatzWachstum = fwachstum(fz(v,'umsatz'), fz(p,'umsatz'));
+  const forderungsWachstum = fwachstum(fz(v,'forderungen'), fz(p,'forderungen'));
+  const forderungsLuecke = (forderungsWachstum!=null && umsatzWachstum!=null)
+    ? forderungsWachstum - umsatzWachstum : null;
+  add({
+    id: 'dso', icon: '📬', titel: 'Forderungslaufzeit (DSO)',
+    buch: 'Schilit, EM 1 – Umsatz zu früh erfasst',
+    wert: dsoTage==null ? '—' : dsoTage.toFixed(0) + ' Tage',
+    ampel: dsoDelta==null ? 'na' : dsoDelta <= 0.05 ? 'gruen' : dsoDelta <= 0.15 ? 'gelb' : 'rot',
+    detail: dsoTage==null ? 'Forderungen oder Umsatz fehlen in der Jahresreihe.'
+      : `${dsoTage.toFixed(0)} Tage`
+        + (dsoDelta!=null ? ` · ${dsoDelta>0?'+':''}${pct(dsoDelta).toFixed(1)} % ggü. Vorjahr` : '')
+        + (forderungsLuecke!=null
+            ? ` · Forderungen wachsen ${forderungsLuecke>0?'schneller':'langsamer'} als der Umsatz `
+              + `(${(forderungsLuecke>0?'+':'')}${pct(forderungsLuecke).toFixed(1)} pp)` : '')
+        + '.',
+    frage: 'Wurden Zahlungsziele verlängert, Umsätze vorgezogen oder Kanäle gefüllt?',
+  });
+
+  // 4. Vorratslaufzeit (Schilit EM 4: Aufwand in spaetere Perioden schieben -
+  //    zu niedriger Materialaufwand blaeht Vorraete und Marge auf).
+  const dio = (j) => fdiv(fz(j,'vorraete'), fz(j,'materialaufwand'));
+  const dioTage = dio(v)!=null ? dio(v)*365 : null;
+  const dioDelta = fwachstum(dio(v), dio(p));
+  const ohneVorraete = fz(v,'vorraete')==null && fz(v,'summe_aktiva')!=null;
+  const vorraeteKlein = fz(v,'vorraete')!=null && fz(v,'umsatz')
+    && fz(v,'vorraete') / fz(v,'umsatz') < 0.01;
+  add({
+    id: 'dio', icon: '📦', titel: 'Vorratslaufzeit (DIO)',
+    buch: 'Schilit, EM 4 – Aufwand in eine spätere Periode verschoben',
+    wert: (ohneVorraete || vorraeteKlein) ? 'kaum Vorräte' : dioTage==null ? '—' : dioTage.toFixed(0) + ' Tage',
+    ampel: (ohneVorraete || vorraeteKlein) ? 'na'
+         : dioDelta==null ? 'na' : dioDelta <= 0.05 ? 'gruen' : dioDelta <= 0.15 ? 'gelb' : 'rot',
+    detail: ohneVorraete
+      ? 'Die Bilanz weist keine Vorräte aus – bei Software-/Dienstleistungsgeschäften der Normalfall, nicht eine Datenlücke.'
+      : vorraeteKlein
+      ? 'Vorräte unter 1 % des Umsatzes – für Software-/Dienstleistungsgeschäfte normal, die Kennzahl trennt hier nichts.'
+      : dioTage==null ? 'Vorräte oder Materialaufwand fehlen in der Jahresreihe.'
+      : `${dioTage.toFixed(0)} Tage`
+        + (dioDelta!=null ? ` · ${dioDelta>0?'+':''}${pct(dioDelta).toFixed(1)} % ggü. Vorjahr` : '')
+        + '. Steigende Lagerdauer heißt entweder schwächere Nachfrage oder zu niedrig gebuchten Materialaufwand.',
+    frage: 'Liegt es an Nachfrage, Lieferkette – oder an der Bewertung der Vorräte?',
+  });
+
+  // 5. Lieferantenziel (Schilit CF 4: operativen Cashflow mit nicht
+  //    nachhaltigen Mitteln aufpumpen - Zahlungen hinausschieben).
+  const dpo = (j) => fdiv(fz(j,'lieferverbind'), fz(j,'materialaufwand'));
+  const dpoTage = dpo(v)!=null ? dpo(v)*365 : null;
+  const dpoDelta = fwachstum(dpo(v), dpo(p));
+  add({
+    id: 'dpo', icon: '⏳', titel: 'Lieferantenziel (DPO)',
+    buch: 'Schilit, CF 4 – Cashflow mit nicht nachhaltigen Mitteln gehoben',
+    wert: dpoTage==null ? '—' : dpoTage.toFixed(0) + ' Tage',
+    ampel: dpoDelta==null ? 'na' : dpoDelta <= 0.10 ? 'gruen' : dpoDelta <= 0.25 ? 'gelb' : 'rot',
+    detail: dpoTage==null ? 'Lieferverbindlichkeiten oder Materialaufwand fehlen.'
+      : `${dpoTage.toFixed(0)} Tage`
+        + (dpoDelta!=null ? ` · ${dpoDelta>0?'+':''}${pct(dpoDelta).toFixed(1)} % ggü. Vorjahr` : '')
+        + '. Stark steigende Zahlungsziele heben den operativen Cashflow einmalig, nicht dauerhaft.',
+    frage: 'Ist der Cashflow-Anstieg operativ verdient oder nur später bezahlt?',
+  });
+
+  // 6. Aktivierung von Kosten (Schilit EM 4). Zwei Spuren: Investitionen
+  //    deutlich ueber Abschreibungen UND immaterielle Vermoegenswerte, die
+  //    schneller wachsen als der Umsatz.
+  const capexRoh = fz(v,'investitionen');
+  const capexDa = capexRoh==null ? null : fdiv(Math.abs(capexRoh), fz(v,'abschreibungen'));
+  const immatWachstum = fwachstum(fImmateriell(v), fImmateriell(p));
+  const immatLuecke = (immatWachstum!=null && umsatzWachstum!=null) ? immatWachstum - umsatzWachstum : null;
+  add({
+    id: 'aktivierung', icon: '🏗️', titel: 'Aktivierung von Kosten',
+    buch: 'Schilit, EM 4 – laufender Aufwand als Vermögenswert gebucht',
+    wert: capexDa==null ? '—' : capexDa.toFixed(2) + '×',
+    ampel: immatLuecke==null ? (capexDa==null ? 'na' : 'gruen')
+         : immatLuecke <= 0.10 ? 'gruen' : immatLuecke <= 0.30 ? 'gelb' : 'rot',
+    detail: [
+      capexDa!=null ? `Investitionen ${capexDa.toFixed(2)}× Abschreibungen` : null,
+      immatLuecke!=null
+        ? `immaterielle Vermögenswerte ${immatLuecke>0?'+':''}${pct(immatLuecke).toFixed(1)} pp gegenüber dem Umsatzwachstum`
+        : null,
+    ].filter(Boolean).join(' · ') || 'Investitionen, Abschreibungen oder immaterielle Vermögenswerte fehlen.',
+    frage: 'Werden Entwicklungs-, Software- oder Vertriebskosten aktiviert statt sofort aufgewendet?',
+  });
+
+  // 7. Uebernahmen (Schilit CF 3 / KM 2: Zukaeufe verdecken die organische
+  //    Entwicklung und blaehen die Bilanz auf). Aus Yahoo-Jahreszahlen ist
+  //    organisches von zugekauftem Wachstum NICHT trennbar - deshalb wird
+  //    hier nur die Bilanzspur gezeigt und das ausdruecklich gesagt.
+  const gwAnteil = fdiv((fz(v,'goodwill') ?? 0) + (fImmateriell(v) ?? 0), fz(v,'eigenkapital'));
+  const gwWachstum = fwachstum(fz(v,'goodwill'), fz(p,'goodwill'));
+  add({
+    id: 'goodwill', icon: '🧩', titel: 'Goodwill & Zukäufe',
+    buch: 'Schilit, CF 3 / KM 2 – Übernahmen als Verschleierung',
+    wert: gwAnteil==null ? '—' : pct(gwAnteil).toFixed(0) + ' % des EK',
+    ampel: gwAnteil==null ? 'na' : gwAnteil <= 0.5 ? 'gruen' : gwAnteil <= 1.0 ? 'gelb' : 'rot',
+    detail: gwAnteil==null ? 'Goodwill oder Eigenkapital fehlen in der Jahresreihe.'
+      : `Goodwill + immaterielle Werte = ${pct(gwAnteil).toFixed(0)} % des Eigenkapitals`
+        + (gwWachstum!=null ? ` · Goodwill ${gwWachstum>0?'+':''}${pct(gwWachstum).toFixed(1)} % ggü. Vorjahr` : '')
+        + '. Über 100 % heißt: das bilanzielle Eigenkapital besteht vollständig aus Kaufpreisaufschlägen.'
+        + ' Organisches von zugekauftem Wachstum trennt diese Datenbasis nicht.',
+    frage: 'Wie viel Wachstum ist gekauft, und drohen Abschreibungen auf den Goodwill?',
+  });
+
+  // 8. Ergebnisqualitaet der Quelle (Schilit EM 3: Einmaleffekte).
+  const ausserOperativ = (fz(v,'vorsteuerergebnis')!=null && fz(v,'betriebsergebnis')!=null && fz(v,'vorsteuerergebnis')!==0)
+    ? (fz(v,'vorsteuerergebnis') - fz(v,'betriebsergebnis')) / Math.abs(fz(v,'vorsteuerergebnis')) : null;
+  add({
+    id: 'einmaleffekte', icon: '🎲', titel: 'Ergebnis außerhalb des Kerngeschäfts',
+    buch: 'Schilit, EM 3 – Gewinn aus einmaligen oder nicht nachhaltigen Quellen',
+    wert: ausserOperativ==null ? '—' : (ausserOperativ>0?'+':'') + pct(ausserOperativ).toFixed(0) + ' %',
+    ampel: ausserOperativ==null ? 'na' : ausserOperativ <= 0.15 ? 'gruen' : ausserOperativ <= 0.35 ? 'gelb' : 'rot',
+    detail: ausserOperativ==null ? 'Vorsteuer- oder Betriebsergebnis fehlt in der Jahresreihe.'
+      : `${(ausserOperativ>0?'+':'')}${pct(ausserOperativ).toFixed(0)} % des Vorsteuerergebnisses entstehen außerhalb des Betriebsergebnisses`
+        + ' (Finanzergebnis, Beteiligungen, Sondereffekte).',
+    frage: 'Ist der Gewinnsprung operativ – oder kommt er aus Posten, die nächstes Jahr fehlen?',
+  });
+
+  // 9. Zinsdeckung (Graham: finanzielle Stabilitaet, seine Kernzahl).
+  const zins = fz(v,'zinsaufwand');
+  const ohneZinsen = zins === 0;          // schuldenfrei bzw. kein Zinsaufwand ausgewiesen
+  const deckung = (zins!=null && zins!==0) ? fdiv(fEbit(v), Math.abs(zins)) : null;
+  add({
+    id: 'zinsdeckung', icon: '🛡️', titel: 'Zinsdeckung (EBIT / Zinsaufwand)',
+    buch: 'Graham, Kap. „Finanzielle Stabilität"',
+    wert: ohneZinsen ? 'kein Zinsaufwand' : deckung==null ? '—' : deckung.toFixed(1) + '×',
+    ampel: deckung==null ? (ohneZinsen ? 'gruen' : 'na')
+         : deckung >= 8 ? 'gruen' : deckung >= 3 ? 'gelb' : 'rot',
+    detail: deckung==null
+      ? (ohneZinsen ? 'Kein Zinsaufwand ausgewiesen – Graham: der sicherste Fall.'
+                  : 'EBIT oder Zinsaufwand fehlen in der Jahresreihe.')
+      : `Das Betriebsergebnis deckt den Zinsaufwand ${deckung.toFixed(1)}-fach. `
+        + 'Graham verlangte für Industrieunternehmen ein Mehrfaches, nicht ein Vielfaches knapp über 1.',
+    frage: 'Trägt das operative Geschäft die Zinslast auch in einem schwachen Jahr?',
+  });
+
+  // 10. Verwaesserung (Graham: ist der Gewinn JE AKTIE echt gewachsen?).
+  const aktienErst = reihe.find(j => fz(j,'aktien')!=null);
+  const aktienLetzt = reihe.slice().reverse().find(j => fz(j,'aktien')!=null);
+  let aktienCagr = null, aktienJahre = 0;
+  if(aktienErst && aktienLetzt && aktienErst !== aktienLetzt){
+    aktienJahre = (new Date(aktienLetzt._datum) - new Date(aktienErst._datum)) / (365.25*864e5);
+    if(aktienJahre > 0.5 && fz(aktienErst,'aktien') > 0){
+      aktienCagr = Math.pow(fz(aktienLetzt,'aktien')/fz(aktienErst,'aktien'), 1/aktienJahre) - 1;
+    }
+  }
+  add({
+    id: 'verwaesserung', icon: '🍰', titel: 'Aktienzahl (Verwässerung)',
+    buch: 'Graham, Kap. „Was ist verdienter Gewinn je Aktie?"',
+    wert: aktienCagr==null ? '—' : (aktienCagr>0?'+':'') + pct(aktienCagr).toFixed(1) + ' % p.a.',
+    ampel: aktienCagr==null ? 'na' : aktienCagr <= 0.01 ? 'gruen' : aktienCagr <= 0.04 ? 'gelb' : 'rot',
+    detail: aktienCagr==null ? 'Keine zwei Jahre mit Aktienzahl in der Reihe.'
+      : `Verwässerte Aktienzahl ${(aktienCagr>0?'+':'')}${pct(aktienCagr).toFixed(1)} % pro Jahr über ${aktienJahre.toFixed(1)} Jahre. `
+        + 'Wächst sie kräftig, ist der Gewinn je Aktie schwächer gewachsen als der Gewinn.',
+    frage: 'Wird Wachstum mit Aktien bezahlt (Vergütung, Zukäufe) – und was bleibt je Aktie?',
+  });
+
+  // 11. Gewinnkontinuitaet (Graham: stabile Ertraege ueber Jahre).
+  const niReihe = reihe.map(j => fz(j,'nettogewinn')).filter(x => x!=null);
+  const positiv = niReihe.filter(x => x > 0).length;
+  const steigend = niReihe.length > 1 && niReihe.every((x,i) => i===0 || x >= niReihe[i-1]*0.95);
+  // Unter drei Jahren ist "Kontinuitaet" kein Urteil, sondern ein Zufall -
+  // dann bleibt die Karte bewusst auf "nicht bewertbar".
+  const genugJahre = niReihe.length >= 3;
+  add({
+    id: 'kontinuitaet', icon: '📈', titel: 'Gewinnkontinuität',
+    buch: 'Graham, Kap. „Stabilität der Erträge"',
+    wert: niReihe.length ? `${positiv} / ${niReihe.length} Jahre positiv` : '—',
+    ampel: !genugJahre ? 'na'
+         : positiv === niReihe.length ? (steigend ? 'gruen' : 'gelb')
+         : positiv >= niReihe.length - 1 ? 'gelb' : 'rot',
+    detail: !niReihe.length ? 'Keine Jahresüberschüsse in der Reihe.'
+      : !genugJahre ? `Nur ${niReihe.length} Jahr(e) in der Reihe – Graham urteilt über Kontinuität erst ab mehreren Jahren.`
+      : `${positiv} von ${niReihe.length} Jahren mit Gewinn`
+        + (steigend ? ', durchgehend nicht fallend' : ', mit Rückschlägen')
+        + '. Graham: ein einzelnes starkes Jahr sagt wenig, die Reihe sagt viel.',
+    frage: 'Ist das jüngste Jahr repräsentativ oder der Ausnahmefall der Reihe?',
+  });
+  return flags;
+}
+
+// --- Gesamturteil ----------------------------------------------------------
+// Zaehlt nur bewertbare Flags. Formuliert bewusst als Leseauftrag, nicht als
+// Urteil: diese Kennzahlen koennen einen Verdacht begruenden, nie belegen.
+function forensikVerdikt(flags, scores){
+  const bewertbar = flags.filter(f => f.ampel !== 'na');
+  const rot = bewertbar.filter(f => f.ampel === 'rot');
+  const gelb = bewertbar.filter(f => f.ampel === 'gelb');
+  const ampel = rot.length >= 3 ? 'rot' : (rot.length >= 1 || gelb.length >= 3) ? 'gelb' : 'gruen';
+  const nenn = (liste) => liste.map(f => f.titel).join(', ');
+  let satz;
+  if(!bewertbar.length){
+    satz = 'Die Jahresreihe reicht für keine der Prüfungen – ohne Daten kein Urteil, auch kein gutes.';
+  } else if(bewertbar.length < Math.ceil(flags.length * 0.7)){
+    // Wichtiger Sonderfall: wenige bewertbare Pruefungen duerfen NICHT als
+    // "unauffaellig" durchgehen. Yahoo liefert fuer manche Werte (haeufig
+    // europaeische Bilanzen) nur Bruchstuecke - das ist eine Datenluecke,
+    // kein Gesundheitszeugnis.
+    satz = `Die Datenbasis trägt nur ${bewertbar.length} von ${flags.length} Prüfungen`
+         + (rot.length ? `, davon auffällig: ${nenn(rot)}.` : ' – zu wenig für ein Gesamturteil.')
+         + ' Yahoo liefert für diesen Wert keine vollständigen Jahresabschlüsse; die fehlenden Positionen stehen unten.';
+  } else if(!rot.length && gelb.length <= 1){
+    satz = gelb.length
+      ? `Keine der ${bewertbar.length} berechenbaren Prüfungen verlangt ein Nachlesen; ein Hinweis bleibt: ${nenn(gelb)}.`
+      : `Keine der ${bewertbar.length} berechenbaren Prüfungen fällt auf.`;
+    satz += ' Das heißt: in den Zahlen ist nichts zu sehen – über die Fußnoten sagt es nichts.';
+  } else if(!rot.length){
+    satz = `Drei oder mehr Prüfungen stehen auf „beobachten" (${nenn(gelb)}), keine auf „nachlesen". `
+         + 'Einzeln je unauffällig, zusammen ein Muster, das sich lohnt anzusehen.';
+  } else {
+    satz = `${rot.length} von ${bewertbar.length} Prüfungen verlangen einen Blick in den Geschäftsbericht: `
+         + `${nenn(rot)}.` + (gelb.length ? ` Dazu ${gelb.length} weitere mit Hinweisen.` : '');
+  }
+  if(scores.beneish && scores.beneish.wert != null && scores.beneish.wert > -1.78){
+    satz += ' Der Beneish M-Score liegt über seiner Schwelle – bei Wachstumswerten ist das '
+          + 'allerdings der Normalfall, siehe die Karte unten.';
+  }
+  return {ampel, html: `<div class="ffverdikt ffv-${ampel}">
+    <div class="ffv-frage">Trägt der Abschluss, was der Kurs verspricht?</div>
+    <div class="ffv-satz">${satz}</div>
+  </div>`};
+}
+
+// --- Darstellung -----------------------------------------------------------
+function forensikKarte(f){
+  return `<div class="ffcard ff-${f.ampel}">${dot(f.ampel)}<div class="fcard-body">
+    <div class="fcard-head">
+      <span class="fcard-lbl">${f.icon} ${esc(f.titel)}</span>
+      <span class="fcard-wert">${esc(f.wert)}</span>
+    </div>
+    <div class="fcard-detail">${esc(f.detail)}</div>
+    ${f.frage ? `<div class="ff-frage">↪ ${esc(f.frage)}</div>` : ''}
+    <div class="fcard-gew">${esc(f.buch)} · kein Score-Bestandteil</div>
+  </div></div>`;
+}
+const BENEISH_EXPLAIN = 'Beneish M-Score (Messod Beneish, 1999): acht Verhältniszahlen aus zwei aufeinanderfolgenden Jahresabschlüssen, gewichtet nach der veröffentlichten Originalformel. Über -1,78 gilt in der Studie als erhöhte Wahrscheinlichkeit einer Ergebnismanipulation. WICHTIG: In der Originalstudie fanden sich unter mehr als 2.000 Unternehmen nur 76 Manipulatoren - die Kennzahl schlägt entsprechend oft falsch an, besonders bei stark wachsenden Unternehmen (hohes Umsatzwachstum und negative Abgrenzungen treiben den Score systematisch nach oben). Hier als Screening-Hinweis geführt, nicht als Urteil.';
+const PIOTROSKI_EXPLAIN = 'Piotroski F-Score (Joseph Piotroski, 2000): neun Ja/Nein-Kriterien zu Rentabilität, Finanzierung und Effizienz, jeweils Jahr gegen Vorjahr. 8-9 Punkte gelten als fundamental stark, 0-2 als schwach. Entwickelt für wertorientierte Auswahl (niedriges KBV), hier als Ordnungsrahmen im Sinne von Grahams Bilanzanalyse - nicht als Kaufsignal.';
+const ALTMAN_EXPLAIN = 'Altman Z″-Score (Edward Altman, 1995er Variante für Nicht-Produzenten): vier Bilanzrelationen zur Insolvenznähe. Über 2,6 unkritisch, 1,1 bis 2,6 Graubereich, unter 1,1 angespannt. Bewusst die Z″- statt der Original-Z-Formel von 1968, weil diese den Umsatz/Aktiva-Term weglässt, der Technologie- und Dienstleistungsunternehmen systematisch abwertet.';
+
+function forensikScoreKarten(scores){
+  const karten = [];
+  const b = scores.beneish;
+  if(b){
+    const ampel = b.wert==null ? 'na' : b.wert > -1.78 ? 'gelb' : 'gruen';
+    karten.push(`<div class="ffcard ff-${ampel}">${dot(ampel)}<div class="fcard-body">
+      <div class="fcard-head">
+        <span class="fcard-lbl" title="${BENEISH_EXPLAIN}">🧮 Beneish M-Score</span>
+        <span class="fcard-wert">${b.wert==null ? '—' : b.wert.toFixed(2)}</span>
+      </div>
+      <div class="fcard-detail">${b.wert==null
+        ? 'Nicht berechenbar – es fehlen: ' + esc(b.fehlend.join(', ')) + '.'
+        : (b.wert > -1.78
+            ? 'Über der Schwelle −1,78. In der Originalstudie ein Hinweis auf erhöhte Manipulationswahrscheinlichkeit – bei hohem Umsatzwachstum aber auch ohne jede Manipulation der Normalfall.'
+            : 'Unter der Schwelle −1,78 – kein Hinweis aus dieser Formel.')}</div>
+      ${b.wert!=null ? `<div class="ff-teile">${Object.keys(b.teile).map(k =>
+        `<span>${k} ${b.teile[k]==null ? '—' : b.teile[k].toFixed(2)}</span>`).join('')}</div>` : ''}
+      <div class="fcard-gew">Beneish 1999 · Screening-Hinweis, kein Urteil · kein Score-Bestandteil</div>
+    </div></div>`);
+  }
+  const f = scores.piotroski;
+  if(f){
+    const ampel = !f.bewertbar ? 'na' : f.punkte >= 7 ? 'gruen' : f.punkte >= 4 ? 'gelb' : 'rot';
+    karten.push(`<div class="ffcard ff-${ampel}">${dot(ampel)}<div class="fcard-body">
+      <div class="fcard-head">
+        <span class="fcard-lbl" title="${PIOTROSKI_EXPLAIN}">🏅 Piotroski F-Score</span>
+        <span class="fcard-wert">${f.bewertbar ? `${f.punkte} / ${f.bewertbar}` : '—'}</span>
+      </div>
+      <div class="fcard-detail">${f.bewertbar
+        ? `${f.punkte} von ${f.bewertbar} bewertbaren Kriterien erfüllt${f.bewertbar < 9 ? ` (${9-f.bewertbar} nicht bewertbar, fehlende Felder)` : ''}.`
+        : 'Keines der neun Kriterien bewertbar.'}</div>
+      <div class="ff-liste">${f.kriterien.map(([name, ok]) =>
+        `<div class="ff-k ff-k-${ok==null?'na':ok?'ja':'nein'}">${ok==null?'–':ok?'✓':'✕'} ${esc(name)}</div>`).join('')}</div>
+      <div class="fcard-gew">Piotroski 2000 · kein Score-Bestandteil</div>
+    </div></div>`);
+  }
+  const z = scores.altman;
+  if(z){
+    const ampel = z.wert==null ? 'na' : z.wert > 2.6 ? 'gruen' : z.wert >= 1.1 ? 'gelb' : 'rot';
+    karten.push(`<div class="ffcard ff-${ampel}">${dot(ampel)}<div class="fcard-body">
+      <div class="fcard-head">
+        <span class="fcard-lbl" title="${ALTMAN_EXPLAIN}">⚓ Altman Z″-Score</span>
+        <span class="fcard-wert">${z.wert==null ? '—' : z.wert.toFixed(2)}</span>
+      </div>
+      <div class="fcard-detail">${z.wert==null
+        ? 'Nicht berechenbar (Bilanzsumme, Gewinnrücklagen, EBIT oder Eigenkapital fehlen).'
+        : z.wert > 2.6 ? 'Über 2,6 – nach Altman unkritisch.'
+        : z.wert >= 1.1 ? 'Zwischen 1,1 und 2,6 – Graubereich.'
+        : 'Unter 1,1 – nach Altman angespannte Bilanzlage.'}</div>
+      <div class="fcard-gew">Altman 1995 (Z″ für Nicht-Produzenten) · kein Score-Bestandteil</div>
+    </div></div>`);
+  }
+  return karten.join('');
+}
+
+// Datenbasis offenlegen: welche Jahre, welche Felder gefunden, welche nicht.
+// Das ist hier keine Spielerei, sondern notwendig: die Yahoo-Feldnamen konnten
+// in der Entwicklungsumgebung nicht live geprueft werden (Netzpolitik), und
+// ein nicht gefundenes Feld soll als fehlendes Feld sichtbar sein, nicht als
+// unauffaellige Kennzahl.
+const FORENSIK_LABEL = {
+  umsatz:'Umsatz', materialaufwand:'Materialaufwand', bruttoergebnis:'Bruttoergebnis',
+  vertriebsverwalt:'Vertriebs-/Verwaltungskosten', betriebsergebnis:'Betriebsergebnis',
+  vorsteuerergebnis:'Vorsteuerergebnis', nettogewinn:'Jahresüberschuss',
+  nettogewinn_fort:'Ergebnis fortgeführter Geschäfte', ebit:'EBIT', zinsaufwand:'Zinsaufwand',
+  abschreibungen:'Abschreibungen', aktien:'Aktienzahl', summe_aktiva:'Bilanzsumme',
+  umlaufvermoegen:'Umlaufvermögen', kurzfr_schulden:'kurzfristige Schulden',
+  forderungen:'Forderungen', vorraete:'Vorräte', lieferverbind:'Lieferverbindlichkeiten',
+  sachanlagen:'Sachanlagen', goodwill:'Goodwill', immaterielle:'immaterielle Vermögenswerte',
+  goodwill_immat:'Goodwill + immaterielle (Summenzeile)', eigenkapital:'Eigenkapital',
+  gewinnruecklagen:'Gewinnrücklagen', fremdkapital:'Fremdkapital',
+  langfr_schulden:'langfristige Schulden', operativer_cf:'operativer Cashflow',
+  investitionen:'Investitionen', freier_cf:'freier Cashflow',
+};
+function forensikDatenbasis(reihe){
+  const letztes = reihe.length ? reihe[reihe.length-1] : {};
+  // Alternativzeilen nicht doppelt als Luecke melden: liegt die Einzelzeile
+  // "immaterielle" vor, fehlt die Summenzeile zu Recht - und umgekehrt.
+  const konzepte = Object.keys(FORENSIK_FELDER).filter(k =>
+    !(k === 'goodwill_immat' && letztes.immaterielle != null)
+    && !(k === 'immaterielle' && letztes.goodwill_immat != null)
+    && !(k === 'nettogewinn_fort' && letztes.nettogewinn != null)
+    && !(k === 'ebit' && letztes.betriebsergebnis != null));
+  const gefunden = konzepte.filter(k => letztes[k]!=null);
+  const fehlend = konzepte.filter(k => letztes[k]==null).map(k => FORENSIK_LABEL[k] || k);
+  const jahre = reihe.map(j => String(j._datum).slice(0,4)).join(', ');
+  return `<div class="ffbasis">
+    <b>Datenbasis:</b> ${reihe.length} Jahresabschlüsse (${esc(jahre)}) von Yahoo Finance,
+    ${gefunden.length} von ${konzepte.length} Bilanz-/GuV-Positionen im jüngsten Jahr gefunden.
+    ${fehlend.length ? `Nicht geliefert: ${esc(fehlend.join(', '))} – alle darauf aufbauenden Prüfungen stehen auf „nicht verfügbar", nie auf „unauffällig".` : ''}
+    Quartalszahlen liefert die kostenlose Yahoo-Route nur rund fünf Quartale weit, deshalb Jahresbasis.
+    Jahresabschlüsse sind bis zu zwölf Monate alt – diese Prüfung ist eine Qualitätsfrage, kein Timing-Signal.
+  </div>`;
+}
+
+let FORENSIK_ERGEBNIS = null;       // fuer sammleKontext() (KI-Tiefenanalyse)
+
+function forensikRender(reihe){
+  const flags = forensikFlags(reihe);
+  const v = reihe.length ? reihe[reihe.length-1] : null;
+  const p = reihe.length > 1 ? reihe[reihe.length-2] : null;
+  const scores = {
+    beneish: (v && p) ? beneishMScore(v, p) : null,
+    piotroski: (v && p) ? piotroskiFScore(v, p) : null,
+    altman: v ? altmanZZ(v) : null,
+  };
+  const verdikt = forensikVerdikt(flags, scores);
+  FORENSIK_ERGEBNIS = {
+    jahre: reihe.map(j => String(j._datum).slice(0,10)),
+    ampel: verdikt.ampel,
+    flags: flags.filter(f => f.ampel !== 'na').map(f => ({titel: f.titel, ampel: f.ampel, wert: f.wert, buch: f.buch})),
+    beneish: scores.beneish ? scores.beneish.wert : null,
+    piotroski: scores.piotroski ? {punkte: scores.piotroski.punkte, bewertbar: scores.piotroski.bewertbar} : null,
+    altman: scores.altman ? scores.altman.wert : null,
+  };
+  return verdikt.html
+    + `<div class="fgrid">${flags.map(forensikKarte).join('')}</div>`
+    + `<div class="subhead" style="margin-top:18px">📐 Veröffentlichte Gesamtmaße <span class="sub">Beneish, Piotroski, Altman – fremde Formeln mit fremden Schwellen, bewusst nichts selbst Erfundenes</span></div>`
+    + `<div class="fgrid">${forensikScoreKarten(scores)}</div>`
+    + forensikDatenbasis(reihe);
+}
+
+// --- Abruf -----------------------------------------------------------------
+// Zwei parallele Abrufe (GuV+Cashflow, Bilanz) ueber denselben generischen
+// ?url=-Proxy, den ladeDividenden() schon nutzt - query1.finance.yahoo.com
+// steht in der ALLOW-Liste des Workers, es braucht keinen neuen Endpunkt.
+// Faellt eine Haelfte aus, wird mit der anderen gerechnet; die Datenbasis-
+// Zeile zeigt dann, welche Positionen fehlen.
+function forensikZeitraum(){
+  const jetzt = Math.floor(Date.now()/1000);
+  return {p1: jetzt - Math.round((FORENSIK_JAHRE + 1.5) * 365.25 * 86400), p2: jetzt};
+}
+async function forensikAbruf(sym){
+  const {p1, p2} = forensikZeitraum();
+  const basis = 'https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/'
+              + encodeURIComponent(sym);
+  const teile = await Promise.all(FORENSIK_GRUPPEN.map(gruppe => {
+    const ziel = `${basis}?symbol=${encodeURIComponent(sym)}&type=${forensikTypen(gruppe).join(',')}`
+               + `&period1=${p1}&period2=${p2}&merge=false`;
+    return fetch(MTS_PROXY + '?url=' + encodeURIComponent(ziel), {signal: AbortSignal.timeout(20000)})
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(d => (d && d.timeseries && d.timeseries.result) || [])
+      .catch(() => null);
+  }));
+  if(teile.every(t => t == null)) throw new Error('Jahresabschlüsse nicht abrufbar');
+  const reihe = forensikParse(teile.filter(Boolean));
+  if(!reihe.length) throw new Error('Keine Jahresabschlüsse in der Antwort');
+  return reihe;
+}
+async function ladeForensik(ticker, yahooSymbol){
+  const el = document.getElementById('forensikwrap');
+  if(!el) return;
+  // Alten Ticker sofort verwerfen: sonst haengt sammleKontext() im Fenster
+  // zwischen Ticker-Wechsel und Antwort noch die Forensik des Vorgaengers an
+  // die KI-Anfrage (die Seite wechselt den Ticker ohne Neuladen).
+  FORENSIK_ERGEBNIS = null;
+  el.innerHTML = '<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">'
+    + 'Lädt Jahresabschlüsse (Bilanz, GuV, Cashflow) …</div></div>';
+  try{
+    const reihe = await forensikAbruf(yahooSymbol || ticker);
+    el.innerHTML = forensikRender(reihe);
+  }catch(e){
+    FORENSIK_ERGEBNIS = null;
+    el.innerHTML = `<div class="pivotcard"><div class="pdetail" style="color:var(--muted)">
+      Bilanzforensik gerade nicht möglich (${esc((e && e.message) || e)}).
+      <button class="deepbtn" style="margin-top:8px" onclick="ladeForensik('${esc(ticker)}','${esc(yahooSymbol||ticker)}')">🔄 Erneut versuchen</button>
+      </div></div>`;
+  }
+}
+
 function earnText(e){
   if(!e) return 'keine Prüfung konfiguriert';
   if(e.status==='termin') return `in ${e.tage} Tagen (${e.datum})`;
@@ -1133,7 +1874,7 @@ function earnText(e){
 // grosse Geld rein"), fundamentale Substanz ("keine Eintagsfliege").
 //
 // Nutzt NUR Felder, die signals.json ohnehin liefert - mehrere davon
-// (rs_rating, institutional, institutional_trend, basis_nr, extended_pct,
+// (rs_rating, institutional, institutional_trend, underowned, basis_nr, extended_pct,
 // trend_template) standen bis dahin zwar im Datensatz, wurden auf dieser
 // Seite aber nirgends angezeigt, obwohl sie die Leitfrage am direktesten
 // beantworten. Kein zusaetzlicher Datenabruf, kein KI-Aufruf.
@@ -1153,10 +1894,10 @@ function dashBar(pct, ampel){
   const farbe = {gruen:'var(--ok)', gelb:'var(--warn)', rot:'var(--bad)', na:'var(--muted2)'}[ampel] || 'var(--muted2)';
   return `<div class="dash-bar"><i style="width:${p}%;background:${farbe}"></i></div>`;
 }
-function dzeile(k, v, ampel){
-  return `<div class="dz"><span class="dz-k">${k}</span><span class="dz-v${ampel?' w-'+ampel:''}">${v}</span></div>`;
+function dzeile(k, v, ampel, titel){
+  return `<div class="dz"${titel?` title="${esc(titel)}"`:''}><span class="dz-k">${k}</span><span class="dz-v${ampel?' w-'+ampel:''}">${v}</span></div>`;
 }
-function dashSaeule(icon, titel, frage, ampel, zahlHtml, mitteHtml, zeilen){
+function dashSaeule(icon, titel, frage, ampel, zahlHtml, mitteHtml, zeilen, notiz){
   return `<section class="dash-saeule s-${ampel}">
     <div class="ds-kopf">
       <div class="ds-titel">${icon} ${titel}<small>${frage}</small></div>
@@ -1165,6 +1906,7 @@ function dashSaeule(icon, titel, frage, ampel, zahlHtml, mitteHtml, zeilen){
     ${zahlHtml}
     ${mitteHtml}
     <div class="ds-zeilen">${zeilen.join('')}</div>
+    ${notiz || ''}
   </section>`;
 }
 function dashZahl(wert, einheit, ampel){
@@ -1239,9 +1981,28 @@ function saeuleGeldfluss(t){
   const verlauf = reihe.length ? `<div class="dash-quartale" title="Veränderung des institutionellen Besitzes je Quartal (SEC 13F, über Yahoo)">
       ${reihe.map(x=>`<div class="dq"><i class="${x<0?'neg':''}" style="height:${Math.max(2, Math.round(Math.abs(x)/maxAbs*26))}px"></i><em>${x>0?'+':''}${dzahl(x)}</em></div>`).join('')}
     </div>` : dashBar(cmf!=null ? Math.min(100, Math.max(0,(cmf+0.2)*250)) : 0, ampel);
+  // Besitzbreite / "underowned" (seit 2026-09-15, scorer.py::f_underowned):
+  // NICHT das Niveau - das zeigt instBesitzBlock() unten vollstaendiger
+  // (% gehalten, % vom Float, Zahl der Institutionen, Schwellen je
+  // Groessenklasse) - sondern die RICHTUNG der Melderzahl ueber Quartale:
+  // steigen NEUE Adressen ein, oder kaufen nur die bestehenden Halter nach?
+  // Das trennt die 13F-Melderreihe, und nur die.
+  const uo = t.underowned || {};
+  const uoWert = uo.verfuegbar
+    ? `${uo.melder} Melder` + (uo.melder_delta_pct!=null
+        ? ` (${uo.melder_delta_pct>0?'+':''}${dzahl(uo.melder_delta_pct)} %)` : '')
+    : '—';
   const zeilen = [
     dzeile('Steigend in Folge', folge!=null ? folge+' Quartal'+(folge===1?'':'e') : '—',
-           folge!=null ? (folge>=2?'gruen':folge>=1?'gelb':'rot') : null),
+           folge!=null ? (folge>=2?'gruen':folge>=1?'gelb':'rot') : null,
+           'Quartale in Folge mit steigender 13F-Aktiensumme (quermarkt-normiert)'),
+    dzeile('13F-Melder (Richtung)', uoWert, uo.verfuegbar ? uo.ampel : null,
+           uo.verfuegbar
+             ? `Zahl der meldenden Institutionellen im jüngsten Quartal, in Klammern die quermarkt-normierte Veränderung.`
+               + ` Verlauf: ${(uo.melder_reihe||[]).map(x=>x==null?'?':x).join(' → ')}`
+               + ` · Rang ${uo.pool_pctl}/100 unter den ${uo.pool_n} bewerteten Kandidaten mit 13F-Daten`
+               + ` · ${esc(uo.urteil||'')} · kein Score-Einfluss`
+             : (uo.hinweis || 'keine 13F-Melderzahlen')),
     dzeile('Up/Down-Volumen', ud!=null ? dzahl(ud,2) : '—',
            ud!=null ? (ud>=1.2?'gruen':ud>=1?'gelb':'rot') : null),
     dzeile('Chaikin Money Flow', cmf!=null ? (cmf>0?'+':'')+dzahl(cmf,2) : '—',
@@ -1250,10 +2011,28 @@ function saeuleGeldfluss(t){
            vol!=null ? (vol>=1.4?'gruen':vol>=1?'gelb':'rot') : null),
     instBesitzBlock(t),
   ];
+  // Fusszeile: wer kauft - neue Adressen oder die bestehenden Halter? Das
+  // NIVEAU des Besitzes steht eine Zeile darueber (instBesitzBlock), hier
+  // steht ausschliesslich die Richtung der Melderzahl. Sie aendert die
+  // Saeulen-Ampel BEWUSST NICHT: fuer die Breite gibt es noch keinen
+  // Forward-Test (die Kohorte laeuft erst seit 2026-09-15 in
+  // pivot_backtest.py mit), und ein unbelegtes Kriterium darf ein
+  // bestehendes Urteil nicht verschieben.
+  const uoNote = uo.verfuegbar
+    ? `<div class="ds-note"><b>Neue Adressen:</b> ${esc(uo.urteil||'')} — ${
+        uo.richtung==='neue Adressen' ? 'es kommen Halter hinzu, nicht nur Stückzahlen'
+        : uo.richtung==='zu dünn gemeldet' ? 'zu wenige Melder, um die Richtung zu lesen'
+        : 'die Zahl der Halter bewegt sich nicht'}. Quartalsdaten (bis zu 4,5 Monate alt), kein Score-Einfluss.</div>`
+    : t.underowned
+      ? `<div class="ds-note"><b>Neue Adressen:</b> ${esc(uo.hinweis || 'keine 13F-Melderzahlen')} — für nicht-US-Werte meldet niemand nach 13F, das ist kein Mangel des Unternehmens.</div>`
+      // Feld ganz abwesend: Direktanalyse (kein Scan-Datensatz) oder ein
+      // signals.json von vor dem 15.09.2026. Nicht als "fehlende Daten des
+      // Unternehmens" ausgeben - das waere eine andere Aussage.
+      : `<div class="ds-note"><b>Neue Adressen:</b> in diesem Datensatz nicht enthalten — die Melderreihe entsteht im täglichen Scan (Direktanalyse und ältere Scans führen sie nicht).</div>`;
   return dashSaeule('🏦', 'Geldfluss', 'Fließt großes Geld zu?', ampel,
     dashZahl(letzte!=null ? (letzte>0?'+':'')+dzahl(letzte) : (cmf!=null ? (cmf>0?'+':'')+dzahl(cmf,2) : '—'),
              letzte!=null ? '% institutionell<br>letztes Quartal' : 'Chaikin Money Flow<br>(21 Tage)', ampel),
-    verlauf, zeilen);
+    verlauf, zeilen, uoNote);
 }
 
 // Saeule 3: Substanz. Leitzahl ist Code 33 (Minervini/TraderFox: EPS- und
@@ -2011,7 +2790,7 @@ function render(sig, piv, pa, regime){
     </details>
 
     <details class="acc" id="acc-fund">
-      <summary>💵 Fundamentalanalyse <span class="acc-sub">Code 33, Quartale, Dividende, Innerer Wert, Story</span><span class="chev">▾</span></summary>
+      <summary>💵 Fundamentalanalyse <span class="acc-sub">Code 33, Quartale, Bilanzforensik (Schilit/Graham), Dividende, Innerer Wert, Story</span><span class="chev">▾</span></summary>
       <div class="acc-body">
         <div class="fgrid">
           <div class="fcard fcard-na"><span class="dot d-na"></span><div class="fcard-body">
@@ -2045,6 +2824,9 @@ function render(sig, piv, pa, regime){
             <div class="fcard-detail" style="color:var(--muted)">Lädt …</div>
           </div></div>
         </div>
+
+        <div class="subhead">🕵️ Bilanzforensik &amp; Bilanzanalyse <span class="sub" title="${FORENSIK_EXPLAIN}">Schilit „Financial Shenanigans" + Graham „Interpretation of Financial Statements" - Jahresabschlüsse, kein Score-Bestandteil</span></div>
+        <div id="forensikwrap"><div class="pivotcard"><div class="pdetail" style="color:var(--muted)">Lädt Jahresabschlüsse …</div></div></div>
 
         <div class="subhead">🎯 Innerer Wert <span class="sub">Graham Number, Owner-Earnings-DCF, DDM - Sicherheitsmarge ≥20% grün, 0–20% gelb, Kurs über Schätzwert rot</span></div>
         <div class="fgrid" id="wertwrap">
@@ -2085,6 +2867,7 @@ function render(sig, piv, pa, regime){
   ladeDividenden(t.ticker, t.yahoo_symbol);
   zeigeKatalysator(t.ticker);
   starteTiefenanalyse(t);
+  ladeForensik(t.ticker, t.yahoo_symbol);
   if(sig && sig.__erstellt){
     const dt = new Date(sig.__erstellt);
     if(!isNaN(dt)) document.getElementById('stand').textContent =
@@ -2351,6 +3134,23 @@ function sammleKontext(){
     dividende: WERT_DIVIDENDE ? { serie: WERT_DIVIDENDE.serie, trend: WERT_DIVIDENDE.trend } : null,
     innererWert: innererWertKontext(fx, fcfProAktie),
     earnings: t.earnings,
+    // Bilanzforensik (seit 2026-10-05): die KI soll die Red Flags aus den
+    // Jahresabschluessen kennen, statt ihre eigenen zu erfinden - und sie
+    // soll sehen, WELCHE Pruefungen gar nicht bewertbar waren.
+    bilanzforensik: FORENSIK_ERGEBNIS,
+    // Besitzbreite (13F-Melderzahl, seit 2026-09-15): die KI soll fuer den
+    // "I"-Teil von CAN SLIM nicht nur wissen, OB institutionelles Geld
+    // zufliesst, sondern auch, ob der Wert schon breit besetzt ist.
+    besitzbreite: t.underowned && t.underowned.verfuegbar ? {
+      melder: t.underowned.melder,
+      melder_delta_pct: t.underowned.melder_delta_pct,
+      melder_folge: t.underowned.melder_folge,
+      pool_rang_von_100: t.underowned.pool_pctl,
+      universum_perzentil: t.underowned.melder_pctl,
+      stufe: t.underowned.stufe,
+      richtung: t.underowned.richtung,
+      basis: '13F-Melderzahl (SEC), quartalsweise - NICHT der Besitzanteil',
+    } : null,
   };
   if(t.faktoren){
     const mv = minerviniVerdikt(t, CUR_REGIME, p);
