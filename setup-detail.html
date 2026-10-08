@@ -2070,7 +2070,9 @@ function saeuleGeldfluss(t){
         uo.richtung==='neue Adressen' ? 'es kommen Halter hinzu, nicht nur Stückzahlen'
         : uo.richtung==='erstes Quartal mit neuen Adressen' ? 'ab dem zweiten Quartal in Folge gilt es als Trend'
         : uo.richtung==='zu dünn gemeldet' ? 'zu wenige Melder, um die Richtung zu lesen'
-        : 'die Zahl der Halter bewegt sich nicht'}. Quartalsdaten (bis zu 4,5 Monate alt), kein Score-Einfluss.</div>`
+        : uo.richtung==='langsamer als der Markt' ? 'es kommen Halter hinzu, aber weniger als anderswo'
+        : uo.richtung==='Adressen gehen' ? 'die Zahl der Halter sinkt'
+        : 'die Zahl der Halter bewegt sich im Marktschnitt'}. Quartalsdaten (bis zu 4,5 Monate alt), kein Score-Einfluss.</div>`
     : t.underowned
       ? `<div class="ds-note"><b>Neue Adressen:</b> ${esc(uo.hinweis || 'keine 13F-Melderzahlen')} — für nicht-US-Werte meldet niemand nach 13F, das ist kein Mangel des Unternehmens.</div>`
       // Feld ganz abwesend: Direktanalyse (kein Scan-Datensatz) oder ein
