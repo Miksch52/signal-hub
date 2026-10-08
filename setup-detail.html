@@ -2021,6 +2021,7 @@ function saeuleGeldfluss(t){
   const uoNote = uo.verfuegbar
     ? `<div class="ds-note"><b>Neue Adressen:</b> ${esc(uo.urteil||'')} — ${
         uo.richtung==='neue Adressen' ? 'es kommen Halter hinzu, nicht nur Stückzahlen'
+        : uo.richtung==='erstes Quartal mit neuen Adressen' ? 'ab dem zweiten Quartal in Folge gilt es als Trend'
         : uo.richtung==='zu dünn gemeldet' ? 'zu wenige Melder, um die Richtung zu lesen'
         : 'die Zahl der Halter bewegt sich nicht'}. Quartalsdaten (bis zu 4,5 Monate alt), kein Score-Einfluss.</div>`
     : t.underowned

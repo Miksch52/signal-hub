@@ -1030,6 +1030,16 @@ UNDEROWNED_POOL_BREIT = 67    # ab hier: "breit gehalten"
 # institutionelle Basis ist bei Minervini kein Vorteil ("underowned"),
 # sondern fehlende Sponsorship.
 UNDEROWNED_MIN_MELDER = 10
+# "Neue Adressen" erst ab zwei Quartalen in Folge - dieselbe Regel wie
+# TREND_FOLGE_MIN fuer die Aktiensumme. Ein einzelnes Quartal reicht NICHT:
+# im ersten echten Lauf (2026-10-08, Tabelle mit Melderzahlen) lag die
+# normierte Melderveraenderung bei den breit gehaltenen Titeln (>= 100
+# Melder, also dem, was dieser Scan findet) im Median bei +1,0 % - die
+# 1-%-Schwelle markierte damit genau die Haelfte als "neue Adressen", ein
+# Muenzwurf. Mit zwei Quartalen in Folge sind es 21 %. Bewusst die
+# vorhandene Projektregel statt einer an die Verteilung angepassten
+# Prozentschwelle.
+UNDEROWNED_FOLGE_MIN = 2
 
 def f_underowned(ergebnisse):
     """Post-Pass: fuellt e['underowned'] (reines Messfeld, kein Score).
@@ -1090,11 +1100,22 @@ def f_underowned(ergebnisse):
                  else "breit gehalten" if pool_pctl >= UNDEROWNED_POOL_BREIT
                  else "mittel besetzt")
         duenn = melder < UNDEROWNED_MIN_MELDER
+        abgang_folge = 0
+        for x in reversed([x for x in (v.get("melder_delta_pct") or [])]):
+            if x is not None and x <= -schwelle:
+                abgang_folge += 1
+            else:
+                break
         if duenn:
             richtung = "zu dünn gemeldet"
-        elif folge >= 1:
+        elif folge >= UNDEROWNED_FOLGE_MIN:
             richtung = "neue Adressen"
-        elif delta is not None and delta <= -schwelle:
+        elif folge == 1:
+            richtung = "erstes Quartal mit neuen Adressen"
+        elif abgang_folge >= UNDEROWNED_FOLGE_MIN:
+            # Symmetrisch zu "neue Adressen": ein einzelnes schwaches Quartal
+            # traf im ersten Lauf 41 % der breit gehaltenen Titel - als rote
+            # Ampel waere das Rauschen.
             richtung = "Adressen gehen"
         else:
             richtung = "flach"
@@ -1129,6 +1150,9 @@ def f_underowned(ergebnisse):
                       "breit gehalten, es kommen weiter Adressen hinzu"
                       if stufe == "breit gehalten" else
                       "mittel besetzt, neue Adressen steigen ein")
+        elif richtung == "erstes Quartal mit neuen Adressen":
+            urteil = ("zuletzt mehr Melder, aber erst ein Quartal – "
+                      "noch kein Trend")
         elif richtung == "Adressen gehen":
             urteil = "Adressen ziehen sich zurück" + (
                 " (Aktiensumme steigt trotzdem – bestehende Halter kaufen nach)"
