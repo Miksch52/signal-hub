@@ -1539,14 +1539,22 @@ function forensikFlags(reihe){
   //    Entwicklung und blaehen die Bilanz auf). Aus Yahoo-Jahreszahlen ist
   //    organisches von zugekauftem Wachstum NICHT trennbar - deshalb wird
   //    hier nur die Bilanzspur gezeigt und das ausdruecklich gesagt.
-  const gwAnteil = fdiv((fz(v,'goodwill') ?? 0) + (fImmateriell(v) ?? 0), fz(v,'eigenkapital'));
+  // Fehlen Goodwill UND immaterielle Werte beide, ist das NICHT 0 %: Yahoo
+  // laesst die Zeilen auch weg, wenn ein Unternehmen keine ausweist (XOM im
+  // ersten Live-Test, 2026-10-08). Ob "keine" oder "nicht geliefert", ist
+  // nicht unterscheidbar - also nicht bewerten statt gruen zu luegen.
+  const gwFehlt = fz(v,'goodwill')==null && fImmateriell(v)==null;
+  const gwAnteil = gwFehlt ? null
+    : fdiv((fz(v,'goodwill') ?? 0) + (fImmateriell(v) ?? 0), fz(v,'eigenkapital'));
   const gwWachstum = fwachstum(fz(v,'goodwill'), fz(p,'goodwill'));
   add({
     id: 'goodwill', icon: '🧩', titel: 'Goodwill & Zukäufe',
     buch: 'Schilit, CF 3 / KM 2 – Übernahmen als Verschleierung',
     wert: gwAnteil==null ? '—' : pct(gwAnteil).toFixed(0) + ' % des EK',
     ampel: gwAnteil==null ? 'na' : gwAnteil <= 0.5 ? 'gruen' : gwAnteil <= 1.0 ? 'gelb' : 'rot',
-    detail: gwAnteil==null ? 'Goodwill oder Eigenkapital fehlen in der Jahresreihe.'
+    detail: gwFehlt
+      ? 'Yahoo liefert weder Goodwill noch immaterielle Werte. Entweder weist die Bilanz keine aus – dann gibt es hier nichts zu prüfen – oder die Zeilen fehlen in den Daten; das lässt sich von hier nicht unterscheiden.'
+      : gwAnteil==null ? 'Eigenkapital fehlt in der Jahresreihe.'
       : `Goodwill + immaterielle Werte = ${pct(gwAnteil).toFixed(0)} % des Eigenkapitals`
         + (gwWachstum!=null ? ` · Goodwill ${gwWachstum>0?'+':''}${pct(gwWachstum).toFixed(1)} % ggü. Vorjahr` : '')
         + '. Über 100 % heißt: das bilanzielle Eigenkapital besteht vollständig aus Kaufpreisaufschlägen.'
