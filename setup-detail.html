@@ -1414,16 +1414,26 @@ function forensikFlags(reihe){
   //    Gewinn?"; Schilit CF-Teil). Mehrjahresmittel daneben, weil ein
   //    einzelnes Jahr durch Arbeitskapital-Schwankungen taeuscht.
   const cfNi = fdiv(fz(v,'operativer_cf'), fz(v,'nettogewinn'));
+  // Verhaeltniszahlen mit negativem Nenner kippen ihr Vorzeichen und lesen
+  // sich dann falsch herum (erster Live-Test CRWD, 2026-10-08: -9,92x mit
+  // dem Text "kommt nicht als Geld herein", obwohl der Cashflow deutlich
+  // UEBER dem Ergebnis lag). Verlustjahre bekommen deshalb eigene Texte.
+  const verlust = fz(v,'nettogewinn')!=null && fz(v,'nettogewinn') <= 0;
   const summeCf = reihe.reduce((s,j) => s + (fz(j,'operativer_cf') ?? 0), 0);
   const summeNi = reihe.reduce((s,j) => s + (fz(j,'nettogewinn') ?? 0), 0);
   const cfNiMehrjahr = fdiv(summeCf, summeNi);
   add({
     id: 'cfo_ni', icon: '💧', titel: 'Cashflow deckt den Gewinn',
     buch: 'Graham, Kap. „Gewinn vs. Cashflow" · Schilit, Cash Flow Shenanigans',
-    wert: cfNi==null ? '—' : cfNi.toFixed(2) + '×',
+    wert: verlust ? 'Verlustjahr' : cfNi==null ? '—' : cfNi.toFixed(2) + '×',
+    nichtAnwendbar: verlust,
     ampel: fz(v,'nettogewinn')!=null && fz(v,'nettogewinn') <= 0 ? 'na'
          : cfNi==null ? 'na' : cfNi >= 1 ? 'gruen' : cfNi >= 0.8 ? 'gelb' : 'rot',
-    detail: cfNi==null
+    detail: verlust
+      ? (fz(v,'operativer_cf')!=null && fz(v,'operativer_cf') > 0
+          ? 'Jahresfehlbetrag, aber positiver operativer Cashflow. Das Verhältnis ist bei Verlusten nicht deutbar; der Cashflow liegt hier über dem Ergebnis, typisch bei hohen nicht zahlungswirksamen Kosten wie Aktienvergütung.'
+          : 'Jahresfehlbetrag und kein positiver operativer Cashflow – weder Gewinn noch Geld.')
+      : cfNi==null
       ? 'Operativer Cashflow oder Jahresüberschuss fehlt in der Jahresreihe.'
       : `Operativer Cashflow ${cfNi.toFixed(2)}× Jahresüberschuss`
         + (cfNiMehrjahr!=null ? ` · ${n}-Jahres-Mittel ${cfNiMehrjahr.toFixed(2)}×` : '')
@@ -1483,6 +1493,7 @@ function forensikFlags(reihe){
     id: 'dio', icon: '📦', titel: 'Vorratslaufzeit (DIO)',
     buch: 'Schilit, EM 4 – Aufwand in eine spätere Periode verschoben',
     wert: (ohneVorraete || vorraeteKlein) ? 'kaum Vorräte' : dioTage==null ? '—' : dioTage.toFixed(0) + ' Tage',
+    nichtAnwendbar: ohneVorraete || vorraeteKlein,
     ampel: (ohneVorraete || vorraeteKlein) ? 'na'
          : dioDelta==null ? 'na' : dioDelta <= 0.05 ? 'gruen' : dioDelta <= 0.15 ? 'gelb' : 'rot',
     detail: ohneVorraete
@@ -1501,6 +1512,12 @@ function forensikFlags(reihe){
   const dpo = (j) => fdiv(fz(j,'lieferverbind'), fz(j,'materialaufwand'));
   const dpoTage = dpo(v)!=null ? dpo(v)*365 : null;
   const dpoDelta = fwachstum(dpo(v), dpo(p));
+  // Lieferverbindlichkeiten enthalten auch offene Rechnungen fuer Anlagen.
+  // Bei einem Investitionsschub steigt das Lieferantenziel dann ohne jede
+  // Cashflow-Kosmetik (erster Live-Test MSFT, 2026-10-08: +26 % bei
+  // Investitionen von 3x den Abschreibungen, Rechenzentren).
+  const capexSchub = fz(v,'investitionen')!=null && fz(v,'abschreibungen')
+    && Math.abs(fz(v,'investitionen')) > 2 * fz(v,'abschreibungen');
   add({
     id: 'dpo', icon: '⏳', titel: 'Lieferantenziel (DPO)',
     buch: 'Schilit, CF 4 – Cashflow mit nicht nachhaltigen Mitteln gehoben',
@@ -1509,7 +1526,10 @@ function forensikFlags(reihe){
     detail: dpoTage==null ? 'Lieferverbindlichkeiten oder Materialaufwand fehlen.'
       : `${dpoTage.toFixed(0)} Tage`
         + (dpoDelta!=null ? ` · ${dpoDelta>0?'+':''}${pct(dpoDelta).toFixed(1)} % ggü. Vorjahr` : '')
-        + '. Stark steigende Zahlungsziele heben den operativen Cashflow einmalig, nicht dauerhaft.',
+        + '. Stark steigende Zahlungsziele heben den operativen Cashflow einmalig, nicht dauerhaft.'
+        + (capexSchub && dpoDelta > 0.10
+            ? ' Hier investiert das Unternehmen mehr als das Doppelte seiner Abschreibungen – offene Rechnungen für Anlagen erklären einen Teil des Anstiegs.'
+            : ''),
     frage: 'Ist der Cashflow-Anstieg operativ verdient oder nur später bezahlt?',
   });
 
@@ -1563,14 +1583,23 @@ function forensikFlags(reihe){
   });
 
   // 8. Ergebnisqualitaet der Quelle (Schilit EM 3: Einmaleffekte).
-  const ausserOperativ = (fz(v,'vorsteuerergebnis')!=null && fz(v,'betriebsergebnis')!=null && fz(v,'vorsteuerergebnis')!==0)
-    ? (fz(v,'vorsteuerergebnis') - fz(v,'betriebsergebnis')) / Math.abs(fz(v,'vorsteuerergebnis')) : null;
+  // Nur deutbar, wenn BEIDE Ergebnisse positiv sind: bei einem operativen
+  // Verlust machen z. B. Zinsertraege auf einen hohen Cashbestand den
+  // Vorsteuerverlust kleiner, und die Formel meldete "+131 % ausserhalb des
+  // Kerngeschaefts" als roten Gewinnsprung (CRWD, 2026-10-08) - Unsinn.
+  const ergebnisNegativ = (fz(v,'betriebsergebnis')!=null && fz(v,'betriebsergebnis') <= 0)
+    || (fz(v,'vorsteuerergebnis')!=null && fz(v,'vorsteuerergebnis') <= 0);
+  const ausserOperativ = (!ergebnisNegativ && fz(v,'vorsteuerergebnis')!=null && fz(v,'betriebsergebnis')!=null)
+    ? (fz(v,'vorsteuerergebnis') - fz(v,'betriebsergebnis')) / fz(v,'vorsteuerergebnis') : null;
   add({
     id: 'einmaleffekte', icon: '🎲', titel: 'Ergebnis außerhalb des Kerngeschäfts',
     buch: 'Schilit, EM 3 – Gewinn aus einmaligen oder nicht nachhaltigen Quellen',
-    wert: ausserOperativ==null ? '—' : (ausserOperativ>0?'+':'') + pct(ausserOperativ).toFixed(0) + ' %',
+    nichtAnwendbar: ergebnisNegativ,
+    wert: ergebnisNegativ ? 'Verlustjahr' : ausserOperativ==null ? '—' : (ausserOperativ>0?'+':'') + pct(ausserOperativ).toFixed(0) + ' %',
     ampel: ausserOperativ==null ? 'na' : ausserOperativ <= 0.15 ? 'gruen' : ausserOperativ <= 0.35 ? 'gelb' : 'rot',
-    detail: ausserOperativ==null ? 'Vorsteuer- oder Betriebsergebnis fehlt in der Jahresreihe.'
+    detail: ergebnisNegativ
+      ? 'Betriebs- oder Vorsteuerergebnis negativ – dann lässt sich der Anteil außerhalb des Kerngeschäfts nicht als Gewinnquelle lesen (oft sind es nur Zinserträge auf den Cashbestand).'
+      : ausserOperativ==null ? 'Vorsteuer- oder Betriebsergebnis fehlt in der Jahresreihe.'
       : `${(ausserOperativ>0?'+':'')}${pct(ausserOperativ).toFixed(0)} % des Vorsteuerergebnisses entstehen außerhalb des Betriebsergebnisses`
         + ' (Finanzergebnis, Beteiligungen, Sondereffekte).',
     frage: 'Ist der Gewinnsprung operativ – oder kommt er aus Posten, die nächstes Jahr fehlen?',
@@ -1583,12 +1612,14 @@ function forensikFlags(reihe){
   add({
     id: 'zinsdeckung', icon: '🛡️', titel: 'Zinsdeckung (EBIT / Zinsaufwand)',
     buch: 'Graham, Kap. „Finanzielle Stabilität"',
-    wert: ohneZinsen ? 'kein Zinsaufwand' : deckung==null ? '—' : deckung.toFixed(1) + '×',
+    wert: ohneZinsen ? 'kein Zinsaufwand' : deckung==null ? '—' : deckung <= 0 ? 'EBIT negativ' : deckung.toFixed(1) + '×',
     ampel: deckung==null ? (ohneZinsen ? 'gruen' : 'na')
          : deckung >= 8 ? 'gruen' : deckung >= 3 ? 'gelb' : 'rot',
     detail: deckung==null
       ? (ohneZinsen ? 'Kein Zinsaufwand ausgewiesen – Graham: der sicherste Fall.'
                   : 'EBIT oder Zinsaufwand fehlen in der Jahresreihe.')
+      : deckung <= 0
+      ? 'Das Betriebsergebnis ist negativ, die Zinsen werden also nicht aus dem operativen Geschäft gedeckt. Ein hoher Cashbestand ist hier nicht berücksichtigt – Graham prüfte die Ertragskraft, nicht die Kasse.'
       : `Das Betriebsergebnis deckt den Zinsaufwand ${deckung.toFixed(1)}-fach. `
         + 'Graham verlangte für Industrieunternehmen ein Mehrfaches, nicht ein Vielfaches knapp über 1.',
     frage: 'Trägt das operative Geschäft die Zinslast auch in einem schwachen Jahr?',
@@ -1644,6 +1675,10 @@ function forensikFlags(reihe){
 // Urteil: diese Kennzahlen koennen einen Verdacht begruenden, nie belegen.
 function forensikVerdikt(flags, scores){
   const bewertbar = flags.filter(f => f.ampel !== 'na');
+  // "Nicht anwendbar" (Verlustjahr, Software ohne Vorraete) ist keine
+  // Datenluecke und darf nicht als "Yahoo liefert keine vollstaendigen
+  // Abschluesse" erscheinen - die Quote zaehlt nur gegen anwendbare Karten.
+  const anwendbar = flags.filter(f => !f.nichtAnwendbar);
   const rot = bewertbar.filter(f => f.ampel === 'rot');
   const gelb = bewertbar.filter(f => f.ampel === 'gelb');
   const ampel = rot.length >= 3 ? 'rot' : (rot.length >= 1 || gelb.length >= 3) ? 'gelb' : 'gruen';
@@ -1651,12 +1686,12 @@ function forensikVerdikt(flags, scores){
   let satz;
   if(!bewertbar.length){
     satz = 'Die Jahresreihe reicht für keine der Prüfungen – ohne Daten kein Urteil, auch kein gutes.';
-  } else if(bewertbar.length < Math.ceil(flags.length * 0.7)){
+  } else if(bewertbar.length < Math.ceil(anwendbar.length * 0.7)){
     // Wichtiger Sonderfall: wenige bewertbare Pruefungen duerfen NICHT als
     // "unauffaellig" durchgehen. Yahoo liefert fuer manche Werte (haeufig
     // europaeische Bilanzen) nur Bruchstuecke - das ist eine Datenluecke,
     // kein Gesundheitszeugnis.
-    satz = `Die Datenbasis trägt nur ${bewertbar.length} von ${flags.length} Prüfungen`
+    satz = `Die Datenbasis trägt nur ${bewertbar.length} von ${anwendbar.length} anwendbaren Prüfungen`
          + (rot.length ? `, davon auffällig: ${nenn(rot)}.` : ' – zu wenig für ein Gesamturteil.')
          + ' Yahoo liefert für diesen Wert keine vollständigen Jahresabschlüsse; die fehlenden Positionen stehen unten.';
   } else if(!rot.length && gelb.length <= 1){
