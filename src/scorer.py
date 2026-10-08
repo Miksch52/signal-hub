@@ -1100,6 +1100,8 @@ def f_underowned(ergebnisse):
                  else "breit gehalten" if pool_pctl >= UNDEROWNED_POOL_BREIT
                  else "mittel besetzt")
         duenn = melder < UNDEROWNED_MIN_MELDER
+        roh = [x for x in (v.get("melder") or []) if x is not None]
+        roh_steigt = len(roh) >= 2 and roh[-1] >= roh[-2]
         abgang_folge = 0
         for x in reversed([x for x in (v.get("melder_delta_pct") or [])]):
             if x is not None and x <= -schwelle:
@@ -1116,7 +1118,15 @@ def f_underowned(ergebnisse):
             # Symmetrisch zu "neue Adressen": ein einzelnes schwaches Quartal
             # traf im ersten Lauf 41 % der breit gehaltenen Titel - als rote
             # Ampel waere das Rauschen.
-            richtung = "Adressen gehen"
+            # Normiert heisst "unter dem Markt", nicht "weniger": bei 47 % der
+            # so markierten Titel (>= 100 Melder, Tabelle vom 2026-10-08) ist
+            # die Melderzahl ROH gestiegen, nur langsamer als am Gesamtmarkt
+            # (AAPL 6.657 -> 6.806). "Adressen ziehen sich zurueck" waere dort
+            # sachlich falsch - deshalb zwei Faelle.
+            if roh_steigt:
+                richtung = "langsamer als der Markt"
+            else:
+                richtung = "Adressen gehen"
         else:
             richtung = "flach"
         # Ampel bewusst zurueckhaltend: gruen nur, wo BEIDE Haelften von
@@ -1153,10 +1163,18 @@ def f_underowned(ergebnisse):
         elif richtung == "erstes Quartal mit neuen Adressen":
             urteil = ("zuletzt mehr Melder, aber erst ein Quartal – "
                       "noch kein Trend")
+        elif richtung == "langsamer als der Markt":
+            urteil = ("Melderzahl steigt, aber zwei Quartale in Folge langsamer "
+                      "als am Gesamtmarkt – typisch für Titel, die schon fast "
+                      "jede Adresse hält")
         elif richtung == "Adressen gehen":
             urteil = "Adressen ziehen sich zurück" + (
                 " (Aktiensumme steigt trotzdem – bestehende Halter kaufen nach)"
                 if summe_steigt else "")
+        elif roh_steigt:
+            # Auch "flach" ist relativ zum Markt: NVDA 6.306 -> 6.548 Melder
+            # ist normiert -0,9 %, roh aber ein klares Plus.
+            urteil = "Melderzahl wächst etwa so schnell wie am Gesamtmarkt"
         else:
             urteil = ("Melderzahl flach" + (
                 " – die steigende Aktiensumme kommt von bestehenden Haltern, "
