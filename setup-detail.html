@@ -1724,7 +1724,7 @@ function forensikKarte(f){
       <span class="fcard-wert">${esc(f.wert)}</span>
     </div>
     <div class="fcard-detail">${esc(f.detail)}</div>
-    ${f.frage ? `<div class="ff-frage">↪ ${esc(f.frage)}</div>` : ''}
+    ${f.frage && f.ampel !== 'na' ? `<div class="ff-frage">↪ ${esc(f.frage)}</div>` : ''}
     <div class="fcard-gew">${esc(f.buch)} · kein Score-Bestandteil</div>
   </div></div>`;
 }
@@ -1814,7 +1814,11 @@ function forensikDatenbasis(reihe){
     !(k === 'goodwill_immat' && letztes.immaterielle != null)
     && !(k === 'immaterielle' && letztes.goodwill_immat != null)
     && !(k === 'nettogewinn_fort' && letztes.nettogewinn != null)
-    && !(k === 'ebit' && letztes.betriebsergebnis != null));
+    && !(k === 'ebit' && letztes.betriebsergebnis != null)
+    // Keine Vorraete bei vorhandener Bilanz = Unternehmen ohne Lager (wie in
+    // der DIO-Karte), keine fehlende Lieferung - sonst widerspraechen sich
+    // Karte und Datenbasis-Zeile (CRWD, 2026-10-08).
+    && !(k === 'vorraete' && letztes.summe_aktiva != null));
   const gefunden = konzepte.filter(k => letztes[k]!=null);
   const fehlend = konzepte.filter(k => letztes[k]==null).map(k => FORENSIK_LABEL[k] || k);
   const jahre = reihe.map(j => String(j._datum).slice(0,4)).join(', ');
