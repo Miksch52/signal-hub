@@ -37,4 +37,12 @@ if [ -z "$TROCKEN" ]; then
   WAECHTER="$PROJ/agenten/system_waechter.py"
   [ -f "$WAECHTER" ] && /usr/bin/python3 "$WAECHTER" --icloud --push >/dev/null 2>&1
 fi
+# Minervini-Lexikon (seit 2026-10-10): einzige Ausnahme vom "nur lesen" oben.
+# Holt im Coach erfasste/geloeschte Posts aus dem Gist in die Datei, laedt neue
+# Bilder in den privaten R2-Ordner (Worker /lexikon-bild) und legt bei jeder
+# Aenderung eine Kopie der Datei nach Google Drive ("Mixed Kurier"). Schreibt
+# nur bei echter Aenderung; ein Fehler hier stoppt den Spiegel nicht.
+if [ -z "$TROCKEN" ] && [ -f "$PROJ/Signal-Hub/src/minervini_lexikon.py" ]; then
+  ( cd "$PROJ/Signal-Hub/src" && /usr/bin/python3 minervini_lexikon.py --gist 2>&1 | sed "s|^|  lexikon: |" ) || true
+fi
 echo "$(date '+%F %T') Cloud-Spiegel ${TROCKEN:+(Trockenlauf) }abgeschlossen."

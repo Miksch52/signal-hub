@@ -95,6 +95,7 @@ Coach lief.
 """
 
 import argparse
+import glob
 import json
 import os
 import shutil
@@ -181,8 +182,16 @@ def gesperrte_video_ids(daten):
 
 
 # ---- Gist-Zugriff ueber die GitHub-CLI (Token bleibt im Schluesselbund) ----
+def _gh():
+    # Unter launchd (Cloud-Spiegel auf dem Mac mini) fehlt Homebrew im PATH
+    for p in (shutil.which("gh"), "/opt/homebrew/bin/gh", "/usr/local/bin/gh"):
+        if p and os.path.exists(p):
+            return p
+    raise RuntimeError("GitHub-CLI gh nicht gefunden")
+
+
 def _gh_json(*args, eingabe=None):
-    r = subprocess.run(["gh", "api", *args], input=eingabe, capture_output=True, text=True)
+    r = subprocess.run([_gh(), "api", *args], input=eingabe, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"gh api {' '.join(args)} fehlgeschlagen: {r.stderr.strip()[:300]}")
     return json.loads(r.stdout) if r.stdout.strip() else None
@@ -203,8 +212,10 @@ def gist_datei_lesen(gist_id, name):
     if not f:
         return None
     if f.get("truncated"):
-        with urllib.request.urlopen(f["raw_url"], timeout=60) as r:
-            return r.read().decode("utf-8")
+        r = subprocess.run(["curl", "-sfL", "--max-time", "120", f["raw_url"]], capture_output=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"raw_url nicht lesbar (curl {r.returncode})")
+        return r.stdout.decode("utf-8")
     return f.get("content")
 
 
@@ -236,6 +247,7 @@ def _speichere_lexikon(daten):
         fp.write(";")
 
     pfade.schreibe_atomar(pfade.MINERVINI_LEXIKON_JS, _js)
+    drive_kopie()
 
 
 def _markt_kontext_fuer(datum, markt="USA"):
@@ -372,6 +384,90 @@ def _backfill_daten(daten):
     return aktualisiert
 
 
+def drive_kopie():
+    """Kopie von minervini_lexikon.json nach Google Drive ("Mixed Kurier", seit
+    2026-10-10). Laeuft nach jedem Speichern der Datei und am Ende jedes
+    Gist-Abgleichs; schreibt nur, wenn sich der Inhalt unterscheidet. Ein
+    Fehler hier bricht nie den Lexikon-Lauf ab."""
+    try:
+        ordner = sorted(glob.glob(pfade.GOOGLE_DRIVE_LEXIKON_MUSTER))
+        if not ordner or not os.path.exists(pfade.MINERVINI_LEXIKON_JSON):
+            return False
+        ziel = os.path.join(ordner[0], os.path.basename(pfade.MINERVINI_LEXIKON_JSON))
+        with open(pfade.MINERVINI_LEXIKON_JSON, "rb") as f:
+            inhalt = f.read()
+        if os.path.exists(ziel):
+            with open(ziel, "rb") as f:
+                if f.read() == inhalt:
+                    return False
+        tmp = ziel + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(inhalt)
+        os.replace(tmp, ziel)
+        print(f"  Kopie nach Google Drive: {ziel}")
+        return True
+    except Exception as e:
+        print(f"  ! Google-Drive-Kopie fehlgeschlagen: {e}")
+        return False
+
+
+def _curl_status(url, token, kopf=False, datei=None):
+    befehl = ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "120",
+              "-H", "Authorization: Bearer " + token, "-H", "User-Agent: MTS-Lexikon"]
+    if kopf:
+        befehl.append("-I")
+    if datei:
+        befehl += ["-X", "PUT", "--data-binary", "@" + datei]
+    r = subprocess.run(befehl + [url], capture_output=True, text=True)
+    return r.stdout.strip() or "000"
+
+
+BILDER_CLOUD_STAND = os.path.join(pfade.MINERVINI_LEXIKON_DIR, "bilder_cloud.json")
+
+
+def bilder_hochladen(daten):
+    """Laedt Bilder, die Eintraege nutzen, in den privaten R2-Bucket (Worker
+    /lexikon-bild, seit 2026-10-10), damit der Coach sie auch auf Pages zeigt.
+    Bereits hochgeladene merkt sich bilder_cloud.json; der Worker prueft den
+    gh-Token desselben GitHub-Kontos."""
+    namen = set()
+    for e in daten.get("eintraege") or []:
+        g = e.get("grafik")
+        namen.update(g if isinstance(g, list) else ([g] if g else []))
+    try:
+        stand = set(json.load(open(BILDER_CLOUD_STAND, encoding="utf-8")))
+    except (OSError, ValueError):
+        stand = set()
+    offen = sorted(n for n in namen - stand
+                   if os.path.exists(os.path.join(pfade.MINERVINI_LEXIKON_BILDER, n)))
+    if not offen:
+        return 0
+    token = subprocess.run([_gh(), "auth", "token"], capture_output=True, text=True).stdout.strip()
+    if not token:
+        print("  ! Bilder-Upload uebersprungen: kein gh-Token")
+        return 0
+    neu, fehler = 0, []
+    for n in offen:
+        url = f"{pfade.MTS_WORKER}/lexikon-bild?name={urllib.request.quote(n)}"
+        # curl statt urllib: das python.org-Python auf den Macs findet die
+        # System-Zertifikate nicht (CERTIFICATE_VERIFY_FAILED, 2026-10-10)
+        code = _curl_status(url, token, kopf=True)
+        if code == "404":
+            code = _curl_status(url, token, datei=os.path.join(pfade.MINERVINI_LEXIKON_BILDER, n))
+            if code == "200":
+                neu += 1
+        if code == "200":
+            stand.add(n)
+        else:
+            fehler.append(f"{n} (HTTP {code})")
+    if fehler:
+        print(f"  ! {len(fehler)} Bild(er) nicht hochgeladen, z. B. {fehler[0]}")
+    pfade.schreibe_json_atomar(BILDER_CLOUD_STAND, sorted(stand), indent=0)
+    if neu:
+        print(f"  Bilder in die Cloud geladen: {neu} (gesamt {len(stand)})")
+    return neu
+
+
 def gist_abgleich():
     """Datei <-> Gist in beide Richtungen zusammenfuehren (siehe Docstring).
     Holt Neuaufnahmen/Loeschungen von der Seite, traegt fuer neue
@@ -408,6 +504,8 @@ def gist_abgleich():
         if len(eingang["videos"]) != vorher:
             gist_datei_schreiben(gist_id, GIST_EINGANG, json.dumps(eingang, ensure_ascii=False, indent=1))
             print(f"  Warteschlange: {vorher - len(eingang['videos'])} erledigte Vormerkung(en) entfernt.")
+    bilder_hochladen(daten)
+    drive_kopie()
     print(f"Gist-Abgleich fertig: {len(daten['eintraege'])} Eintraege, "
           f"{len(daten.get('geloescht') or [])} geloescht, {nachgetragen} Marktkontext(e) nachgetragen.")
     return True

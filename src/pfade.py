@@ -74,6 +74,12 @@ MINERVINI_LEXIKON_JS = os.path.join(MINERVINI_LEXIKON_DIR, "minervini_lexikon.js
 MINERVINI_LEXIKON_BILDER = os.path.join(MINERVINI_LEXIKON_DIR, "bilder")
 MINERVINI_LEXIKON_TRANSKRIPTE = os.path.join(MINERVINI_LEXIKON_DIR, "transkripte")
 MINERVINI_LEXIKON_EINGANG = os.path.join(PROJEKT, "minervini-lexikon-eingang")
+# Kopie der Lexikon-Datei in Google Drive (seit 2026-10-10, Nutzerwunsch): Ordner
+# "Mixed Kurier" in "Meine Ablage". Der Kontoname steckt im Ordnernamen von
+# Google Drive for Desktop, daher per Muster statt festem Pfad - fehlt der
+# Ordner auf einem Rechner, wird die Kopie dort still uebersprungen.
+GOOGLE_DRIVE_LEXIKON_MUSTER = os.path.expanduser("~/Library/CloudStorage/GoogleDrive-*/Meine Ablage/Mixed Kurier")
+MTS_WORKER = "https://mts-cors.miksch267.workers.dev"
 
 # Lokale Laufzeitdaten (kein iCloud)
 RAW_PDF = os.path.join(LOKAL, "signals_raw.json")
