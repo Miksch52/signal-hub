@@ -32,3 +32,11 @@ Volltexte bleiben nur lokal in data/minervini-lexikon/transkripte/.
   Warteschlange. Claude im Chat sagen "Vorgemerkte Videos verarbeiten" -
   dann laeuft: python3 src/minervini_transkripte.py --eingang
   und nach dem Schreiben der Kernaussagen: python3 src/minervini_lexikon.py --gist
+
+--- Mehrere Posts auf einmal (seit 2026-10-23, jedes Geraet, ohne Chat) ---
+1. Die Grok-Automation mit dem Prompt aus GROK-PROMPT.txt laufen lassen -
+   Grok liefert Original, deutsche Uebersetzung, Typ und Link als JSON.
+2. Groks Antwort komplett kopieren -> Coach -> Minervini-Lexikon ->
+   "+ Mehrere Posts importieren" -> Pruefen -> Uebernehmen.
+3. Doppelte und frueher geloeschte Posts erkennt der Coach selbst; nur neue
+   werden uebernommen. Den Marktkontext ergaenzt der naechste Abgleich am Mac.
