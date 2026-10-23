@@ -69,6 +69,11 @@ env:
 jobs:
   signal-hub:
     runs-on: ubuntu-latest
+    # Ob dieser Lauf neue Daten erzeugt hat (seit 2026-10-23). Steuert, ob der
+    # deploy-Job am Ende den Deploy im privaten Hauptrepo anstoesst - siehe
+    # dort. Leer (= kein Deploy), wenn kein Slot faellig war.
+    outputs:
+      neue_daten: ${{ steps.slot.outputs.neue_daten }}
     defaults:
       run:
         working-directory: Signal-Hub
@@ -231,6 +236,23 @@ jobs:
             python3 src/run.py
           else
             python3 src/run.py --scheduled
+          fi
+
+      # Hat run.py einen Slot verarbeitet? Ohne faelligen Slot kehrt es vor dem
+      # ersten Schreiben zurueck, signals.json fehlt dann (frischer Checkout,
+      # data/ ist gitignored). Genau diese Laeufe - die vier GitHub-Crons als
+      # Fallback hinter dem Worker-Cron plus die vier der falschen Jahreszeit -
+      # haben bis 2026-10-23 trotzdem jedes Mal einen Deploy angestossen:
+      # ~12 statt ~4 Deploys/Tag, ~1.500 der 2.000 Freiminuten des privaten
+      # Hauptrepos im Oktober.
+      - name: Neue Daten erzeugt?
+        id: slot
+        if: always()
+        run: |
+          if [ -f data/signals.json ]; then
+            echo "neue_daten=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Kein faelliger Slot - kein Deploy im Hauptrepo noetig."
           fi
 
       # Truflation-Newsletter (seit 2026-09-30, Makro-Tab Markets 360): liest
@@ -738,6 +760,13 @@ jobs:
         run: rclone copy r2:signalhub-magazine/_state/deploy_token_state.json ./ || true
 
       - name: Deploy im Hauptrepo (Miksch52/maick-trading-system) anstossen
+        # Nur wenn der Lauf neue Daten erzeugt hat (seit 2026-10-23, siehe
+        # Schritt "Neue Daten erzeugt?" im signal-hub-Job). Jeder Deploy kostet
+        # Freiminuten des privaten Hauptrepos; ein Lauf ohne faelligen Slot
+        # wuerde nur den unveraenderten Stand erneut ausliefern. Die
+        # Token-Ueberwachung unten laeuft damit nur noch bei echten Laeufen -
+        # reicht, das sind weiterhin vier am Tag.
+        if: needs.signal-hub.outputs.neue_daten == 'true'
         # Warum hier eine Ueberwachung haengt (seit 2026-08-23): am 2026-08-23
         # ist der DEPLOY_TRIGGER_TOKEN zwischen 14:11 und 15:19 abgelaufen. Alle
         # Datenjobs liefen weiter sauber durch, nur dieser letzte Schritt bekam
