@@ -261,6 +261,25 @@
             width:32px;height:32px;font-size:14px;cursor:pointer;display:inline-flex;
             align-items:center;justify-content:center;flex-shrink:0}
   .icon-btn:hover{border-color:var(--primary)}
+
+  /* Kopfbereich eingeklappt (2026-10-29, auf Handy und Desktop): standardmäßig
+     bleibt nur eine schmale Zeile mit Titel, Markt-Chip und ☰. ☰ klappt Meta,
+     Aktionen, Hell/Dunkel und Filter manuell auf. Aufgeklappt scrollt der Kopf
+     mit weg; zugeklappt bleibt die schmale Zeile am Desktop oben haften. */
+  #kopffab{display:none}
+  header{padding-top:8px;padding-bottom:8px;}
+  header.kopf-zu > :not(.htop){display:none}
+  header.kopf-zu .htop > :not(h1):not(#marktchip):not(#kopftoggle){display:none !important}
+  header.kopf-zu h1{font-size:16px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header.kopf-zu .htop{gap:8px;flex-wrap:nowrap}
+  header:not(.kopf-zu){position:static}
+  @media(max-width:700px){
+    header{position:static}
+    #kopffab{position:fixed;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:30;
+      width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--bg2);
+      color:var(--txt);font-size:20px;box-shadow:0 3px 12px rgba(0,0,0,.35);align-items:center;justify-content:center}
+    #kopffab.sichtbar{display:flex}
+  }
 </style>
 </head>
 <body>
@@ -278,6 +297,7 @@
     <span id="zyklchip" class="markt-chip info" style="display:none"></span>
     <span class="meta" id="meta">lädt …</span>
     <span class="meta" id="breadth" title="Anzahl Ticker mit aktivem Pivot-Setup (BREAKOUT/ARMED/CHEAT) laut Signal-Hub/data/pivot_history.json – Fruehindikator fuer Marktbreite, unabhaengig von einem offiziellen Follow-Through-Day"></span>
+    <button class="icon-btn" id="kopftoggle" type="button" aria-expanded="false" aria-label="Kopfbereich auf-/zuklappen" title="Meta, Aktionen und Filter ein-/ausblenden">☰</button>
     <button class="icon-btn" id="theme-toggle" title="Hell/Dunkel umschalten" aria-label="Hell/Dunkel umschalten" type="button">🌙</button>
   </div>
   <!-- Aktionen-Menü (seit 2026-08-23, Systemprüfung): die sieben Buttons standen
@@ -367,6 +387,7 @@
    </div>
   </details>
 </header>
+<button id="kopffab" type="button" aria-label="Nach oben zu Filtern und Aktionen" title="Nach oben: Filter &amp; Aktionen">☰</button>
 
 <main>
   <details id="legendbox" class="filterbox legendbox">
@@ -1716,29 +1737,6 @@ window.addEventListener('storage', (e) => {
   if(e.key==='mts_v2' && DATA) render();
 });
 
-// Auto-Einklappen der Filterleisten beim Scrollen nach unten (mehr Platz fuer
-// die Karten, die sticky Kopfzeile mit allen Filtern nimmt sonst dauerhaft
-// viel Bildschirmflaeche weg): schliesst alle offenen <details class=
-// "filterbox">-Panels (Filter & Sortierung, Legende, Drop-Liste), sobald man
-// ueber einen kleinen Schwellenwert nach unten scrollt. Bewusst KEIN
-// automatisches Wiederaufklappen beim Hochscrollen - der Nutzer klickt
-// gezielt wieder auf, wenn er filtern will; staendiges Auf-/Zuklappen waere
-// nur Flackern.
-(function(){
-  let letzterScrollY=window.scrollY, letzteZeit=0;
-  window.addEventListener('scroll', () => {
-    // Leichtes Zeit-Throttle (100ms) statt requestAnimationFrame - reicht fuer
-    // diese seltene, billige Operation und ist unabhaengig vom Paint-Zyklus.
-    const jetzt=Date.now();
-    if(jetzt-letzteZeit<100) return;
-    letzteZeit=jetzt;
-    const y=window.scrollY;
-    if(y>letzterScrollY && y>80){
-      document.querySelectorAll('details.filterbox[open]').forEach(d=>d.open=false);
-    }
-    letzterScrollY=y;
-  }, {passive:true});
-})();
 
 (async function(){
   if(await zumLiveServer()) return;
@@ -1754,7 +1752,6 @@ window.addEventListener('storage', (e) => {
   ladeVolleMarktampel();  // US-Chip auf die volle Minervini-Ampel upgraden
   ladeScoreBacktest();    // ebenso optional (Trefferquoten-Panel)
   // Filterleiste: am Desktop offen, auf dem iPhone eingeklappt (entlastet den Schirm)
-  if(window.innerWidth>700){ for(const id of ['filterbox','legendbox']){ const el=document.getElementById(id); if(el) el.open=true; } }
   if(!(DATA.treffer||[]).length){
     document.getElementById('meta').textContent =
       'Keine Daten — Mac mini (Server) nicht erreichbar und lokale iCloud-Daten (noch) nicht geladen.';
@@ -1775,6 +1772,18 @@ window.addEventListener('storage', (e) => {
     localStorage.setItem(KEY, next);
     sync();
   });
+})();
+
+// Handy-Kopf: standardmäßig eingeklappt (CSS .kopf-zu greift nur ≤700px),
+// ☰ klappt auf, der schwebende Knopf springt hoch und klappt auf.
+(function(){
+  const kopf=document.querySelector('header'), tg=document.getElementById('kopftoggle'), fab=document.getElementById('kopffab');
+  if(!kopf||!tg||!fab) return;
+  kopf.classList.add('kopf-zu');
+  const setze=(offen)=>{ kopf.classList.toggle('kopf-zu',!offen); tg.setAttribute('aria-expanded',offen); };
+  tg.addEventListener('click',()=>setze(kopf.classList.contains('kopf-zu')));
+  fab.addEventListener('click',()=>{ setze(true); window.scrollTo({top:0,behavior:'smooth'}); });
+  window.addEventListener('scroll',()=>fab.classList.toggle('sichtbar',window.scrollY>400),{passive:true});
 })();
 </script>
 </body>
