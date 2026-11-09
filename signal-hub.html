@@ -319,6 +319,16 @@
     <button class="btn ghost" onclick="toggleDrawer()">⚙︎ Einstellungen</button>
    </div>
   </details>
+  <details id="magazinbox" class="filterbox" ontoggle="if(this.open)magazinListe()">
+   <summary class="filtersum">📥 Magazin hochladen <span id="magazincount" class="filtercount"></span></summary>
+   <div style="padding:12px;font-size:13px;color:var(--muted)">
+    <p style="margin:0 0 10px">Neue Traderfox-PDFs von diesem Gerät in die Cloud legen, ohne Mac. Der nächste Cloud-Lauf liest sie automatisch ein.</p>
+    <input type="file" id="magazindatei" accept="application/pdf,.pdf" multiple style="display:none" onchange="magazinHochladen(this)">
+    <button class="btn" id="magazinbtn" onclick="document.getElementById('magazindatei').click()">PDF auswählen</button>
+    <div id="magazinstatus" style="margin-top:10px"></div>
+    <div id="magazinliste" style="margin-top:10px"></div>
+   </div>
+  </details>
   <details id="filterbox" class="filterbox">
    <summary class="filtersum">🔧 Filter &amp; Sortierung <span id="filtercount" class="filtercount"></span></summary>
    <div class="controls">
@@ -517,6 +527,56 @@ function effScore(t){
 function einstufFor(sc){
   const s=DATA.schwellen||{kauf_kandidat:70,beobachten:50};
   return sc>=s.kauf_kandidat?'Kauf-Kandidat':(sc>=s.beobachten?'Beobachten':'—');
+}
+
+/* ---- Magazin-Upload (seit 2026-11-09, von jedem Geraet nutzbar) ----
+   Legt Traderfox-PDFs ueber den Worker (/magazin) in den privaten Bucket,
+   aus dem pipeline.yml sie holt. Zugang mit dem Gist-Token der Hauptapp. */
+const MAGAZIN_URL=MTS_PROXY+'magazin';
+function magazinToken(){ return localStorage.getItem('gh_gist_token')||localStorage.getItem('mts_gist_token')||''; }
+function magazinName(n){
+  const s=String(n).normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9 ._()-]/g,'-').replace(/^[^A-Za-z0-9]+/,'');
+  return /\.pdf$/i.test(s)?s:s+'.pdf';
+}
+function magazinZeile(text,farbe){
+  const d=document.createElement('div');
+  d.textContent=text;
+  if(farbe) d.style.color=farbe;
+  document.getElementById('magazinstatus').appendChild(d);
+  return d;
+}
+async function magazinFehler(r){
+  try{ return (await r.json()).error||('HTTP '+r.status); }catch(e){ return 'HTTP '+r.status; }
+}
+async function magazinListe(){
+  const ziel=document.getElementById('magazinliste'), tk=magazinToken();
+  if(!tk){ ziel.textContent='Auf diesem Gerät fehlt der Gist-Token. Bitte einmal in der Hauptapp den Gist-Sync einrichten.'; return; }
+  try{
+    const r=await fetch(MAGAZIN_URL,{headers:{Authorization:'Bearer '+tk},cache:'no-store'});
+    if(!r.ok){ ziel.textContent='Liste nicht ladbar: '+await magazinFehler(r); return; }
+    const d=await r.json();
+    document.getElementById('magazincount').textContent=d.anzahl+' in der Cloud';
+    ziel.innerHTML='<strong>Zuletzt in der Cloud</strong>'+(d.pdfs||[]).map(p=>
+      `<div>${esc(p.name)} · ${new Date(p.hochgeladen).toLocaleDateString('de-DE')}</div>`).join('');
+  }catch(e){ ziel.textContent='Liste nicht ladbar: '+e.message; }
+}
+async function magazinHochladen(inp){
+  const dateien=Array.from(inp.files||[]), tk=magazinToken(), btn=document.getElementById('magazinbtn');
+  document.getElementById('magazinstatus').textContent='';
+  if(!dateien.length) return;
+  if(!tk){ magazinZeile('Auf diesem Gerät fehlt der Gist-Token. Bitte einmal in der Hauptapp den Gist-Sync einrichten.','var(--bad)'); inp.value=''; return; }
+  btn.disabled=true;
+  for(const f of dateien){
+    const name=magazinName(f.name), z=magazinZeile('⏳ '+name+' wird hochgeladen …');
+    try{
+      const r=await fetch(MAGAZIN_URL+'?name='+encodeURIComponent(name),{method:'PUT',headers:{Authorization:'Bearer '+tk,'Content-Type':'application/pdf'},body:f});
+      if(!r.ok){ z.textContent='❌ '+name+': '+await magazinFehler(r); z.style.color='var(--bad)'; continue; }
+      z.textContent=((await r.json()).schon_da?'☑️ '+name+': war schon in der Cloud':'✅ '+name+': hochgeladen');
+    }catch(e){ z.textContent='❌ '+name+': '+e.message; z.style.color='var(--bad)'; }
+  }
+  btn.disabled=false;
+  inp.value='';
+  magazinListe();
 }
 
 /* ---- Cloud-Workflow-Trigger (GitHub Actions, von jedem Geraet nutzbar) ----
