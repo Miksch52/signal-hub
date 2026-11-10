@@ -1,0 +1,19 @@
+# Dependabot (seit 2026-11-10): haelt die GitHub-Actions-Bausteine der Workflows
+# aktuell (actions/checkout, setup-python ...). Einmal im Monat EIN gebuendelter
+# Pull Request; kein Workflow startet bei Pull Requests, es kostet also keine
+# Actions-Minuten. Zusammenfuehren von Hand auf github.com (Merge-Knopf) - danach
+# laufen die Workflows wie gewohnt mit den neuen Versionen.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    groups:
+      actions:
+        patterns: ["*"]
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "Wartung"
