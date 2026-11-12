@@ -15,6 +15,7 @@ Test:  python3 src/notify.py            # sendet aktuelle Top-Treffer
                                          # faelligen Slot des Tages gesetzt
 """
 
+import datetime
 import json
 import os
 import ssl
@@ -34,6 +35,28 @@ DATA = pfade.DATA
 CONFIG_PFAD = pfade.CONFIG
 
 FLAGGE = {"USA": "US", "Europa": "EU"}
+
+# Trainingsphase (seit 2026-11-12): Im 12-Wochen-Training werden die Kandidaten
+# am Wochenende ausgewaehlt und unter der Woche nur noch ausgefuehrt. Die drei
+# Slot-Pushes nach dem Morning Brief (bis zu 8 neue Namen je Push) passen dazu
+# nicht und bleiben bis zum Trainingsende stumm. Morning Brief (Marktampel,
+# Earnings-Warnung fuer das Depot), Top-Setups-Neuzugaenge, Wochen-Dossier und
+# der Ausbruch-Alarm fuer die eigene Fokusliste (Worker) laufen weiter.
+# Reine Benachrichtigungs-Entscheidung - am Score und an den Signalen aendert
+# das nichts. config.json -> benachrichtigung.training_bis ueberschreibt das
+# Datum; ein leerer Wert schaltet die Drosselung ab.
+TRAINING_BIS_STANDARD = "2027-01-03"
+
+
+def training_aktiv(bcfg, heute=None):
+    """True, solange die Slot-Pushes wegen der Trainingsphase stumm bleiben."""
+    bis = bcfg.get("training_bis", TRAINING_BIS_STANDARD)
+    if not bis:
+        return False
+    try:
+        return (heute or datetime.date.today()) <= datetime.date.fromisoformat(str(bis))
+    except ValueError:
+        return False
 
 def lade_config():
     with open(CONFIG_PFAD, encoding="utf-8") as f:
@@ -292,6 +315,11 @@ def main():
         sende_ntfy(server, thema, "✅ Signal Hub Test",
                    "Push funktioniert! Du bekommst ab jetzt Signale aufs Handy.")
         print(f"Testnachricht an {server}/{thema} gesendet.")
+        return
+
+    if "--morgens" not in sys.argv and training_aktiv(bcfg):
+        print("Trainingsphase: Slot-Push bleibt stumm (nur Morning Brief). "
+              "Neue Kandidaten erscheinen im naechsten Morning Brief.")
         return
 
     titel, text = baue_nachricht(cfg, morgens="--morgens" in sys.argv)
