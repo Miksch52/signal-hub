@@ -21,23 +21,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: Signal-Hub
 
       - name: Price-Action-Hub auschecken (oeffentlich, kein Token)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Miksch52/price-action-hub
           path: Price-Action-Hub
 
       - name: Rotation-Dashboard auschecken (oeffentlich, kein Token)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Miksch52/rotation-dashboard
           path: Rotation-Dashboard
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 

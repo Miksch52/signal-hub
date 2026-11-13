@@ -77,23 +77,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: Signal-Hub
 
       - name: Price-Action-Hub auschecken
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Miksch52/price-action-hub
           path: Price-Action-Hub
 
       - name: Rotation-Dashboard auschecken
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Miksch52/rotation-dashboard
           path: Rotation-Dashboard
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -114,11 +114,11 @@ jobs:
       run:
         working-directory: Signal-Hub
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: Signal-Hub
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -370,14 +370,14 @@ jobs:
         run: mkdir -p data && touch data/ARTIFACT_KEEP
 
       - name: Signal-Hub-Ausgabe fuer Price-Action-Hub/Rotation-Dashboard bereitstellen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signal-hub-data
           path: Signal-Hub/data
           retention-days: 1
 
       - name: Markets-360-Magazinauszug fuer Rotation-Dashboard bereitstellen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signal-hub-magazine-markets360
           path: Signal-Hub/_magazine/markets360
@@ -394,18 +394,18 @@ jobs:
       # artifact legt den Zielordner selbst an, ein Checkout waere hier nur
       # totes Gewicht.
       - name: Signal-Hub-Ausgabe herunterladen
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: signal-hub-data
           path: Signal-Hub/data
 
       - name: Price-Action-Hub auschecken (Geschwister-Ordner, oeffentliches Repo, kein Token noetig)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Miksch52/price-action-hub
           path: Price-Action-Hub
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -520,7 +520,7 @@ jobs:
         run: mkdir -p Price-Action-Hub/data && touch Price-Action-Hub/data/ARTIFACT_KEEP
 
       - name: Price-Action-Hub-Ausgabe fuer den Deploy-Schritt bereitstellen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: price-action-hub-data
           path: Price-Action-Hub/data
@@ -548,7 +548,7 @@ jobs:
           touch Signal-Hub/data/katalysator_backtest.js
 
       - name: Top-Setups-Aggregat fuer den Deploy-Schritt bereitstellen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: top-setups-data
           path: |
@@ -570,24 +570,24 @@ jobs:
       # Markets-360-CSV aus dem Magazin), nicht der Signal-Hub-Code selbst -
       # download-artifact legt beide Zielordner selbst an, kein Checkout noetig.
       - name: Signal-Hub-Ausgabe herunterladen
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: signal-hub-data
           path: Signal-Hub/data
 
       - name: Markets-360-Magazinauszug herunterladen
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: signal-hub-magazine-markets360
           path: Signal-Hub/_magazine/markets360
 
       - name: Rotation-Dashboard auschecken (Geschwister-Ordner, oeffentliches Repo, kein Token noetig)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Miksch52/rotation-dashboard
           path: Rotation-Dashboard
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -647,7 +647,7 @@ jobs:
         run: mkdir -p Rotation-Dashboard/data && touch Rotation-Dashboard/data/ARTIFACT_KEEP
 
       - name: Rotation-Dashboard-Ausgabe fuer den Deploy-Schritt bereitstellen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rotation-dashboard-data
           path: Rotation-Dashboard/data
@@ -668,17 +668,17 @@ jobs:
       # "signal-hub-repo", damit er nicht mit dem Artifact-Ordner
       # "data/signal-hub" weiter unten kollidiert.
       - name: Signal-Hub-Repo auschecken (nur fuer forward_test_review.py)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: signal-hub-repo
 
       - name: Python fuer forward_test_review.py einrichten
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
       - name: Signal-Hub-Ausgabe herunterladen
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: signal-hub-data
           path: data/signal-hub
@@ -687,19 +687,19 @@ jobs:
       # kommen zwar aus dem price-action-hub-Job, gehoeren inhaltlich aber zur
       # Signal-Hub-Ausgabe (siehe Kommentar im price-action-hub-Job oben).
       - name: Top-Setups-Aggregat herunterladen
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: top-setups-data
           path: data/signal-hub
 
       - name: Price-Action-Hub-Ausgabe herunterladen
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: price-action-hub-data
           path: data/price-action-hub
 
       - name: Rotation-Dashboard-Ausgabe herunterladen
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rotation-dashboard-data
           path: data/rotation-dashboard
