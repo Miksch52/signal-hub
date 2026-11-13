@@ -1,0 +1,47 @@
+name: Tests
+
+# Kurzer Testlauf bei jedem Push, der Code oder Tests aendert (seit
+# 2026-11-13, Systemanalyse Vorschlag 12). Oeffentliches Repo = unbegrenzte
+# Actions-Minuten. Die Tests liegen in Signal-Hub/tests/ und brauchen nur die
+# drei oeffentlichen Repos (Layout wie im Hauptrepo: Signal-Hub/,
+# Price-Action-Hub/, Rotation-Dashboard/ nebeneinander). Reine Datenpushes der
+# Pipeline (data/) loesen nichts aus. Dieselben Tests gaten pipeline.yml und -
+# zusammen mit den privaten - deploy.yml im Hauptrepo.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/tests.yml'
+  workflow_dispatch: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: Signal-Hub
+
+      - name: Price-Action-Hub auschecken (oeffentlich, kein Token)
+        uses: actions/checkout@v4
+        with:
+          repository: Miksch52/price-action-hub
+          path: Price-Action-Hub
+
+      - name: Rotation-Dashboard auschecken (oeffentlich, kein Token)
+        uses: actions/checkout@v4
+        with:
+          repository: Miksch52/rotation-dashboard
+          path: Rotation-Dashboard
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install pytest
+
+      - name: Pytest
+        run: python3 -m pytest Signal-Hub/tests -q
