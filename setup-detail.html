@@ -2802,15 +2802,16 @@ function skPunkte(){
     details: [(t.faktoren && t.faktoren.relative_staerke || {}).detail, (t.faktoren && t.faktoren.sektor_staerke || {}).detail].filter(Boolean)});
   // 4 Basis & Enge
   const bn = t.basis_nr, ext = t.extended_pct, eng = (t.faktoren && t.faktoren.basis_konsolidierung || {}).ampel;
-  const bS = skMittel([bn==null ? null : bn<=2 ? 1 : bn===3 ? .5 : 0,
+  // Basis Nr. 0 = keine Basis (Befund RHM.DE 15.11.: zaehlte als "fruehe Basis")
+  const bS = skMittel([bn==null ? null : bn===0 ? 0 : bn<=2 ? 1 : bn===3 ? .5 : 0,
                        ext==null ? null : ext<0 ? 0 : ext<=10 ? 1 : ext<=25 ? .5 : 0,
                        eng ? {gruen:1,gelb:.5,rot:0}[eng] : null]);
-  const bDet = [bn!=null ? `${bn}. Basis${bn>=3 ? ' – ab der dritten steigt das Risiko' : ''}` : null,
+  const bDet = [bn==null ? null : bn===0 ? 'Keine Basis erkannt – ohne Basis kein Pivot' : `${bn}. Basis${bn>=3 ? ' – ab der dritten steigt das Risiko' : ''}`,
                 ext==null ? null : ext<0 ? `${skZ(-ext,1)} % unter SMA 50 – Minervini kauft nur über der SMA 50` : `${skZ(ext,1)} % über SMA 50${ext>10 ? ' – gestreckt' : ''}`,
                 (t.faktoren && t.faktoren.basis_konsolidierung || {}).detail];
   if(p) bDet.push(`Pivot-Engine: ${p.pivot_status||'—'}${p.kontraktionen!=null ? ` · ${p.kontraktionen} Kontraktionen` : ''}${Array.isArray(p.kontraktion_tiefen) ? ` (${p.kontraktion_tiefen.map(x=>skZ(x,0)+' %').join(' → ')})` : ''}${p.basis_wochen!=null ? ` · ${skZ(p.basis_wochen,1)} Wochen` : ''}`);
   P.push({id:'basis', titel:'Basis & Enge', status: st(bS,.75,.4), score: bS,
-    wert: bn!=null ? `Nr. ${bn}` : '—', unter: ext==null ? '' : ext<0 ? `${skZ(-ext,0)} % unter SMA 50` : `${skZ(ext,0)} % über SMA 50`, details: bDet.filter(Boolean)});
+    wert: bn==null ? '—' : bn===0 ? 'keine' : `Nr. ${bn}`, unter: ext==null ? '' : ext<0 ? `${skZ(-ext,0)} % unter SMA 50` : `${skZ(ext,0)} % über SMA 50`, details: bDet.filter(Boolean)});
   // 5 Volumen
   const va = ch && ch.volAusbruch, vd = ch && ch.volDry;
   const vS = skMittel([va==null ? null : va>=1.4 ? 1 : va>=1 ? .5 : 0, vd==null ? null : vd<=.8 ? 1 : vd<=1.1 ? .5 : 0]);
