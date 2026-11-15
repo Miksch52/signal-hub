@@ -2758,7 +2758,10 @@ function skChart(t){
   const k = 2/22; let ema21 = c.c[0];
   for(let i=1;i<n;i++) ema21 = c.c[i]*k + ema21*(1-k);
   const v = c.v || [], v50 = skMittel(v.slice(-50)), v5 = skMittel(v.slice(-5));
-  const vMax15 = v.length ? Math.max(...v.slice(-15)) : null;
+  // Ausbruchsvolumen nur an Plustagen: ein Verkaufstag mit hohem Volumen ist
+  // Abgabe, keine Bestaetigung (Befund CSCO 15.11.: -7,6 % auf 2,0x lief als "Ausbruch").
+  const plus = []; for(let i=Math.max(1,n-15);i<n;i++) if(c.c[i] > c.c[i-1] && v[i]!=null) plus.push(v[i]);
+  const vMax15 = plus.length ? Math.max(...plus) : null;
   // Abgeleiteter Pivot: hoechstes Hoch der letzten 20 Tage, Stop = tiefstes Tief danach
   let iHi = n-20 < 0 ? 0 : n-20;
   for(let i=iHi;i<n;i++) if(c.h[i] >= c.h[iHi]) iHi = i;
@@ -2800,33 +2803,34 @@ function skPunkte(){
   // 4 Basis & Enge
   const bn = t.basis_nr, ext = t.extended_pct, eng = (t.faktoren && t.faktoren.basis_konsolidierung || {}).ampel;
   const bS = skMittel([bn==null ? null : bn<=2 ? 1 : bn===3 ? .5 : 0,
-                       ext==null ? null : ext<=10 ? 1 : ext<=25 ? .5 : 0,
+                       ext==null ? null : ext<0 ? 0 : ext<=10 ? 1 : ext<=25 ? .5 : 0,
                        eng ? {gruen:1,gelb:.5,rot:0}[eng] : null]);
   const bDet = [bn!=null ? `${bn}. Basis${bn>=3 ? ' – ab der dritten steigt das Risiko' : ''}` : null,
-                ext!=null ? `${skZ(ext,1)} % über SMA 50${ext>10 ? ' – gestreckt' : ''}` : null,
+                ext==null ? null : ext<0 ? `${skZ(-ext,1)} % unter SMA 50 – Minervini kauft nur über der SMA 50` : `${skZ(ext,1)} % über SMA 50${ext>10 ? ' – gestreckt' : ''}`,
                 (t.faktoren && t.faktoren.basis_konsolidierung || {}).detail];
   if(p) bDet.push(`Pivot-Engine: ${p.pivot_status||'—'}${p.kontraktionen!=null ? ` · ${p.kontraktionen} Kontraktionen` : ''}${Array.isArray(p.kontraktion_tiefen) ? ` (${p.kontraktion_tiefen.map(x=>skZ(x,0)+' %').join(' → ')})` : ''}${p.basis_wochen!=null ? ` · ${skZ(p.basis_wochen,1)} Wochen` : ''}`);
   P.push({id:'basis', titel:'Basis & Enge', status: st(bS,.75,.4), score: bS,
-    wert: bn!=null ? `Nr. ${bn}` : '—', unter: ext!=null ? `${skZ(ext,0)} % über SMA 50` : '', details: bDet.filter(Boolean)});
+    wert: bn!=null ? `Nr. ${bn}` : '—', unter: ext==null ? '' : ext<0 ? `${skZ(-ext,0)} % unter SMA 50` : `${skZ(ext,0)} % über SMA 50`, details: bDet.filter(Boolean)});
   // 5 Volumen
   const va = ch && ch.volAusbruch, vd = ch && ch.volDry;
   const vS = skMittel([va==null ? null : va>=1.4 ? 1 : va>=1 ? .5 : 0, vd==null ? null : vd<=.8 ? 1 : vd<=1.1 ? .5 : 0]);
   P.push({id:'volumen', titel:'Volumen', status: st(vS,.75,.4), score: vS,
-    wert: va!=null ? `${skZ(va,1)}×` : '—', unter: vd!=null ? `Ausbruch · Dry-up ${skZ(vd,1)}×` : '',
-    details: [va!=null ? `Höchstes Tagesvolumen der letzten 15 Tage: ${skZ(va,1)}-fach des 50-Tage-Schnitts (Minervini: Ausbruch ab 1,4×).` : null,
+    wert: va!=null ? `${skZ(va,1)}×` : '—', unter: vd!=null ? `Plustag · Dry-up ${skZ(vd,1)}×` : '',
+    details: [va!=null ? `Höchstes Volumen an einem Plustag der letzten 15 Tage: ${skZ(va,1)}-fach des 50-Tage-Schnitts (Minervini: Ausbruch ab 1,4×).` : null,
               vd!=null ? `Volumen der letzten 5 Tage: ${skZ(vd,2)}-fach des Schnitts (unter 1 = trocknet aus).` : null,
               (t.faktoren && t.faktoren.smart_money || {}).detail, (t.faktoren && t.faktoren.cmf || {}).detail].filter(Boolean)});
   // 6 Stop
   const sp = ein.entry && ein.stop && ein.entry > ein.stop ? (ein.entry-ein.stop)/ein.entry*100 : null;
-  P.push({id:'stop', titel:'Stop ≤ 10 %', status: sp==null ? 'na' : sp<=8 ? 'gruen' : sp<=10 ? 'gelb' : 'rot',
-    score: sp==null ? null : sp<=8 ? 1 : sp<=10 ? .5 : sp<=15 ? .2 : 0,
-    wert: sp!=null ? `${skZ(sp,1)} %` : '—', unter: 'Grenze 8–10 %',
+  const ohne = sp==null && SK.keinSetup;  // kein Aufwaertstrend: zaehlt als verfehlt, nicht als fehlend
+  P.push({id:'stop', titel:'Stop ≤ 10 %', status: ohne ? 'rot' : sp==null ? 'na' : sp<=8 ? 'gruen' : sp<=10 ? 'gelb' : 'rot',
+    score: ohne ? 0 : sp==null ? null : sp<=8 ? 1 : sp<=10 ? .5 : sp<=15 ? .2 : 0,
+    wert: ohne ? 'kein Setup' : sp!=null ? `${skZ(sp,1)} %` : '—', unter: ohne ? 'kein Einstieg ableitbar' : 'Grenze 8–10 %',
     details: [sp!=null ? `Einstieg ${skZ(ein.entry)} · Stop ${skZ(ein.stop)} · Risiko ${skZ(ein.entry-ein.stop)} je Aktie` : 'Einstieg und Stop in der Preisleiter eintragen.', SK.quelle]});
   // 7 CRV
   const crv = sp!=null && ein.ziel > ein.entry ? (ein.ziel-ein.entry)/(ein.entry-ein.stop) : null;
-  P.push({id:'crv', titel:'Chance/Risiko', status: crv==null ? 'na' : crv>=3 ? 'gruen' : crv>=2 ? 'gelb' : 'rot',
-    score: crv==null ? null : crv>=3 ? 1 : crv>=2 ? .5 : Math.max(0, crv/3*.5),
-    wert: crv!=null ? `1 : ${skZ(crv,1)}` : '—', unter: ein.ziel ? `Ziel ${skZ(ein.ziel)}` : '',
+  P.push({id:'crv', titel:'Chance/Risiko', status: ohne ? 'rot' : crv==null ? 'na' : crv>=3 ? 'gruen' : crv>=2 ? 'gelb' : 'rot',
+    score: ohne ? 0 : crv==null ? null : crv>=3 ? 1 : crv>=2 ? .5 : Math.max(0, crv/3*.5),
+    wert: ohne ? 'kein Setup' : crv!=null ? `1 : ${skZ(crv,1)}` : '—', unter: ein.ziel ? `Ziel ${skZ(ein.ziel)}` : '',
     details: [crv!=null ? `Chance ${skZ(ein.ziel-ein.entry)} gegen Risiko ${skZ(ein.entry-ein.stop)} je Aktie.` : 'Ziel oberhalb des Einstiegs eintragen.',
               SK.zielQuelle, p && p.ziel!=null ? `Measured Move der Pivot-Engine (informativ): ${skZ(p.ziel)}` : null,
               'Informativ: Minervini arbeitet ohne festes Kursziel, er zieht den Stop nach.'].filter(Boolean)});
@@ -2834,8 +2838,9 @@ function skPunkte(){
   const c = t.code33 || {}, roe = fx && fx.returnOnEquity;
   const fS = skMittel([c.verfuegbar ? c.anzahl_erfuellt/3 : null, roe==null ? null : roe>=.17 ? 1 : roe>=.08 ? .5 : 0]);
   P.push({id:'fundamental', titel:'Fundamental', status: st(fS,.75,.4), score: fS,
-    wert: c.verfuegbar ? `C33 ${c.anzahl_erfuellt}/3` : '—',
-    unter: roe!=null ? `ROE ${skZ(roe*100,0)} %` : (SK.fxGeladen ? 'ROE fehlt' : 'ROE lädt …'),
+    wert: c.verfuegbar ? `C33 ${c.anzahl_erfuellt}/3` : roe!=null ? `ROE ${skZ(roe*100,0)} %` : '—',
+    unter: c.verfuegbar ? (roe!=null ? `ROE ${skZ(roe*100,0)} %` : (SK.fxGeladen ? 'ROE fehlt' : 'ROE lädt …'))
+         : fx && fx.profitMargins!=null ? `ohne Code 33 · Marge ${skZ(fx.profitMargins*100,0)} %` : (SK.fxGeladen ? 'ohne Code 33' : 'ROE lädt …'),
     details: [c.verfuegbar ? `Code 33 (${c.quartal||''}): EPS ${c.eps_yoy_pct==null ? 'aus Verlust/ohne YoY' : skZ(c.eps_yoy_pct,0)+' %'}, Umsatz ${skZ(c.umsatz_yoy_pct,0)} %, Marge ${skZ(c.marge_aktuell_pct,1)} % (${c.marge_delta_pp>0?'+':''}${skZ(c.marge_delta_pp,1)} Pp.)` : 'Keine Code-33-Daten.',
               roe!=null ? `Eigenkapitalrendite ${skZ(roe*100,1)} % (Minervini: ab 17 %)` : null,
               fx && fx.profitMargins!=null ? `Nettomarge 12 Monate ${skZ(fx.profitMargins*100,1)} %` : null].filter(Boolean)});
@@ -2948,14 +2953,21 @@ function skEingabe(){
 }
 
 function skStandard(){
-  const {p, ch} = SK;
-  const entry = p && p.pivot!=null ? p.pivot : ch && ch.pivot;
-  const stop = p && p.stop!=null ? p.stop : ch && ch.stop;
+  const {t, p, ch} = SK;
+  // Ableiten nur im Aufwaertstrend (Kurs ueber SMA 50, Trend-Template ab 6/8):
+  // sonst ist das 20-Tage-Hoch kein Pivot, sondern ein Erholungshoch im Abwaertstrend.
+  const tt = t.trend_template || {};
+  const trend = ch && ch.kurs > ch.sma50 && (!tt.gesamt || tt.erfuellt >= 6);
+  const ableitbar = !(p && p.pivot!=null) && trend;
+  SK.keinSetup = !(p && p.pivot!=null) && !trend;
+  const entry = p && p.pivot!=null ? p.pivot : ableitbar ? ch.pivot : null;
+  const stop = p && p.stop!=null ? p.stop : ableitbar ? ch.stop : null;
   // Ziel bewusst einheitlich +20 %: der Measured Move der Pivot-Engine ist bei
   // engen Basen oft nur wenige Prozent und liesse jeden sauberen Ausbruch am
   // CRV scheitern - er steht nur als Information in den CRV-Details.
   SK.ein = {entry, stop, ziel: entry ? entry*1.2 : null};
   SK.quelle = p && p.pivot!=null ? `Pivot und Stop aus der Pivot-Engine (${p.pivot_status||'—'})`
+    : SK.keinSetup ? `Kein Aufwärtstrend (Kurs ${ch && ch.kurs < ch.sma50 ? 'unter der SMA 50' : 'über der SMA 50'}, Trend-Template ${tt.erfuellt!=null ? tt.erfuellt+'/'+tt.gesamt : '—'}) – kein Einstieg ableitbar. Eigene Werte lassen sich trotzdem eintragen.`
     : ch ? `Kein Pivot-Eintrag – abgeleitet aus der Kursreihe bis ${ch.datum||'zuletzt'}: Einstieg = höchstes Hoch der letzten 20 Tage, Stop = tiefstes Tief seither`
     : 'Kein Pivot-Eintrag und keine Kursreihe';
   SK.zielQuelle = entry ? 'Ziel = Einstieg +20 % (O’Neil-Faustregel)' : '';
