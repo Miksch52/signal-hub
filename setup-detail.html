@@ -429,6 +429,62 @@
 
   .disclaimer{margin-top:28px;font-size:11.5px;color:var(--muted2);line-height:1.5;
               border-top:1px solid var(--line);padding-top:14px}
+  /* ── Setup-Kopf (seit 2026-11-15): acht Kernpunkte als Kacheln (A),
+     Erfuellungsbalken mit Aufklapp-Details (B), Checkliste + Preisleiter mit
+     eigenem Einstieg/Stop/Ziel (C). Rein aus signals.json/pivot.json
+     (inkl. chart-Reihe) plus /story-ROE - kein zusaetzlicher Abruf. Der
+     Gesamtwert ist ein UNGEWICHTETER Mittelwert, kein Backtest-Urteil. */
+  .sk{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+    padding:16px 18px;margin-bottom:12px;border-top:3px solid var(--line)}
+  .sk.sk-gruen{border-top-color:var(--ok)} .sk.sk-gelb{border-top-color:var(--warn)} .sk.sk-rot{border-top-color:var(--bad)}
+  .sk-kopf{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+  .sk-ring{flex:0 0 64px}
+  .sk-titel{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--primary)}
+  .sk-satz{font-size:15.5px;font-weight:650;line-height:1.35;margin-top:2px;text-wrap:balance}
+  .sk-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .sk-kacheln{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:14px}
+  .sk-k{border:1px solid var(--line);border-radius:10px;padding:9px 11px;min-width:0;text-align:left;
+    font:inherit;background:var(--line2);cursor:pointer;min-height:44px;color:var(--muted)}
+  .sk-k:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+  .sk-k small{display:block;font-size:11px;color:var(--muted)}
+  .sk-k b{display:block;font-size:19px;font-weight:800;line-height:1.25;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sk-k span{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sk-k.s-gruen{background:rgba(46,139,87,.08);border-color:rgba(46,139,87,.4)} .sk-k.s-gruen b{color:var(--ok)}
+  .sk-k.s-gelb{background:rgba(192,138,46,.10);border-color:rgba(192,138,46,.45)} .sk-k.s-gelb b{color:var(--warn)}
+  .sk-k.s-rot{background:rgba(178,58,46,.08);border-color:rgba(178,58,46,.4)} .sk-k.s-rot b{color:var(--bad)}
+  .sk-k.s-na b{color:var(--muted2)}
+  .sk-z{border-top:1px solid var(--line2)}
+  .sk-z>summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:150px minmax(0,1fr) 112px 14px;
+    gap:10px;align-items:center;padding:8px 0;font-size:12.5px;min-height:40px}
+  .sk-z>summary::-webkit-details-marker{display:none}
+  .sk-z>summary .chev{color:var(--muted2);transition:transform .15s}
+  .sk-z[open]>summary .chev{transform:rotate(180deg)}
+  .sk-z .sk-l{font-weight:650;display:flex;align-items:center;gap:7px}
+  .sk-z .sk-w{text-align:right;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sk-w.w-gruen{color:var(--ok)} .sk-w.w-gelb{color:var(--warn)} .sk-w.w-rot{color:var(--bad)} .sk-w.w-na{color:var(--muted2)}
+  .sk-d{background:var(--bg);border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:12.5px;line-height:1.55}
+  .sk-d ul{margin:0;padding-left:18px;display:grid;gap:3px}
+  .sk-d .sk-edge{color:var(--warn);margin-top:6px}
+  .sk-d button{margin-top:8px;font:inherit;font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);
+    background:var(--card);color:var(--primary);cursor:pointer;min-height:36px}
+  .sk-hinweis{font-size:11px;color:var(--muted2);margin-top:10px;line-height:1.45}
+  .sk-pl{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;margin-top:6px}
+  .sk-ein{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:8px}
+  .sk-ein label{display:flex;flex-direction:column;font-size:11px;color:var(--muted);gap:3px}
+  .sk-ein input{width:96px;min-height:40px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;
+    font-size:14px;font-variant-numeric:tabular-nums;background:var(--card);color:var(--txt)}
+  .sk-ein button{min-height:40px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);
+    color:var(--muted);font:inherit;font-size:12.5px;cursor:pointer}
+  .sk-quelle{font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.45}
+  .sk-checks{display:flex;flex-direction:column;gap:6px;font-size:13px}
+  .sk-checks .c-gruen{color:var(--ok)} .sk-checks .c-gelb{color:var(--warn)} .sk-checks .c-rot{color:var(--bad)} .sk-checks .c-na{color:var(--muted2)}
+  .sk-checks i{display:inline-block;width:18px;font-style:normal;font-weight:800}
+  .sk-leiter svg{width:100%;height:auto;display:block}
+  @media (max-width:720px){
+    .sk-kacheln{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .sk-z>summary{grid-template-columns:104px minmax(0,1fr) 92px 12px;gap:8px}
+    .sk-pl{grid-template-columns:1fr}
+  }
 </style>
 </head>
 <body>
@@ -2673,6 +2729,276 @@ function springeZu(accId, zielId){
   (document.getElementById(zielId) || acc).scrollIntoView({block: 'start'});
 }
 
+// ─── Setup-Kopf (seit 2026-11-15) ────────────────────────────────────────────
+// Ganz oben unter dem Hero: acht Kernpunkte nach Minervini als Ampel-Kacheln,
+// darunter je Punkt ein Erfuellungsbalken zum Aufklappen (Details + Sprung in
+// den passenden Abschnitt weiter unten) und eine Preisleiter mit Checkliste.
+// Datenbasis ausschliesslich signals.json (inkl. chart: 126 Handelstage OHLC,
+// SMA50/150/200), pivot.json und - sobald /story antwortet - die ROE. Ohne
+// Pivot-Eintrag wird Einstieg/Stop aus der Chartreihe ABGELEITET (Hoch der
+// letzten 20 Tage / tiefstes Tief seither) und so gekennzeichnet; Einstieg,
+// Stop und Ziel lassen sich ueberschreiben. Der Prozentwert ist ein
+// UNGEWICHTETER Mittelwert der acht Punkte - Gewichte waeren eine
+// Score-Entscheidung und braeuchten vorher den statistik-skeptiker.
+// Schwellen: Stop 8/10 % und SMA50-Abstand 10/25 % wie keyPointsBlock,
+// RS 70 wie Trend-Template, Ausbruchsvolumen 1,4x wie KENNZ_EXPLAIN,
+// ROE 17 % (Minervini), CRV 3/2 (eigene Lesehilfe, kein Gate), Ziel +20 %.
+let SK = null;
+const SK_EDGE = {trend:'stage2_trend', rs:'relative_staerke', basis:'basis_konsolidierung',
+                 volumen:'volumen_bestaetigung', fundamental:'code33'};
+const SK_MEHR = {markt:'acc-mv', trend:'acc-krit', rs:'acc-dash', basis:'acc-chart', volumen:'acc-krit',
+                 stop:'sk-pl', crv:'sk-pl', fundamental:'acc-fund'};
+const skZ = (v, n) => dzahl(v, n==null ? 2 : n);
+const skMittel = a => { const b = a.filter(x => x!=null); return b.length ? b.reduce((x,y)=>x+y,0)/b.length : null; };
+
+function skChart(t){
+  const c = t && t.chart;
+  if(!c || !Array.isArray(c.c) || c.c.length < 30) return null;
+  const n = c.c.length, last = a => (Array.isArray(a) && a.length) ? a[a.length-1] : null;
+  const k = 2/22; let ema21 = c.c[0];
+  for(let i=1;i<n;i++) ema21 = c.c[i]*k + ema21*(1-k);
+  const v = c.v || [], v50 = skMittel(v.slice(-50)), v5 = skMittel(v.slice(-5));
+  const vMax15 = v.length ? Math.max(...v.slice(-15)) : null;
+  // Abgeleiteter Pivot: hoechstes Hoch der letzten 20 Tage, Stop = tiefstes Tief danach
+  let iHi = n-20 < 0 ? 0 : n-20;
+  for(let i=iHi;i<n;i++) if(c.h[i] >= c.h[iHi]) iHi = i;
+  let seg = c.l.slice(iHi+1); if(seg.length < 2) seg = c.l.slice(-5);
+  return {kurs: last(c.c), sma50: last(c.s50), sma200: last(c.s200), ema21,
+          pivot: c.h[iHi], pivotTag: iHi, stop: Math.min(...seg), basisTief: Math.min(...c.l.slice(-60)),
+          volAusbruch: v50 && vMax15 ? vMax15/v50 : null, volDry: v50 && v5 ? v5/v50 : null, tage: n, datum: c.d};
+}
+
+function skEdge(key){
+  const e = FAKTOR_BT_CACHE && FAKTOR_BT_CACHE.ergebnis && FAKTOR_BT_CACHE.ergebnis[SK_EDGE[key]];
+  const w = e && e['8W'] && e['8W'].edge_win;
+  return (w!=null && w <= 0) ? `Diese Ampel trägt laut Faktor-Backtest derzeit nicht (8 Wochen: ${w>0?'+':''}${skZ(w,1)} pp Trefferquote grün gegen nicht grün).` : '';
+}
+
+function skPunkte(){
+  const {t, p, regime, ch, ein, fx} = SK, P = [];
+  const st = (s, g, y) => s==null ? 'na' : s >= g ? 'gruen' : s >= y ? 'gelb' : 'rot';
+  // 1 Markt
+  const r = regime && t.markt && regime[t.markt];
+  const ra = r && r.ampel;
+  P.push({id:'markt', titel:'Markt', status: ra||'na', score: ra ? {gruen:1,gelb:.5,rot:0}[ra] : null,
+    wert: ra ? {gruen:'Grün',gelb:'Gelb',rot:'Rot'}[ra] : '—', unter: r && r.distribution_days!=null ? `${r.distribution_days} Distribution Days` : (t.markt||''),
+    details: r ? [r.hinweis, r.detail, r.sentiment_hinweis].filter(Boolean) : ['Kein Markt-Regime für diesen Markt.']});
+  // 2 Trend-Template
+  const tt = t.trend_template || {};
+  const ttS = tt.gesamt ? tt.erfuellt/tt.gesamt : null;
+  const fehlt = Object.entries(tt.kriterien||{}).filter(([,v]) => !v).map(([k]) => k.replace(/^\d+_/,'').replace(/_/g,' '));
+  P.push({id:'trend', titel:'Trend-Template', status: ttS==null ? 'na' : ttS===1 ? 'gruen' : ttS>=.75 ? 'gelb' : 'rot', score: ttS,
+    wert: tt.gesamt ? `${tt.erfuellt} / ${tt.gesamt}` : '—', unter: ttS===1 ? 'Stage 2 intakt' : fehlt.length ? `fehlt: ${fehlt[0]}` : '',
+    details: [ch ? `SMA 50 ${skZ(ch.sma50)} · SMA 200 ${skZ(ch.sma200)} · Kurs ${skZ(ch.kurs)}` : null,
+              fehlt.length ? 'Nicht erfüllt: ' + fehlt.join(', ') : 'Alle Kriterien erfüllt.',
+              (t.faktoren && t.faktoren.naehe_52w_hoch || {}).detail].filter(Boolean)});
+  // 3 Relative Staerke
+  const rs = t.rs_rating;
+  P.push({id:'rs', titel:'Relative Stärke', status: rs==null ? 'na' : rs>=80 ? 'gruen' : rs>=70 ? 'gelb' : 'rot', score: rs==null ? null : rs/100,
+    wert: rs!=null ? `RS ${rs}` : '—', unter: t.rs_gewichtet!=null ? `gewichtet ${skZ(t.rs_gewichtet)}` : '',
+    details: [(t.faktoren && t.faktoren.relative_staerke || {}).detail, (t.faktoren && t.faktoren.sektor_staerke || {}).detail].filter(Boolean)});
+  // 4 Basis & Enge
+  const bn = t.basis_nr, ext = t.extended_pct, eng = (t.faktoren && t.faktoren.basis_konsolidierung || {}).ampel;
+  const bS = skMittel([bn==null ? null : bn<=2 ? 1 : bn===3 ? .5 : 0,
+                       ext==null ? null : ext<=10 ? 1 : ext<=25 ? .5 : 0,
+                       eng ? {gruen:1,gelb:.5,rot:0}[eng] : null]);
+  const bDet = [bn!=null ? `${bn}. Basis${bn>=3 ? ' – ab der dritten steigt das Risiko' : ''}` : null,
+                ext!=null ? `${skZ(ext,1)} % über SMA 50${ext>10 ? ' – gestreckt' : ''}` : null,
+                (t.faktoren && t.faktoren.basis_konsolidierung || {}).detail];
+  if(p) bDet.push(`Pivot-Engine: ${p.pivot_status||'—'}${p.kontraktionen!=null ? ` · ${p.kontraktionen} Kontraktionen` : ''}${Array.isArray(p.kontraktion_tiefen) ? ` (${p.kontraktion_tiefen.map(x=>skZ(x,0)+' %').join(' → ')})` : ''}${p.basis_wochen!=null ? ` · ${skZ(p.basis_wochen,1)} Wochen` : ''}`);
+  P.push({id:'basis', titel:'Basis & Enge', status: st(bS,.75,.4), score: bS,
+    wert: bn!=null ? `Nr. ${bn}` : '—', unter: ext!=null ? `${skZ(ext,0)} % über SMA 50` : '', details: bDet.filter(Boolean)});
+  // 5 Volumen
+  const va = ch && ch.volAusbruch, vd = ch && ch.volDry;
+  const vS = skMittel([va==null ? null : va>=1.4 ? 1 : va>=1 ? .5 : 0, vd==null ? null : vd<=.8 ? 1 : vd<=1.1 ? .5 : 0]);
+  P.push({id:'volumen', titel:'Volumen', status: st(vS,.75,.4), score: vS,
+    wert: va!=null ? `${skZ(va,1)}×` : '—', unter: vd!=null ? `Ausbruch · Dry-up ${skZ(vd,1)}×` : '',
+    details: [va!=null ? `Höchstes Tagesvolumen der letzten 15 Tage: ${skZ(va,1)}-fach des 50-Tage-Schnitts (Minervini: Ausbruch ab 1,4×).` : null,
+              vd!=null ? `Volumen der letzten 5 Tage: ${skZ(vd,2)}-fach des Schnitts (unter 1 = trocknet aus).` : null,
+              (t.faktoren && t.faktoren.smart_money || {}).detail, (t.faktoren && t.faktoren.cmf || {}).detail].filter(Boolean)});
+  // 6 Stop
+  const sp = ein.entry && ein.stop && ein.entry > ein.stop ? (ein.entry-ein.stop)/ein.entry*100 : null;
+  P.push({id:'stop', titel:'Stop ≤ 10 %', status: sp==null ? 'na' : sp<=8 ? 'gruen' : sp<=10 ? 'gelb' : 'rot',
+    score: sp==null ? null : sp<=8 ? 1 : sp<=10 ? .5 : sp<=15 ? .2 : 0,
+    wert: sp!=null ? `${skZ(sp,1)} %` : '—', unter: 'Grenze 8–10 %',
+    details: [sp!=null ? `Einstieg ${skZ(ein.entry)} · Stop ${skZ(ein.stop)} · Risiko ${skZ(ein.entry-ein.stop)} je Aktie` : 'Einstieg und Stop in der Preisleiter eintragen.', SK.quelle]});
+  // 7 CRV
+  const crv = sp!=null && ein.ziel > ein.entry ? (ein.ziel-ein.entry)/(ein.entry-ein.stop) : null;
+  P.push({id:'crv', titel:'Chance/Risiko', status: crv==null ? 'na' : crv>=3 ? 'gruen' : crv>=2 ? 'gelb' : 'rot',
+    score: crv==null ? null : crv>=3 ? 1 : crv>=2 ? .5 : Math.max(0, crv/3*.5),
+    wert: crv!=null ? `1 : ${skZ(crv,1)}` : '—', unter: ein.ziel ? `Ziel ${skZ(ein.ziel)}` : '',
+    details: [crv!=null ? `Chance ${skZ(ein.ziel-ein.entry)} gegen Risiko ${skZ(ein.entry-ein.stop)} je Aktie.` : 'Ziel oberhalb des Einstiegs eintragen.',
+              SK.zielQuelle, p && p.ziel!=null ? `Measured Move der Pivot-Engine (informativ): ${skZ(p.ziel)}` : null,
+              'Informativ: Minervini arbeitet ohne festes Kursziel, er zieht den Stop nach.'].filter(Boolean)});
+  // 8 Fundamental
+  const c = t.code33 || {}, roe = fx && fx.returnOnEquity;
+  const fS = skMittel([c.verfuegbar ? c.anzahl_erfuellt/3 : null, roe==null ? null : roe>=.17 ? 1 : roe>=.08 ? .5 : 0]);
+  P.push({id:'fundamental', titel:'Fundamental', status: st(fS,.75,.4), score: fS,
+    wert: c.verfuegbar ? `C33 ${c.anzahl_erfuellt}/3` : '—',
+    unter: roe!=null ? `ROE ${skZ(roe*100,0)} %` : (SK.fxGeladen ? 'ROE fehlt' : 'ROE lädt …'),
+    details: [c.verfuegbar ? `Code 33 (${c.quartal||''}): EPS ${c.eps_yoy_pct==null ? 'aus Verlust/ohne YoY' : skZ(c.eps_yoy_pct,0)+' %'}, Umsatz ${skZ(c.umsatz_yoy_pct,0)} %, Marge ${skZ(c.marge_aktuell_pct,1)} % (${c.marge_delta_pp>0?'+':''}${skZ(c.marge_delta_pp,1)} Pp.)` : 'Keine Code-33-Daten.',
+              roe!=null ? `Eigenkapitalrendite ${skZ(roe*100,1)} % (Minervini: ab 17 %)` : null,
+              fx && fx.profitMargins!=null ? `Nettomarge 12 Monate ${skZ(fx.profitMargins*100,1)} %` : null].filter(Boolean)});
+  P.forEach(x => { const e = SK_EDGE[x.id] ? skEdge(x.id) : ''; if(e) x.edge = e; });
+  return P;
+}
+
+function skRing(pct){
+  const farbe = pct==null ? 'var(--muted2)' : pct>=75 ? 'var(--ok)' : pct>=50 ? 'var(--warn)' : 'var(--bad)';
+  const u = 2*Math.PI*26, f = pct==null ? 0 : u*pct/100;
+  return `<svg class="sk-ring" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Erfüllung ${pct==null?'unbekannt':pct+' Prozent'}">
+    <circle cx="32" cy="32" r="26" fill="none" stroke="var(--line2)" stroke-width="7"/>
+    <circle cx="32" cy="32" r="26" fill="none" stroke="${farbe}" stroke-width="7" stroke-linecap="round"
+      stroke-dasharray="${f.toFixed(1)} ${u.toFixed(1)}" transform="rotate(-90 32 32)"/>
+    <text x="32" y="37" text-anchor="middle" font-size="15" font-weight="800" fill="var(--txt)">${pct==null?'—':pct+'%'}</text></svg>`;
+}
+
+function skLeiter(){
+  const {ch, ein} = SK;
+  if(!ch && !ein.entry) return '<div class="sk-quelle">Keine Kursreihe für die Preisleiter.</div>';
+  const L = [];
+  const add = (wert, name, art) => { if(wert!=null && isFinite(wert) && wert>0) L.push({wert, name, art}); };
+  add(ein.ziel, 'Ziel', 'ziel'); add(ein.entry, 'Einstieg', 'entry'); add(ch && ch.kurs, 'Kurs', 'kurs');
+  add(ein.stop, 'Stop', 'stop');
+  if(ch){
+    const risk = ein.entry && ein.stop ? ein.entry-ein.stop : 0, boden = (ein.stop||ch.kurs) - Math.max(risk*1.5, ch.kurs*.08);
+    if(ch.ema21 >= boden) add(ch.ema21, 'EMA 21', 'ma');
+    if(ch.sma50 >= boden) add(ch.sma50, 'SMA 50', 'ma');
+    if(ch.basisTief >= boden) add(ch.basisTief, 'Basis-Tief', 'ma');
+  }
+  const hi = Math.max(...L.map(x=>x.wert)), lo = Math.min(...L.map(x=>x.wert));
+  const H = 300, oben = 16, unten = H-16, y = w => hi===lo ? H/2 : oben + (hi-w)/(hi-lo)*(unten-oben);
+  L.forEach(x => x.y = y(x.wert));
+  const lab = L.slice().sort((a,b)=>a.y-b.y);
+  for(let i=1;i<lab.length;i++) if(lab[i].ly==null) lab[i].ly = Math.max(lab[i].y, (lab[i-1].ly ?? lab[i-1].y) + 15);
+  lab[0].ly = lab[0].y;
+  const ueber = (lab[lab.length-1].ly) - (H-6); if(ueber>0) lab.forEach(x => x.ly -= ueber);
+  const farbe = {ziel:'var(--ok)', entry:'var(--primary)', kurs:'var(--txt)', stop:'var(--bad)', ma:'var(--muted)'};
+  let svg = '';
+  if(ein.entry && ein.stop) svg += `<rect x="58" y="${y(ein.entry).toFixed(1)}" width="18" height="${(y(ein.stop)-y(ein.entry)).toFixed(1)}" fill="rgba(178,58,46,.14)"/>`
+    + `<text x="50" y="${((y(ein.entry)+y(ein.stop))/2+4).toFixed(1)}" text-anchor="end" font-size="11.5" fill="var(--bad)">−${skZ(ein.entry-ein.stop)}</text>`;
+  if(ein.entry && ein.ziel > ein.entry) svg += `<rect x="58" y="${y(ein.ziel).toFixed(1)}" width="18" height="${(y(ein.entry)-y(ein.ziel)).toFixed(1)}" fill="rgba(46,139,87,.14)"/>`
+    + `<text x="50" y="${((y(ein.ziel)+y(ein.entry))/2+4).toFixed(1)}" text-anchor="end" font-size="11.5" fill="var(--ok)">+${skZ(ein.ziel-ein.entry)}</text>`;
+  svg += `<line x1="67" y1="8" x2="67" y2="${H-8}" stroke="var(--line)" stroke-width="1"/>`;
+  lab.forEach(x => {
+    const f = farbe[x.art], dick = x.art==='ma' ? 1 : 2;
+    svg += x.art==='kurs' ? `<circle cx="67" cy="${x.y.toFixed(1)}" r="5" fill="${f}"/>`
+      : `<line x1="${x.art==='ma'?58:52}" y1="${x.y.toFixed(1)}" x2="${x.art==='ma'?76:82}" y2="${x.y.toFixed(1)}" stroke="${f}" stroke-width="${dick}"${x.art==='ziel'?' stroke-dasharray="4 3"':''}/>`;
+    if(Math.abs(x.ly-x.y) > 1) svg += `<line x1="84" y1="${x.y.toFixed(1)}" x2="92" y2="${x.ly.toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;
+    svg += `<text x="96" y="${(x.ly+4).toFixed(1)}" font-size="12" fill="${f}"${x.art==='kurs'?' font-weight="700"':''}>${skZ(x.wert)} ${x.name}</text>`;
+  });
+  return `<svg viewBox="0 0 320 ${H}" role="img" aria-label="Preisleiter: Kurs, Einstieg, Stop und Ziel">${svg}</svg>`;
+}
+
+function skZeichne(){
+  if(!SK) return;
+  const P = skPunkte(), host = document.getElementById('sk-inhalt');
+  if(!host) return;
+  const offen = [...host.querySelectorAll('details[open]')].map(d => d.id);
+  const pct = (m => m==null ? null : Math.round(m*100))(skMittel(P.map(x => x.score)));
+  const rot = P.filter(x => x.status==='rot'), gelb = P.filter(x => x.status==='gelb'), gruen = P.filter(x => x.status==='gruen');
+  const satz = rot.length ? `${rot.length} von ${P.length} Kernpunkten verfehlt: <span class="t-bad">${rot.map(x=>esc(x.titel)).join(', ')}</span>`
+    : gelb.length ? `Kein Kernpunkt verfehlt · <span class="t-warn">prüfen: ${gelb.map(x=>esc(x.titel)).join(', ')}</span>`
+    : `<span class="t-ok">Alle ${gruen.length} Kernpunkte erfüllt</span>`;
+  const box = document.getElementById('sk');
+  box.className = 'sk sk-' + (rot.length ? 'rot' : gelb.length ? 'gelb' : 'gruen');
+  const {t, ch, ein} = SK, chips = [];
+  if(ch && ein.entry) { const d = (ch.kurs/ein.entry-1)*100; chips.push(`<span class="dash-chip ${Math.abs(d)<=5?'c-gruen':d>5?'c-rot':'c-gelb'}">Kurs ${d>=0?'+':''}${skZ(d,1)} % zum Einstieg</span>`); }
+  const e = t.earnings || {};
+  if(e.status==='termin' && e.tage!=null) chips.push(`<span class="dash-chip ${e.tage<=10?'c-rot':''}">Earnings in ${e.tage} Tagen (${esc(e.datum||'')})</span>`);
+  else chips.push('<span class="dash-chip">Earnings: kein Termin im Prüffenster</span>');
+  chips.push(`<span class="dash-chip">${gruen.length} grün · ${gelb.length} gelb · ${rot.length} rot</span>`);
+  const kachel = x => `<button type="button" class="sk-k s-${x.status}" onclick="skOeffne('${x.id}')" title="${esc(x.titel)}: Details aufklappen">
+      <small>${esc(x.titel)}</small><b>${esc(x.wert)}</b><span>${esc(x.unter||'')}</span></button>`;
+  const zeile = x => {
+    const breite = x.score==null ? 0 : Math.round(x.score*100);
+    const mehr = SK_MEHR[x.id];
+    return `<details class="sk-z" id="skz-${x.id}"${offen.includes('skz-'+x.id)?' open':''}>
+      <summary><span class="sk-l">${dot(x.status==='na'?null:x.status)}${esc(x.titel)}</span>${dashBar(breite, x.status)}
+        <span class="sk-w w-${x.status}">${esc(x.wert)}</span><span class="chev">▾</span></summary>
+      <div class="sk-d"><ul>${x.details.map(d => `<li>${esc(d)}</li>`).join('')}</ul>
+        ${x.edge ? `<div class="sk-edge">${esc(x.edge)}</div>` : ''}
+        ${mehr ? `<button type="button" onclick="${mehr==='sk-pl' ? "document.getElementById('sk-pl').scrollIntoView({block:'start'})" : `springeZu('${mehr}')`}">Weiter zu den Details ↓</button>` : ''}</div>
+    </details>`;
+  };
+  host.innerHTML = `
+    <div class="sk-kopf">${skRing(pct)}<div><div class="sk-titel">Setup-Check · acht Kernpunkte nach Minervini</div>
+      <div class="sk-satz">${satz}</div><div class="sk-chips">${chips.join('')}</div></div></div>
+    <div class="sk-kacheln">${P.map(kachel).join('')}</div>
+    <div>${P.map(zeile).join('')}</div>`;
+  const ord = {rot:0, gelb:1, na:2, gruen:3}, sym = {gruen:'✓', gelb:'!', rot:'✕', na:'–'};
+  document.getElementById('sk-checks').innerHTML = P.slice().sort((a,b)=>ord[a.status]-ord[b.status])
+    .map(x => `<span class="c-${x.status}"><i>${sym[x.status]}</i>${esc(x.titel)}: ${esc(x.wert)}</span>`).join('');
+  document.getElementById('sk-leiter').innerHTML = skLeiter();
+  document.getElementById('sk-quelle').textContent = SK.quelle + (SK.zielQuelle ? ' · ' + SK.zielQuelle : '');
+}
+
+function skOeffne(id){
+  const d = document.getElementById('skz-'+id);
+  if(!d) return;
+  d.open = true;
+  d.scrollIntoView({block:'nearest'});
+}
+
+function skEingabe(){
+  const z = id => { const v = parseFloat(String(document.getElementById(id).value).replace(',', '.')); return isFinite(v) && v>0 ? v : null; };
+  SK.ein = {entry: z('sk-entry'), stop: z('sk-stop'), ziel: z('sk-ziel')};
+  SK.quelle = 'Eigene Eingabe'; SK.zielQuelle = '';
+  skZeichne();
+}
+
+function skStandard(){
+  const {p, ch} = SK;
+  const entry = p && p.pivot!=null ? p.pivot : ch && ch.pivot;
+  const stop = p && p.stop!=null ? p.stop : ch && ch.stop;
+  // Ziel bewusst einheitlich +20 %: der Measured Move der Pivot-Engine ist bei
+  // engen Basen oft nur wenige Prozent und liesse jeden sauberen Ausbruch am
+  // CRV scheitern - er steht nur als Information in den CRV-Details.
+  SK.ein = {entry, stop, ziel: entry ? entry*1.2 : null};
+  SK.quelle = p && p.pivot!=null ? `Pivot und Stop aus der Pivot-Engine (${p.pivot_status||'—'})`
+    : ch ? `Kein Pivot-Eintrag – abgeleitet aus der Kursreihe bis ${ch.datum||'zuletzt'}: Einstieg = höchstes Hoch der letzten 20 Tage, Stop = tiefstes Tief seither`
+    : 'Kein Pivot-Eintrag und keine Kursreihe';
+  SK.zielQuelle = entry ? 'Ziel = Einstieg +20 % (O’Neil-Faustregel)' : '';
+  [['sk-entry', SK.ein.entry], ['sk-stop', SK.ein.stop], ['sk-ziel', SK.ein.ziel]]
+    .forEach(([id, v]) => { const el = document.getElementById(id); if(el) el.value = v==null ? '' : (Math.round(v*100)/100).toString(); });
+  skZeichne();
+}
+
+function skStart(t, p, regime){
+  SK = {t, p, regime, ch: skChart(t), fx: null, fxGeladen: false, ein: {}};
+  skStandard();
+}
+
+function skFundamental(fx){
+  if(!SK) return;
+  SK.fx = fx || null; SK.fxGeladen = true;
+  skZeichne();
+}
+
+function setupKopfBlock(){
+  return `<section class="sk" id="sk" aria-label="Setup-Check">
+    <div id="sk-inhalt"></div>
+    <div class="sk-pl" id="sk-pl">
+      <div>
+        <div class="sk-titel" style="margin:8px 0 8px">Checkliste</div>
+        <div class="sk-checks" id="sk-checks"></div>
+      </div>
+      <div class="sk-leiter">
+        <div class="sk-titel" style="margin:8px 0 8px">Pivot &amp; Stop · Preisleiter</div>
+        <div class="sk-ein">
+          <label>Einstieg<input id="sk-entry" inputmode="decimal" oninput="skEingabe()"></label>
+          <label>Stop<input id="sk-stop" inputmode="decimal" oninput="skEingabe()"></label>
+          <label>Ziel<input id="sk-ziel" inputmode="decimal" oninput="skEingabe()"></label>
+          <button type="button" onclick="skStandard()">Zurücksetzen</button>
+        </div>
+        <div class="sk-quelle" id="sk-quelle"></div>
+        <div id="sk-leiter"></div>
+      </div>
+    </div>
+    <div class="sk-hinweis">Prozentwert = ungewichteter Mittelwert der acht Punkte, kein Backtest-Urteil und keine Kaufempfehlung. Regelprüfung vor der Order: <code>/pre-trade</code>.</div>
+  </section>`;
+}
+
 function render(sig, piv, pa, regime){
   const t = sig, p = piv, m = (pa && pa.muster) || null;
   CUR_SIG = sig; CUR_PIV = piv; CUR_PA = pa; CUR_REGIME = regime;
@@ -2798,6 +3124,8 @@ function render(sig, piv, pa, regime){
       </div>
     </div>
 
+    ${setupKopfBlock()}
+
     ${t.klimax_warnung ? `<div class="klimax-warn">⚠️ <b>Minervini 50/80-Klimax-Warnung:</b> ${(t.faktoren.minervini_5080||{}).detail||''} Späte Basis (≥3) + frischer Gap-down auf hohem Volumen ist das klassische Topmuster — nicht als „billig" nachkaufen.</div>` : ''}
 
     ${keyPointsBlock(t, regime, p, mv, sa)}
@@ -2912,6 +3240,7 @@ function render(sig, piv, pa, regime){
   // Container muss im DOM sein, bevor das Widget-Script eingehaengt wird
   // (dynamisch per innerHTML eingefuegte <script>-Tags fuehren sich sonst nicht aus).
   tvWidget('tv-chart', tvSymbol(t.ticker));
+  skStart(t, p, regime);
   ladeStory(t.ticker, t.yahoo_symbol, t.name);
   ladeMehrjahr(t.yahoo_symbol || t.ticker, t.name);
   ladeDividenden(t.ticker, t.yahoo_symbol);
@@ -3126,6 +3455,7 @@ async function ladeStory(ticker, yahooSymbol, name){
     setzeKpStory(story, story ? 'KI-Zusammenfassung (Llama 3.1 8B) aus Yahoo-Daten' : 'keine KI-Zusammenfassung verfügbar', 1);
     setCode33(d.fundamentals && d.fundamentals.code33);
     setFundDeep(d.fundamentals);
+    skFundamental(d.fundamentals);
     WERT_FX = d.fundamentals;
     renderInnererWert();
   }catch(e){
@@ -3136,6 +3466,7 @@ async function ladeStory(ticker, yahooSymbol, name){
     setzeKpStory('', 'Story gerade nicht verfügbar', 1);
     setCode33(null);
     setFundDeep(null);
+    skFundamental(null);
     WERT_FX = null;
     renderInnererWert();
   }
