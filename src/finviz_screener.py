@@ -60,28 +60,55 @@ def hole_seite(url):
     with urllib.request.urlopen(req, timeout=20, context=SSL_CTX) as r:
         return r.read().decode("utf-8", "replace")
 
-def ticker_einer_url(url, max_seiten=5):
+MAX_TREFFER_STANDARD = 200   # je Screener; config: quellen.finviz.max_treffer
+MAX_ABRUFE = 40              # Notbremse gegen Endlosblaettern
+PAUSE = 1.5                  # Sekunden zwischen zwei Seiten (schonend)
+PAUSE_DROSSEL = 15           # Wartezeit vor dem einen Wiederholversuch
+
+def _hole_mit_wiederholung(url):
+    """Eine Seite holen; bei Drosselung (HTTP 429/5xx, Zeitueberschreitung)
+    genau einmal nach PAUSE_DROSSEL Sekunden erneut versuchen."""
+    try:
+        return hole_seite(url)
+    except Exception as e:
+        print(f"  ! {e} - neuer Versuch in {PAUSE_DROSSEL}s")
+        time.sleep(PAUSE_DROSSEL)
+        return hole_seite(url)
+
+def ticker_einer_url(url, max_treffer=MAX_TREFFER_STANDARD):
+    """Alle Treffer eines Screeners ueber die Ergebnisseiten einsammeln.
+
+    Bugfix 2026-11-15: bis dahin wurde fest in 20er-Schritten geblaettert
+    (r=1, 21, 41) und nach 3 Seiten abgebrochen. Die Chart-Ansicht (v=211),
+    die alle hinterlegten Screener nutzen, zeigt aber nur 12 Treffer je Seite -
+    es kamen also hoechstens 36 Treffer an, mit Loechern (Platz 13-20 und
+    33-40 fehlten). Gemessen: 36 von 81 bzw. 36 von 139. Jetzt wird um genau
+    so viele Plaetze weitergeblaettert, wie die Seite gezeigt hat - das passt
+    fuer jede Ansicht. Grenze ist die Trefferzahl, nicht mehr die Seitenzahl.
+    """
     url = normalisiere(url)
     sep = "&" if "?" in url else "?"
     alle = []
     gesehen = set()
-    for seite in range(max_seiten):
-        start = seite * 20 + 1
-        voll = url if seite == 0 else f"{url}{sep}r={start}"
+    start = 1
+    for _ in range(MAX_ABRUFE):
+        voll = url if start == 1 else f"{url}{sep}r={start}"
         try:
-            html = hole_seite(voll)
+            html = _hole_mit_wiederholung(voll)
         except Exception as e:
-            print(f"  ! Seite {seite+1}: {e}")
+            print(f"  ! ab Platz {start}: {e}")
             break
-        neu = []
-        for t in TICKER_RX.findall(html):
-            if t not in gesehen:
-                gesehen.add(t)
-                neu.append(t)
+        auf_seite = list(dict.fromkeys(TICKER_RX.findall(html)))
+        neu = [t for t in auf_seite if t not in gesehen]
         if not neu:
-            break  # keine neuen Treffer -> Ende
+            break  # keine neuen Treffer -> Ende (Finviz wiederholt die letzte Seite)
+        gesehen.update(neu)
         alle.extend(neu)
-        time.sleep(0.7)  # schonend
+        if len(alle) >= max_treffer:
+            alle = alle[:max_treffer]
+            break
+        start += len(auf_seite)
+        time.sleep(PAUSE)
     return alle
 
 def _screener_liste(fcfg):
@@ -103,11 +130,13 @@ def screene_finviz():
         print("Finviz-Quelle deaktiviert oder keine URL.")
         return []
     heute = datetime.now().strftime("%Y-%m-%d")
-    max_seiten = fcfg.get("max_seiten", 5)
+    # "max_seiten" (alt) wird nicht mehr gelesen: es zaehlte 20er-Seiten, die
+    # es in der Chart-Ansicht nicht gibt (siehe ticker_einer_url).
+    max_treffer = int(fcfg.get("max_treffer", MAX_TREFFER_STANDARD))
     signale = []
     for s in liste:
         name, url = s["name"], s["url"]
-        tickers = ticker_einer_url(url, max_seiten)
+        tickers = ticker_einer_url(url, max_treffer)
         print(f"  + finviz:{name}: {len(tickers)} Treffer")
         for t in tickers:
             signale.append({

@@ -35,7 +35,7 @@
     "finviz": {
       "_hinweis": "Mehrere benannte Screener moeglich. 'aktiv' je Screener schaltbar. URL aus dem Finviz-Browser kopieren.",
       "aktiv": true,
-      "max_seiten": 3,
+      "max_treffer": 200,
       "screener": [
         {
           "name": "Momentum 52W-Hoch",
