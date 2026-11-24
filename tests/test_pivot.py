@@ -176,6 +176,31 @@ def test_backtest_hl_kohorten():
     print("ok  H/L-Kohorten     bestanden")
 
 
+def test_kontraktion_volumen():
+    # Drei Wellen mit 300 -> 200 -> 100 Volumen: jede Welle leiser.
+    c, _, _ = _vcp_wellen()
+    wellen = pivot._wellen(c, c, len(c))
+    assert len(wellen) == 3, wellen
+    v = [500] * len(c)
+    for stufe, (i_h, i_l, _) in zip((300, 200, 100), wellen):
+        for i in range(i_h, i_l + 1):
+            v[i] = stufe
+    vol = pivot._kontraktion_volumen(c, v, len(c), 100.0)
+    assert [round(x, 2) for x in vol] == [3.0, 2.0, 1.0], vol
+    # Passt v nicht zur Laenge -> nicht messbar.
+    assert pivot._kontraktion_volumen(c, v[:-1], len(c), 100.0) is None
+    print("ok  Volumen je Welle ", [round(x, 2) for x in vol])
+
+
+def test_backtest_volk_kohorte():
+    import pivot_backtest as bt
+    assert "ARMED_volk_ab" in bt._split_stati({"status": "ARMED", "kontraktion_vol_verh": 0.6})
+    assert "BREAKOUT_volk_auf" in bt._split_stati({"status": "BREAKOUT", "kontraktion_vol_verh": 1.2})
+    assert not any("volk" in x for x in bt._split_stati({"status": "ARMED"}))
+    assert "ARMED_volk_ab" in bt.SPLIT_STATI and "BREAKOUT_volk_auf" in bt.SPLIT_STATI
+    print("ok  Volumen-Kohorte  bestanden")
+
+
 if __name__ == "__main__":
     test_armed()
     test_breakout()
@@ -187,4 +212,6 @@ if __name__ == "__main__":
     test_kontraktionen_hl()
     test_kontraktionen_hl_ohne_daten()
     test_backtest_hl_kohorten()
+    test_kontraktion_volumen()
+    test_backtest_volk_kohorte()
     print("\nAlle Pivot-Tests bestanden.")

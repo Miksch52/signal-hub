@@ -135,6 +135,12 @@ FT_VOL_MIN     = 1.30  # Ø-Volumen der Folgetage / Ø50 - darunter fehlt die Be
 # obwohl er dort 3-5 % nennt und wir bis 12 % als "eng" werten).
 KONTRAKTION_MIN_STRENG = 3     # Minervini: 3-4 Kontraktionen je Basis
 ENG_MAX_STRENG = 0.05          # Minervini: letzte Kontraktion 3-5 % Range
+# Volumen je Kontraktion (2026-11-24, reine Messung): Kohorten-Teilung bei
+# "Volumen der letzten Welle / Volumen der ersten Welle". Unter 1.0 = das
+# Volumen ist ueber die Basis gesunken, wie Minervini es beschreibt. Bewusst
+# die natuerliche Grenze statt einer gewaehlten Schwelle - die Kohorte soll
+# erst zeigen, OB die Richtung etwas traegt.
+VOL_KONTRAKTION_MAX = 1.0
 
 # Schalter fuer die drei neuen Kriterien. Default AUS = reine Messung.
 # Erst nach belegter Forward-Kohorte einzeln auf True setzen.
@@ -293,40 +299,57 @@ def _swing_extrema(werte, order=KONTRAKTION_ORDER):
     return hochs, tiefs
 
 
-def _kontraktionen(c, basis_tage):
-    """Chronologische Kontraktionen (Hoch -> folgendes Tief) INNERHALB der
-    aktuellen Basis.
+def _wellen(hoch, tief, basis_tage):
+    """Kontraktions-Wellen (Hoch -> folgendes Tief) INNERHALB der aktuellen
+    Basis, chronologisch, juengste zuletzt, auf KONTRAKTION_MAX gekappt.
 
-    Portierung von MinerviniMarkets360 scoring/vcp.py::_contractions auf die
-    hier verfuegbaren Schlusskurse, mit zwei bewussten Abweichungen:
-      * Fenster = die tatsaechlich erkannte Basis (siehe _basis_tage), nicht
-        fixe 130 Tage - sonst saettigt die Zaehlung (siehe Konstanten-Kommentar).
-      * Tiefenschwelle 3% statt 1% - auf Schlusskursen ohne High/Low erzeugt
-        1% fast nur Rauschen.
-    Rueckgabe: Liste von Tiefen (0..1), juengste zuletzt, auf die letzten
-    KONTRAKTION_MAX begrenzt. Leere Liste, wenn die Basis zu kurz ist."""
+    Gemeinsamer Kern von _kontraktionen (hoch = tief = Schlusskurse) und
+    _kontraktionen_hl (hoch = h, tief = l). Rueckgabe: Liste von
+    (i_hoch, i_tief, tiefe) mit Indizes RELATIV zum Basisfenster
+    reihe[-basis_tage:] - seit 2026-11-24, damit sich das Volumen je Welle
+    messen laesst (_kontraktion_volumen)."""
     if basis_tage < KONTRAKTION_MIN_BASIS_TAGE:
         return []
-    teil = c[-basis_tage:]
-    if len(teil) < 3 * KONTRAKTION_ORDER + 2:
+    th, tt = hoch[-basis_tage:], tief[-basis_tage:]
+    if len(th) < 3 * KONTRAKTION_ORDER + 2:
         return []
-    hochs, tiefs = _swing_extrema(teil)
+    hochs, _ = _swing_extrema(th)
+    _, tiefs = _swing_extrema(tt)
     punkte = sorted([(i, "H") for i in hochs] + [(i, "L") for i in tiefs])
-    tiefen = []
+    wellen = []
     letztes_hoch = None
     for idx, typ in punkte:
         if typ == "H":
             # hoeheres Hoch ersetzt ein noch unbestaetigtes Hoch
-            if letztes_hoch is None or teil[idx] >= teil[letztes_hoch]:
+            if letztes_hoch is None or th[idx] >= th[letztes_hoch]:
                 letztes_hoch = idx
         elif letztes_hoch is not None:
-            hoch = teil[letztes_hoch]
-            if hoch:
-                tiefe = (hoch - teil[idx]) / hoch
+            h = th[letztes_hoch]
+            if h:
+                tiefe = (h - tt[idx]) / h
                 if tiefe > KONTRAKTION_MIN_TIEFE:
-                    tiefen.append(tiefe)
+                    wellen.append((letztes_hoch, idx, tiefe))
             letztes_hoch = None
-    return tiefen[-KONTRAKTION_MAX:]
+    return wellen[-KONTRAKTION_MAX:]
+
+
+def _kontraktionen(c, basis_tage):
+    """Chronologische Kontraktionstiefen (0..1) auf SCHLUSSKURSEN innerhalb der
+    aktuellen Basis.
+
+    Portierung von MinerviniMarkets360 scoring/vcp.py::_contractions, mit zwei
+    bewussten Abweichungen:
+      * Fenster = die tatsaechlich erkannte Basis (siehe _basis_tage), nicht
+        fixe 130 Tage - sonst saettigt die Zaehlung (siehe Konstanten-Kommentar).
+      * Tiefenschwelle 3% statt 1% - auf Schlusskursen erzeugt 1% fast nur
+        Rauschen.
+    Leere Liste, wenn die Basis zu kurz ist."""
+    return [w[2] for w in _wellen(c, c, basis_tage)]
+
+
+def _hl_ok(h, l, basis_tage):
+    return bool(h) and bool(l) and len(h) == len(l) and not any(
+        x is None for x in h[-basis_tage:] + l[-basis_tage:])
 
 
 def _kontraktionen_hl(h, l, basis_tage):
@@ -335,40 +358,37 @@ def _kontraktionen_hl(h, l, basis_tage):
 
     Minervini misst eine Kontraktion vom Hoch bis zum Tief der Welle - also mit
     Intraday-Extremen. Der Chart-Block traegt seit 2026-07-24 volles OHLC
-    (scorer._chartdaten), der Grund fuer die Schlusskurs-Naeherung in
-    _swing_extrema ist damit weggefallen. Hochs werden auf h gesucht, Tiefs
-    auf l; alles andere (Basisfenster, ORDER, 3-%-Mindesttiefe, Kappung)
-    bleibt bewusst identisch zur Schlusskurs-Variante, damit sich im
-    Kohortenvergleich NUR die Datenquelle unterscheidet und nicht zugleich
-    eine Schwelle. Beide Varianten laufen parallel; welche besser trennt,
-    entscheidet die Forward-Kohorte.
-
-    Rueckgabe None, wenn h/l fehlen oder nicht zur Laenge passen (aeltere
-    Chart-Bloecke) - None heisst "nicht messbar", nicht "keine Kontraktion"."""
-    if not h or not l or len(h) != len(l) or any(x is None for x in h[-basis_tage:] + l[-basis_tage:]):
+    (scorer._chartdaten). Hochs werden auf h gesucht, Tiefs auf l; alles
+    andere (Basisfenster, ORDER, 3-%-Mindesttiefe, Kappung) ist identisch zur
+    Schlusskurs-Variante, damit sich im Kohortenvergleich NUR die Datenquelle
+    unterscheidet. Rueckgabe None, wenn h/l fehlen oder nicht zur Laenge
+    passen - None heisst "nicht messbar", nicht "keine Kontraktion"."""
+    if not _hl_ok(h, l, basis_tage):
         return None
-    if basis_tage < KONTRAKTION_MIN_BASIS_TAGE:
-        return []
-    hh, ll = h[-basis_tage:], l[-basis_tage:]
-    if len(hh) < 3 * KONTRAKTION_ORDER + 2:
-        return []
-    hochs, _ = _swing_extrema(hh)
-    _, tiefs = _swing_extrema(ll)
-    punkte = sorted([(i, "H") for i in hochs] + [(i, "L") for i in tiefs])
-    tiefen = []
-    letztes_hoch = None
-    for idx, typ in punkte:
-        if typ == "H":
-            if letztes_hoch is None or hh[idx] >= hh[letztes_hoch]:
-                letztes_hoch = idx
-        elif letztes_hoch is not None:
-            hoch = hh[letztes_hoch]
-            if hoch:
-                tiefe = (hoch - ll[idx]) / hoch
-                if tiefe > KONTRAKTION_MIN_TIEFE:
-                    tiefen.append(tiefe)
-            letztes_hoch = None
-    return tiefen[-KONTRAKTION_MAX:]
+    return [w[2] for w in _wellen(h, l, basis_tage)]
+
+
+def _kontraktion_volumen(c, v, basis_tage, vol_basis):
+    """Ø-Volumen je Kontraktions-Welle (Hoch bis Tief, beide inklusive)
+    relativ zum Ø50 - seit 2026-11-24, reine Messung ohne Status-Einfluss.
+
+    Minervini: mit jeder enger werdenden Kontraktion soll auch das Volumen
+    abnehmen (das Angebot trocknet aus). Bisher wurde Dry-up nur pauschal ueber
+    die letzten DRYUP_FENSTER Tage gemessen, nicht Welle fuer Welle. Gemessen
+    wird auf denselben Wellen wie _kontraktionen (Schlusskurse), damit die
+    Werte zu "kontraktionen" passen. Die angefangene Sitzung (juengster Bar,
+    siehe _follow_through_vol) faellt nie hinein: ein Wellen-Tief braucht
+    KONTRAKTION_ORDER Folgetage. Rueckgabe None ohne passendes Volumen."""
+    if not vol_basis or len(v) != len(c):
+        return None
+    vb = v[-basis_tage:] if basis_tage else []
+    out = []
+    for i_h, i_l, _ in _wellen(c, c, basis_tage):
+        teil = [x for x in vb[i_h:i_l + 1] if x is not None]
+        if not teil:
+            return None
+        out.append(sum(teil) / len(teil) / vol_basis)
+    return out
 
 
 def _eng_hl(h, l, fenster=ENG_FENSTER):
@@ -516,6 +536,13 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
     eng_hl = _eng_hl(h, l)
     if tiefen_hl is not None:
         verengt_hl, verengt_hl_moeglich = _verengung_stufen(tiefen_hl)
+    # Volumen je Kontraktion (2026-11-24, rein messend).
+    vol_wellen = _kontraktion_volumen(c, v, basis_tage, _mean(v[-VOL_BASIS:]))
+    vol_verh = vol_ab = vol_ab_moeglich = None
+    if vol_wellen and len(vol_wellen) >= 2:
+        vol_verh = round(vol_wellen[-1] / vol_wellen[0], 2) if vol_wellen[0] else None
+        vol_ab_moeglich = len(vol_wellen) - 1
+        vol_ab = sum(1 for i in range(1, len(vol_wellen)) if vol_wellen[i] <= vol_wellen[i - 1])
     # Follow-Through-Volumen NUR bei einem echten frischen Durchbruch messen.
     # Sonst waere die Zahl bedeutungslos: ein ARMED-Wert notiert unter seinem
     # Pivot, kann aber ueber dem aelteren pivot_brk liegen - "Tage seit
@@ -566,6 +593,13 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
         "verengung_stufen_hl": (f"{verengt_hl}/{verengt_hl_moeglich}"
                                 if tiefen_hl is not None and verengt_hl_moeglich else None),
         "eng_hl_pct": (round(eng_hl * 100, 1) if eng_hl is not None else None),
+        # --- Volumen je Kontraktion (2026-11-24), ohne Status-Einfluss.
+        # Liste: Ø-Volumen je Welle / Ø50, aelteste zuerst. Verhaeltnis:
+        # letzte / erste Welle (<1 = Volumen nimmt ab). Stufen: wie viele
+        # Uebergaenge leiser werden. None bei < 2 Wellen.
+        "kontraktion_vol": ([round(x, 2) for x in vol_wellen] if vol_wellen is not None else None),
+        "kontraktion_vol_verh": vol_verh,
+        "vol_abnahme_stufen": (f"{vol_ab}/{vol_ab_moeglich}" if vol_ab_moeglich else None),
     }
 
     # --- Zustands-Logik (Reihenfolge = Prioritaet) --------------------------
@@ -614,6 +648,9 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
                 "kontraktion_tiefen_hl": kennz["kontraktion_tiefen_hl"],
                 "verengung_stufen_hl": kennz["verengung_stufen_hl"],
                 "eng_hl_pct": kennz["eng_hl_pct"],
+                "kontraktion_vol": kennz["kontraktion_vol"],
+                "kontraktion_vol_verh": kennz["kontraktion_vol_verh"],
+                "vol_abnahme_stufen": kennz["vol_abnahme_stufen"],
                 "basis_wochen": basis_wochen, "follow_through_vol": ft_vol, **stop,
                 "detail": (f"Frischer Ausbruch ueber {pivot_brk:.2f} auf {vol_surge:.1f}x Volumen "
                            f"(Basis {basis_brk_range*100:.0f}% Range, {basis_wochen} Wochen, "

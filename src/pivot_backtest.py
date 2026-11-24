@@ -156,7 +156,8 @@ SPLIT_STATI = ("BREAKOUT_nah", "BREAKOUT_weit",
     f"{st}_{k}" for st in ("ARMED", "BREAKOUT") for k in (
         "vcp_ge2", "vcp_lt2", "vcp_ge3", "vcp_lt3",
         "eng_le5", "eng_gt5", "basis_ge7w", "basis_lt7w",
-        "vcp_hl_ge3", "vcp_hl_lt3", "eng_hl_le5", "eng_hl_gt5")
+        "vcp_hl_ge3", "vcp_hl_lt3", "eng_hl_le5", "eng_hl_gt5",
+        "volk_ab", "volk_auf")
 ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")
 
 
@@ -203,6 +204,10 @@ def _split_stati(r):
         ep_hl = r.get("eng_hl_pct")
         if ep_hl is not None:
             out.append(f"{st}_eng_hl_{'le5' if ep_hl <= pivot.ENG_MAX_STRENG * 100 else 'gt5'}")
+        # Volumen je Kontraktion (2026-11-24): letzte Welle leiser als erste?
+        vk = r.get("kontraktion_vol_verh")
+        if vk is not None:
+            out.append(f"{st}_volk_{'ab' if vk < pivot.VOL_KONTRAKTION_MAX else 'auf'}")
         ft = r.get("follow_through_vol")
         if ft is not None and st == "BREAKOUT":
             out.append("BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach")
@@ -452,6 +457,8 @@ def log_heute():
             # bleiben ausserhalb der *_hl-Kohorten (kein Backfill).
             "kontraktionen_hl": e.get("kontraktionen_hl"),
             "eng_hl_pct": e.get("eng_hl_pct"),
+            # Volumen letzte / erste Kontraktions-Welle (seit 2026-11-24).
+            "kontraktion_vol_verh": e.get("kontraktion_vol_verh"),
             # Minervinis Besitz-Richtung (SEC 13F, quartalsweise). None bei
             # nicht-US-Werten - siehe _inst_trend_map().
             "inst_trend": it_map.get(e.get("ticker")),
@@ -597,6 +604,9 @@ def evaluate():
             # Schwellen, andere Datenquelle.
             "vcp_hl_ge3", "vcp_hl_lt3",
             "eng_hl_le5", "eng_hl_gt5",
+            # Volumen je Kontraktion (seit 2026-11-24): letzte Welle
+            # leiser als die erste (ab) oder nicht (auf).
+            "volk_ab", "volk_auf",
         )
     ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")   # Folgevolumen nur bei Ausbruechen sinnvoll
     eimer = {s: {h: [] for h, _ in HORIZONTE}
@@ -714,6 +724,9 @@ def evaluate():
         ep_hl = e.get("eng_hl_pct")
         if ep_hl is not None:
             lege(f"{e['status']}_eng_hl_{'le5' if ep_hl <= pivot.ENG_MAX_STRENG * 100 else 'gt5'}")
+        vk = e.get("kontraktion_vol_verh")
+        if vk is not None:
+            lege(f"{e['status']}_volk_{'ab' if vk < pivot.VOL_KONTRAKTION_MAX else 'auf'}")
         tt = e.get("tt_pass")
         if tt is not None:
             lege(f"{e['status']}_tt_{'pass' if tt else 'fail'}")
@@ -757,6 +770,7 @@ def evaluate():
             "eng_pct": e.get("eng_pct"), "inst_trend": it,
             "uo_zufluss": uo, "uo_pctl": e.get("uo_pctl"),
             "kontraktionen_hl": kt_hl, "eng_hl_pct": ep_hl,
+            "kontraktion_vol_verh": vk,
         })
 
         # Archiv fortschreiben. Der Eintrag wird bei jedem Lauf ueberschrieben,
@@ -776,6 +790,7 @@ def evaluate():
             "exit_sim": e.get("exit_sim"),
             "kontraktionen": kt, "basis_wochen": bw, "eng_pct": e.get("eng_pct"),
             "kontraktionen_hl": kt_hl, "eng_hl_pct": ep_hl,
+            "kontraktion_vol_verh": vk,
             "tt_pass": tt, "inst_trend": it,
             "follow_through_vol": e.get("follow_through_vol"),
         }
