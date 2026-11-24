@@ -274,9 +274,10 @@ def _cheat_pivot(c, v, price, s50):
 def _swing_extrema(werte, order=KONTRAKTION_ORDER):
     """Indizes lokaler Hochs/Tiefs (Extrem im +/-order-Fenster).
 
-    Arbeitet auf SCHLUSSKURSEN, nicht auf High/Low wie Markets360 vcp.py -
-    der Chart-Block in signals.json enthaelt bewusst nur c/v/s50/s150/s200
-    (Groesse: signals.js liegt schon bei ~12 MB). Die Kontraktionstiefen
+    _kontraktionen() ruft das mit SCHLUSSKURSEN auf, nicht mit High/Low wie
+    Markets360 vcp.py - damals enthielt der Chart-Block nur c/v/s50/s150/s200.
+    Seit 2026-07-24 sind o/h/l dabei; _kontraktionen_hl() misst parallel auf
+    Hoch/Tief (seit 2026-11-24). Die Kontraktionstiefen
     fallen dadurch systematisch etwas flacher aus als bei einer High/Low-
     Messung; fuer den VERGLEICH der Kontraktionen untereinander (wird es
     enger?) ist das unerheblich, fuer absolute Tiefenangaben nicht - deshalb
@@ -326,6 +327,60 @@ def _kontraktionen(c, basis_tage):
                     tiefen.append(tiefe)
             letztes_hoch = None
     return tiefen[-KONTRAKTION_MAX:]
+
+
+def _kontraktionen_hl(h, l, basis_tage):
+    """Wie _kontraktionen(), aber auf Tageshoch/-tief statt Schlusskursen
+    (seit 2026-11-24, reine Messung ohne Status-Einfluss).
+
+    Minervini misst eine Kontraktion vom Hoch bis zum Tief der Welle - also mit
+    Intraday-Extremen. Der Chart-Block traegt seit 2026-07-24 volles OHLC
+    (scorer._chartdaten), der Grund fuer die Schlusskurs-Naeherung in
+    _swing_extrema ist damit weggefallen. Hochs werden auf h gesucht, Tiefs
+    auf l; alles andere (Basisfenster, ORDER, 3-%-Mindesttiefe, Kappung)
+    bleibt bewusst identisch zur Schlusskurs-Variante, damit sich im
+    Kohortenvergleich NUR die Datenquelle unterscheidet und nicht zugleich
+    eine Schwelle. Beide Varianten laufen parallel; welche besser trennt,
+    entscheidet die Forward-Kohorte.
+
+    Rueckgabe None, wenn h/l fehlen oder nicht zur Laenge passen (aeltere
+    Chart-Bloecke) - None heisst "nicht messbar", nicht "keine Kontraktion"."""
+    if not h or not l or len(h) != len(l) or any(x is None for x in h[-basis_tage:] + l[-basis_tage:]):
+        return None
+    if basis_tage < KONTRAKTION_MIN_BASIS_TAGE:
+        return []
+    hh, ll = h[-basis_tage:], l[-basis_tage:]
+    if len(hh) < 3 * KONTRAKTION_ORDER + 2:
+        return []
+    hochs, _ = _swing_extrema(hh)
+    _, tiefs = _swing_extrema(ll)
+    punkte = sorted([(i, "H") for i in hochs] + [(i, "L") for i in tiefs])
+    tiefen = []
+    letztes_hoch = None
+    for idx, typ in punkte:
+        if typ == "H":
+            if letztes_hoch is None or hh[idx] >= hh[letztes_hoch]:
+                letztes_hoch = idx
+        elif letztes_hoch is not None:
+            hoch = hh[letztes_hoch]
+            if hoch:
+                tiefe = (hoch - ll[idx]) / hoch
+                if tiefe > KONTRAKTION_MIN_TIEFE:
+                    tiefen.append(tiefe)
+            letztes_hoch = None
+    return tiefen[-KONTRAKTION_MAX:]
+
+
+def _eng_hl(h, l, fenster=ENG_FENSTER):
+    """Spanne der Endkontraktion auf Hoch/Tief: (max h - min l) / max h ueber
+    dieselben ENG_FENSTER Tage wie eng_pct. None ohne vollstaendige h/l."""
+    if not h or not l or len(h) < fenster or len(l) < fenster:
+        return None
+    hh, ll = h[-fenster:], l[-fenster:]
+    if any(x is None for x in hh + ll):
+        return None
+    hoch = max(hh)
+    return (hoch - min(ll)) / hoch if hoch else None
 
 
 def _verengung_stufen(tiefen):
@@ -450,6 +505,17 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
     basis_wochen = round(basis_tage / 5.0, 1)
     tiefen = _kontraktionen(c, basis_tage)
     verengt, verengt_moeglich = _verengung_stufen(tiefen)
+    # Dieselbe Messung auf Hoch/Tief (2026-11-24, rein messend). h/l nur
+    # verwenden, wenn sie exakt zu den Schlusskursen passen - sonst waeren die
+    # Indizes gegeneinander verschoben.
+    h = chart.get("h") or []
+    l = chart.get("l") or []
+    if len(h) != len(c) or len(l) != len(c):
+        h, l = [], []
+    tiefen_hl = _kontraktionen_hl(h, l, basis_tage)
+    eng_hl = _eng_hl(h, l)
+    if tiefen_hl is not None:
+        verengt_hl, verengt_hl_moeglich = _verengung_stufen(tiefen_hl)
     # Follow-Through-Volumen NUR bei einem echten frischen Durchbruch messen.
     # Sonst waere die Zahl bedeutungslos: ein ARMED-Wert notiert unter seinem
     # Pivot, kann aber ueber dem aelteren pivot_brk liegen - "Tage seit
@@ -492,6 +558,14 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
         "verengung_stufen": (f"{verengt}/{verengt_moeglich}" if verengt_moeglich else None),
         "basis_wochen": basis_wochen,           # Faustregel >= BASIS_MIN_WOCHEN
         "follow_through_vol": ft_vol,           # None = heute ausgebrochen, noch nicht bewertbar
+        # --- Dieselbe Messung auf Hoch/Tief (2026-11-24), ohne Status-Einfluss.
+        # None = Chart ohne h/l, nicht messbar.
+        "kontraktionen_hl": (len(tiefen_hl) if tiefen_hl is not None else None),
+        "kontraktion_tiefen_hl": ([round(t * 100, 1) for t in tiefen_hl]
+                                  if tiefen_hl is not None else None),
+        "verengung_stufen_hl": (f"{verengt_hl}/{verengt_hl_moeglich}"
+                                if tiefen_hl is not None and verengt_hl_moeglich else None),
+        "eng_hl_pct": (round(eng_hl * 100, 1) if eng_hl is not None else None),
     }
 
     # --- Zustands-Logik (Reihenfolge = Prioritaet) --------------------------
@@ -536,6 +610,10 @@ def klassifiziere(chart, preis=None, cheat_aktiv=True):
                 "kontraktionen": kennz["kontraktionen"],
                 "kontraktion_tiefen": kennz["kontraktion_tiefen"],
                 "verengung_stufen": kennz["verengung_stufen"],
+                "kontraktionen_hl": kennz["kontraktionen_hl"],
+                "kontraktion_tiefen_hl": kennz["kontraktion_tiefen_hl"],
+                "verengung_stufen_hl": kennz["verengung_stufen_hl"],
+                "eng_hl_pct": kennz["eng_hl_pct"],
                 "basis_wochen": basis_wochen, "follow_through_vol": ft_vol, **stop,
                 "detail": (f"Frischer Ausbruch ueber {pivot_brk:.2f} auf {vol_surge:.1f}x Volumen "
                            f"(Basis {basis_brk_range*100:.0f}% Range, {basis_wochen} Wochen, "

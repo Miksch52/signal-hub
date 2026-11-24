@@ -112,7 +112,9 @@ def _ist_uptrend_tag(r):
 def _truncate(chart, t):
     """Chart-Block bis einschliesslich Tag t (SMA bleiben trailing -> korrekt)."""
     out = {"c": chart["c"][:t + 1], "v": (chart.get("v") or [])[:t + 1]}
-    for k in ("s50", "s150", "s200"):
+    # h/l seit 2026-11-24: pivot.klassifiziere misst Kontraktionen zusaetzlich
+    # auf Hoch/Tief - ohne sie waeren die *_hl-Retro-Kohorten immer leer.
+    for k in ("s50", "s150", "s200", "h", "l"):
         if chart.get(k):
             out[k] = chart[k][:t + 1]
     return out
@@ -153,7 +155,8 @@ SPLIT_STATI = ("BREAKOUT_nah", "BREAKOUT_weit",
                "ARMED_megaphone", "ARMED_sauber") + tuple(
     f"{st}_{k}" for st in ("ARMED", "BREAKOUT") for k in (
         "vcp_ge2", "vcp_lt2", "vcp_ge3", "vcp_lt3",
-        "eng_le5", "eng_gt5", "basis_ge7w", "basis_lt7w")
+        "eng_le5", "eng_gt5", "basis_ge7w", "basis_lt7w",
+        "vcp_hl_ge3", "vcp_hl_lt3", "eng_hl_le5", "eng_hl_gt5")
 ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")
 
 
@@ -193,6 +196,13 @@ def _split_stati(r):
         bw = r.get("basis_wochen")
         if bw is not None:
             out.append(f"{st}_basis_{'ge7w' if bw >= pivot.BASIS_MIN_WOCHEN else 'lt7w'}")
+        # Dieselben Minervini-Schwellen, gemessen auf Hoch/Tief (2026-11-24).
+        kt_hl = r.get("kontraktionen_hl")
+        if kt_hl is not None:
+            out.append(f"{st}_vcp_hl_{'ge3' if kt_hl >= pivot.KONTRAKTION_MIN_STRENG else 'lt3'}")
+        ep_hl = r.get("eng_hl_pct")
+        if ep_hl is not None:
+            out.append(f"{st}_eng_hl_{'le5' if ep_hl <= pivot.ENG_MAX_STRENG * 100 else 'gt5'}")
         ft = r.get("follow_through_vol")
         if ft is not None and st == "BREAKOUT":
             out.append("BREAKOUT_ft_ok" if ft >= pivot.FT_VOL_MIN else "BREAKOUT_ft_schwach")
@@ -437,6 +447,11 @@ def log_heute():
             # damit sich auch Minervinis Enge-Vorgabe (3-5 %) als Kohorte
             # messen laesst und nicht nur unsere weichere 12-%-Schwelle.
             "eng_pct": e.get("eng_pct"),
+            # Dieselben Messungen auf Hoch/Tief statt Schlusskursen (seit
+            # 2026-11-24). Aeltere Eintraege haben die Felder nicht und
+            # bleiben ausserhalb der *_hl-Kohorten (kein Backfill).
+            "kontraktionen_hl": e.get("kontraktionen_hl"),
+            "eng_hl_pct": e.get("eng_hl_pct"),
             # Minervinis Besitz-Richtung (SEC 13F, quartalsweise). None bei
             # nicht-US-Werten - siehe _inst_trend_map().
             "inst_trend": it_map.get(e.get("ticker")),
@@ -577,6 +592,11 @@ def evaluate():
             # diese Kohorte SCHWELLE_PUSH erreicht UND besser laeuft, darf die
             # Breite ein Score-Gewicht bekommen - vorher ist sie ein Messfeld.
             "uo_ja", "uo_nein",
+            # Minervinis Schwellen auf Hoch/Tief gemessen (seit 2026-11-24).
+            # Laufen parallel zu vcp_ge3/eng_le5 (Schlusskurse): gleiche
+            # Schwellen, andere Datenquelle.
+            "vcp_hl_ge3", "vcp_hl_lt3",
+            "eng_hl_le5", "eng_hl_gt5",
         )
     ) + ("BREAKOUT_ft_ok", "BREAKOUT_ft_schwach")   # Folgevolumen nur bei Ausbruechen sinnvoll
     eimer = {s: {h: [] for h, _ in HORIZONTE}
@@ -688,6 +708,12 @@ def evaluate():
         if bw is not None:
             lang = bw >= pivot.BASIS_MIN_WOCHEN
             lege(f"{e['status']}_basis_{'ge7w' if lang else 'lt7w'}")
+        kt_hl = e.get("kontraktionen_hl")
+        if kt_hl is not None:
+            lege(f"{e['status']}_vcp_hl_{'ge3' if kt_hl >= pivot.KONTRAKTION_MIN_STRENG else 'lt3'}")
+        ep_hl = e.get("eng_hl_pct")
+        if ep_hl is not None:
+            lege(f"{e['status']}_eng_hl_{'le5' if ep_hl <= pivot.ENG_MAX_STRENG * 100 else 'gt5'}")
         tt = e.get("tt_pass")
         if tt is not None:
             lege(f"{e['status']}_tt_{'pass' if tt else 'fail'}")
@@ -730,6 +756,7 @@ def evaluate():
             "follow_through_vol": e.get("follow_through_vol"), "tt_pass": tt,
             "eng_pct": e.get("eng_pct"), "inst_trend": it,
             "uo_zufluss": uo, "uo_pctl": e.get("uo_pctl"),
+            "kontraktionen_hl": kt_hl, "eng_hl_pct": ep_hl,
         })
 
         # Archiv fortschreiben. Der Eintrag wird bei jedem Lauf ueberschrieben,
@@ -748,6 +775,7 @@ def evaluate():
             "fenster_edge": {h: ed for h, _, ed in erreicht if ed is not None},
             "exit_sim": e.get("exit_sim"),
             "kontraktionen": kt, "basis_wochen": bw, "eng_pct": e.get("eng_pct"),
+            "kontraktionen_hl": kt_hl, "eng_hl_pct": ep_hl,
             "tt_pass": tt, "inst_trend": it,
             "follow_through_vol": e.get("follow_through_vol"),
         }

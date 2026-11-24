@@ -114,6 +114,68 @@ def test_backtest_stats():
     print("ok  _stats       bestanden")
 
 
+def _vcp_wellen():
+    """Basis mit drei enger werdenden Wellen (ca. 15 % -> 8 % -> 4 %) auf
+    Schlusskursen, dazu h/l je 1 % ueber/unter dem Schluss."""
+    c = [94.0, 96.0, 98.0, 99.0]           # Anlauf, damit das erste Hoch ein Swing-Hoch ist
+    for tiefe, laenge in ((0.15, 16), (0.08, 12), (0.04, 10)):
+        halb = laenge // 2
+        c += [100 * (1 - tiefe * i / halb) for i in range(halb)]
+        c += [100 * (1 - tiefe + tiefe * i / halb) for i in range(halb)]
+    h = [x * 1.01 for x in c]
+    l = [x * 0.99 for x in c]
+    return c, h, l
+
+
+def test_kontraktionen_hl():
+    # Hoch/Tief misst dieselben Wellen, aber tiefer als die Schlusskurse.
+    c, h, l = _vcp_wellen()
+    t_c = pivot._kontraktionen(c, len(c))
+    t_hl = pivot._kontraktionen_hl(h, l, len(c))
+    assert len(t_c) == 3, t_c
+    assert len(t_hl) == 3, t_hl
+    assert all(a > b for a, b in zip(t_hl, t_c)), (t_hl, t_c)
+    assert pivot._verengung_stufen(t_hl) == (2, 2), t_hl
+    e = pivot._eng_hl(h, l)
+    assert e is not None and e > pivot._range(c[-pivot.ENG_FENSTER:]), e
+    print("ok  Kontraktionen H/L", [round(x * 100, 1) for x in t_hl])
+
+
+def test_kontraktionen_hl_ohne_daten():
+    # Ohne h/l: None ("nicht messbar"), nicht 0 Kontraktionen.
+    c, _, _ = _vcp_wellen()
+    assert pivot._kontraktionen_hl([], [], len(c)) is None
+    assert pivot._eng_hl([], []) is None
+    cc = uptrend_basis(100.0) + [99.0] * 24
+    v = [1000] * (len(cc) - 10) + [550] * 10
+    r = pivot.klassifiziere(chart(cc, v))
+    assert r["kontraktionen_hl"] is None and r["eng_hl_pct"] is None, r
+    # Mit h/l werden die Felder gefuellt.
+    ch = chart(cc, v)
+    ch["h"] = [x * 1.01 for x in cc]
+    ch["l"] = [x * 0.99 for x in cc]
+    r2 = pivot.klassifiziere(ch)
+    assert r2["status"] == r["status"], (r, r2)          # Status unveraendert
+    assert r2["kontraktionen_hl"] is not None and r2["eng_hl_pct"] is not None, r2
+    # Falsche Laenge -> nicht verwenden
+    ch["h"] = ch["h"][:-1]
+    assert pivot.klassifiziere(ch)["kontraktionen_hl"] is None
+    print("ok  H/L ohne Daten   bestanden")
+
+
+def test_backtest_hl_kohorten():
+    import pivot_backtest as bt
+    ch = {"c": [1, 2, 3], "v": [1, 1, 1], "h": [2, 3, 4], "l": [0, 1, 2]}
+    tr = bt._truncate(ch, 1)
+    assert tr["h"] == [2, 3] and tr["l"] == [0, 1], tr
+    labels = bt._split_stati({"status": "ARMED", "kontraktionen_hl": 3, "eng_hl_pct": 4.0})
+    assert "ARMED_vcp_hl_ge3" in labels and "ARMED_eng_hl_le5" in labels, labels
+    labels = bt._split_stati({"status": "BREAKOUT", "kontraktionen_hl": 2, "eng_hl_pct": 7.5})
+    assert "BREAKOUT_vcp_hl_lt3" in labels and "BREAKOUT_eng_hl_gt5" in labels, labels
+    assert all(l in bt.SPLIT_STATI for l in ("ARMED_vcp_hl_ge3", "BREAKOUT_eng_hl_gt5"))
+    print("ok  H/L-Kohorten     bestanden")
+
+
 if __name__ == "__main__":
     test_armed()
     test_breakout()
@@ -122,4 +184,7 @@ if __name__ == "__main__":
     test_extended_kein_breakout()
     test_backtest_r_multiple()
     test_backtest_stats()
+    test_kontraktionen_hl()
+    test_kontraktionen_hl_ohne_daten()
+    test_backtest_hl_kohorten()
     print("\nAlle Pivot-Tests bestanden.")
