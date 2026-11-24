@@ -1223,6 +1223,26 @@ def lade_depot_namen(datei):
     return [t["name"] for t in d.get("trades", [])
             if (t.get("status") or "").lower() == "offen" and t.get("name")]
 
+# Fremdtext (Sicherheitspruefung 2026-11-21): Firmennamen von Yahoo und
+# Betreffzeilen aus Screener-Mails landen in signals.json und von dort in
+# Seiten auf mts-hub.pages.dev, die mit innerHTML arbeiten. Dieselbe Herkunft
+# teilt sich den Browser-Speicher mit dem Gist-Token. Eine praeparierte Mail
+# ("Kursalarm bei <img onerror=...>") koennte so Skript ausfuehren. Deshalb
+# werden HTML-wirksame Zeichen schon hier entfernt; Apostrophe bleiben
+# (De'Longhi, L'Air Liquide). Gilt nur fuer Fremdtext, nicht fuer die eigenen
+# Detailtexte ("Index <MA200"), die der Code selbst erzeugt.
+_FREMDTEXT_WEG = re.compile(r"[<>`\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def fremdtext(text, laenge=None):
+    """Text aus fremder Quelle ohne HTML-wirksame Zeichen; " wird zu ”."""
+    if text is None:
+        return None
+    t = _FREMDTEXT_WEG.sub("", str(text)).replace('"', "\u201d")
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:laenge] if laenge else t
+
+
 def depot_match(name, depot_namen):
     """True, wenn alle signifikanten Tokens der kuerzeren Seite enthalten sind
     (strikter als bloss ein gemeinsames Wort -> keine ETF-Fehltreffer)."""
@@ -2735,7 +2755,7 @@ def score_alle(limit=None):
             "_tt_kriterien": tt_benannt,
             "ticker": ticker,
             "yahoo_symbol": symbol,
-            "name": meta.get("longName") or meta.get("shortName") or rohname or ticker,
+            "name": fremdtext(meta.get("longName") or meta.get("shortName") or rohname) or ticker,
             "markt": markt,
             "exchange": meta.get("fullExchangeName") or meta.get("exchangeName"),
             "currency": meta.get("currency"),
@@ -2746,7 +2766,7 @@ def score_alle(limit=None):
             "einstufung": einstufung,
             "faktoren": faktoren,
             "quellen": {"ausgaben": ausgaben, "typen": typen,
-                        "zuletzt": zuletzt, "kontext": kontext[:240],
+                        "zuletzt": zuletzt, "kontext": fremdtext(kontext, 240),
                         "unabhaengig": unabhaengige_quellen},
             "earnings": earnings_info,
             "sektor": sektor,
