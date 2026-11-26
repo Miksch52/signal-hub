@@ -141,6 +141,24 @@
   .wl-empty{padding:10px 14px 12px;font-size:12px;color:var(--muted2);border-top:1px solid var(--line2)}
   .wl-sync{padding:6px 14px 10px;font-size:11px;color:var(--muted2)}
 
+  /* Eigener Kauf prüfen (seit 2026-11-26): Kandidaten außerhalb der Top-Setups,
+     z. B. Rebound oder Trendwende - dieselben Regeln wie /pre-trade. */
+  #eigen{max-width:560px;margin:0 auto;width:100%;padding:14px 16px 0}
+  .eg-body{border-top:1px solid var(--line2);padding:12px 14px 14px;display:flex;flex-direction:column;gap:10px}
+  .eg-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .eg-grid label,.setupwahl{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted)}
+  .eg-grid input,.eg-grid select,.setupwahl select{min-height:40px;border:1px solid var(--line);border-radius:8px;
+              background:var(--bg2);color:var(--txt);font-size:14px;padding:0 8px;width:100%}
+  .eg-punkte{display:flex;flex-direction:column;gap:5px;font-size:12.5px}
+  .eg-punkt{display:flex;gap:6px;align-items:flex-start}
+  .eg-punkt b{white-space:nowrap}
+  .eg-urteil{font-weight:800;font-size:13.5px}
+  .eg-urteil.stop{color:var(--bad)} .eg-urteil.warnung{color:var(--warn)} .eg-urteil.ok{color:var(--ok)}
+  .eg-note{font-size:11px;color:var(--muted2)}
+  .eg-buy{min-height:48px;border-radius:12px;border:1px solid var(--primary);background:var(--primary);
+          color:#fff;font-size:14px;font-weight:700;cursor:pointer}
+  .eg-buy:disabled{background:var(--line2);border-color:var(--line);color:var(--muted2);cursor:not-allowed}
+
   #toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);
          background:var(--txt);color:var(--bg2);padding:9px 16px;border-radius:10px;font-size:13px;
          z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
@@ -168,6 +186,7 @@
 </header>
 <div class="progressbar"><div class="progressbar-fill" id="progressfill" style="width:0%"></div></div>
 <div id="beobachtet"></div>
+<div id="eigen"></div>
 <div id="toast" role="status"></div>
 
 <main id="main">
@@ -208,6 +227,91 @@ const TT_LABELS = {
   basis_konsolidierung: 'Basis-Konsolidierung',
   volumen_bestaetigung: 'Volumen-Bestätigung',
 };
+
+// --- Regeln: Anfang (wie agenten/pre_trade_check.py; Abgleich in
+// tests/test_regel_paritaet.py, Logik-Test tests/test-kauf-review.js) ---
+// Setup-Typen wie MTS_SETUP_TYPEN im Kaufformular der Hauptapp.
+const SETUP_TYPEN = ['Swing', 'Cheat-Pivot', 'Pyramid-Add', 'Test',
+  'Rebound', 'Trendwende', 'Trend-Wiedereinstieg', 'Katalysator', 'Sektor-Rotation', 'Sonstige'];
+const SETUP_WEITERE = ['Rebound', 'Trendwende', 'Trend-Wiedereinstieg', 'Katalysator', 'Sektor-Rotation'];
+const STOP_WARN_PCT = 8, STOP_MAX_PCT = 10;
+// Risikoentscheidungen des Nutzers (2026-11-26), kein Backtest-Befund:
+const SETUP_ROT_NUR_WARNUNG = ['Rebound'];
+const SETUP_RISIKO_FAKTOR = { 'Rebound': 0.5, 'Trendwende': 0.5 };
+const SETUP_EINSTIEG_HINWEIS = {
+  'Rebound': 'Einstieg erst am Auslöser (z. B. Umkehrtag, Rückeroberung des Vortageshochs), Stop unter dem Ausverkaufstief',
+  'Trendwende': 'Einstieg über dem ersten höheren Hoch nach dem Boden, Stop unter dem letzten höheren Tief',
+  'Trend-Wiedereinstieg': 'Einstieg, wenn der Rücksetzer dreht (z. B. an 21-/50-Tage-Linie), Stop unter dem Rücksetzer-Tief',
+  'Katalysator': 'Einstieg über dem Hoch des Nachrichtentags, Stop unter dem Tief des Gap-Tags',
+  'Sektor-Rotation': 'Einstieg am eigenen Auslöser der Aktie, Stop unter der letzten Basis',
+};
+
+function groesseAus(kapital, risikoPct, entry, stop, setup) {
+  if (!(kapital > 0) || !(risikoPct > 0) || !(entry > 0) || !(stop > 0) || stop >= entry) return null;
+  const faktor = SETUP_RISIKO_FAKTOR[setup] || 1;
+  const abstand = entry - stop;
+  const stueck = Math.floor((kapital * risikoPct * faktor / 100) / abstand);
+  if (stueck <= 0) return null;
+  return { stueck, positionswert: stueck * entry, risikoEUR: stueck * abstand, faktor };
+}
+
+// e = { regime, setup, entry, stop, kapital, risiko } -> { punkte, urteil, stufe, groesse }
+function pruefeEigenKauf(e) {
+  const punkte = [];
+  const p = (status, titel, detail) => punkte.push({ status, titel, detail });
+  const setup = SETUP_TYPEN.includes(e.setup) ? e.setup : 'Sonstige';
+  const r = e.regime;
+  if (!r) p('warnung', 'Marktampel', 'keine Ampel für diesen Markt – selbst prüfen');
+  else if (r.ampel === 'rot' && SETUP_ROT_NUR_WARNUNG.includes(setup))
+    p('warnung', 'Marktampel', `ROT – bei ${setup} erlaubt, aber nur mit halbem Risiko und hartem Stop`);
+  else if (r.ampel === 'rot') p('stop', 'Marktampel', 'ROT – eigene Regel: bei Rot keine Käufe');
+  else if (r.ampel === 'gelb') p('warnung', 'Marktampel', 'GELB – nur reduziert/selektiv');
+  else if (r.sentiment_warnung) p('warnung', 'Marktampel', 'grün, aber Sentiment-Warnung (Distribution Days)');
+  else p('ok', 'Marktampel', 'grün');
+
+  if (!(e.stop > 0)) p('stop', 'Stop', 'kein Stop – ohne Stop kein Kauf');
+  else if (!(e.entry > 0)) p('stop', 'Stop', 'kein Einstieg angegeben');
+  else if (e.stop >= e.entry) p('stop', 'Stop', 'Stop liegt nicht unter dem Einstieg');
+  else {
+    const pct = (e.entry - e.stop) / e.entry * 100;
+    if (pct > STOP_MAX_PCT) p('stop', 'Stop', `Abstand ${pct.toFixed(1)} % – über ${STOP_MAX_PCT} %. Engeren Einstieg abwarten statt Stop weiten.`);
+    else if (pct > STOP_WARN_PCT) p('warnung', 'Stop', `Abstand ${pct.toFixed(1)} % – über der Spanne von 7–8 %`);
+    else p('ok', 'Stop', `Abstand ${pct.toFixed(1)} %`);
+  }
+
+  const g = groesseAus(e.kapital, e.risiko, e.entry, e.stop, setup);
+  if (g) p('ok', 'Positionsgröße', `${g.stueck} Stück ≈ ${Math.round(g.positionswert)}, Risiko ${Math.round(g.risikoEUR)}`
+    + (g.faktor < 1 ? ` – halbes Risiko für ${setup}` : ''));
+  else if (e.entry > 0 && e.stop > 0 && e.stop < e.entry)
+    p('warnung', 'Positionsgröße', e.kapital > 0 && e.risiko > 0 ? 'Risiko-Budget reicht nicht für 1 Stück' : 'Kapital und Risiko-% eintragen');
+
+  if (SETUP_WEITERE.includes(setup)) p('ok', 'Einstieg', `Pivot-Regel gilt nicht für ${setup}. ${SETUP_EINSTIEG_HINWEIS[setup]}.`);
+  else p('warnung', 'Pivot', 'kein Pivot hinterlegt – Einstieg höchstens 5 % über dem Pivot selbst prüfen');
+  p('warnung', 'Earnings', 'für eigene Kandidaten unbekannt – Termin selbst prüfen');
+
+  const stops = punkte.filter(x => x.status === 'stop').length, warn = punkte.filter(x => x.status === 'warnung').length;
+  const urteil = stops ? `Regelverstoß (${stops}) – so nicht kaufen`
+    : warn ? `Regelkonform mit ${warn} Warnung(en) – bewusst entscheiden` : 'Regelkonform';
+  return { punkte, urteil, stufe: stops ? 'stop' : warn ? 'warnung' : 'ok', groesse: g };
+}
+// --- Regeln: Ende ---
+
+function escHtml(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+
+function setupOptionen(gewaehlt) {
+  const opt = v => `<option value="${v}"${v === gewaehlt ? ' selected' : ''}>${v}</option>`;
+  const minervini = SETUP_TYPEN.filter(v => !SETUP_WEITERE.includes(v) && v !== 'Sonstige');
+  return `<optgroup label="Minervini / SEPA">${minervini.map(opt).join('')}</optgroup>`
+    + `<optgroup label="Weitere Strategien">${SETUP_WEITERE.map(opt).join('')}</optgroup>` + opt('Sonstige');
+}
+
+// Setup-Wahl je Top-Setup-Karte (nur für diesen Durchgang, Standard Swing).
+const KARTEN_SETUP = {};
+function kartenSetup(s) { return KARTEN_SETUP[s.ticker] || 'Swing'; }
+function setzeKartenSetup(v) {
+  if (idx < QUEUE.length && SETUP_TYPEN.includes(v)) KARTEN_SETUP[QUEUE[idx].ticker] = v;
+  aktualisiereGroesse();
+}
 
 let ROTATION_LEADER_MAP = null;
 let QUEUE = [];
@@ -496,21 +600,23 @@ function liesKapitalRisiko() {
 
 function berechneGroesse(s) {
   const { kapital, risiko } = liesKapitalRisiko();
-  const entry = s.pivot, stop = s.stop;
-  if (!(kapital > 0) || !(risiko > 0) || !(entry > 0) || !(stop > 0) || stop >= entry) return null;
-  const stopAbstand = entry - stop;
-  const stueck = Math.floor((kapital * risiko / 100) / stopAbstand);
-  if (stueck <= 0) return null;
-  return { stueck, positionswert: stueck * entry, risikoEUR: stueck * stopAbstand };
+  return groesseAus(kapital, risiko, s.pivot, s.stop, kartenSetup(s));
 }
 
 function renderSizeBox(s) {
   const g = berechneGroesse(s);
-  if (!g) return `<div class="sizebox"><span class="empty">Kapital + Risiko-% oben eintragen für einen Stückzahl-Vorschlag.</span></div>`;
+  if (!g) {
+    const { kapital, risiko } = liesKapitalRisiko();
+    const text = kapital > 0 && risiko > 0 && s.pivot > 0 && s.stop > 0 && s.stop < s.pivot
+      ? `Risiko-Budget reicht nicht für 1 Stück${(SETUP_RISIKO_FAKTOR[kartenSetup(s)] || 1) < 1 ? ` (halbes Risiko für ${escHtml(kartenSetup(s))})` : ''}.`
+      : 'Kapital + Risiko-% oben eintragen für einen Stückzahl-Vorschlag.';
+    return `<div class="sizebox"><span class="empty">${text}</span></div>`;
+  }
   return `<div class="sizebox">
     <div class="row"><span>Stückzahl (grob)</span><b>${g.stueck}</b></div>
     <div class="row"><span>Positionswert</span><b>${g.positionswert.toFixed(0)}</b></div>
     <div class="row"><span>Risiko bis Stop</span><b>${g.risikoEUR.toFixed(0)}</b></div>
+    ${g.faktor < 1 ? `<div class="row"><span>Halbes Risiko</span><b>${escHtml(kartenSetup(QUEUE[idx]))}</b></div>` : ''}
   </div>`;
 }
 
@@ -558,6 +664,8 @@ function render() {
         <div class="quickscan">${checklist(s.trend_template)}</div>
       </div>
       ${s.backtest ? `<div class="backtest-note">Forward-Backtest ${s.pivot_status} (${s.backtest.horizont}): <b>${s.backtest.win}%</b> Win-Rate bei ${s.backtest.n} gereiften Picks</div>` : ''}
+      <label class="setupwahl">Setup-Typ (geht mit „Kaufen“ ins Formular)
+        <select id="kr-setup" onchange="setzeKartenSetup(this.value)">${setupOptionen(kartenSetup(s))}</select></label>
       ${renderSizeBox(s)}
       <div class="detail-link"><a href="setup-detail.html?ticker=${enc(s.ticker)}"${IST_STANDALONE_PWA ? '' : ' target="_blank" rel="noopener"'}>🔍 Vollständige Analyse ansehen</a></div>
     </div>
@@ -633,7 +741,8 @@ function kaufen() {
   entscheidungen[s.ticker] = 'gekauft';
   speichereSession();
   const href = `../Maick's Trading System.html?neuerTrade=${enc(s.ticker)}&quelle=Kauf-Review-Queue`
-    + (s.pivot > 0 ? `&entry=${enc(s.pivot)}` : '') + (s.stop > 0 ? `&stop=${enc(s.stop)}` : '');
+    + (s.pivot > 0 ? `&entry=${enc(s.pivot)}` : '') + (s.stop > 0 ? `&stop=${enc(s.stop)}` : '')
+    + `&setup=${enc(kartenSetup(s))}`;
   location.href = href;
 }
 
@@ -657,6 +766,78 @@ function renderSummary() {
   `;
 }
 
+function eigenRegime(markt) {
+  const mr = (window.TOP_SETUPS && window.TOP_SETUPS.marktregime) || {};
+  return mr[markt] || null;
+}
+
+function renderEigen() {
+  const mr = (window.TOP_SETUPS && window.TOP_SETUPS.marktregime) || {};
+  const maerkte = Object.keys(mr).length ? Object.keys(mr) : ['USA', 'Europa'];
+  let kapital = '', risiko = '1.25';
+  try { kapital = localStorage.getItem('kaufReviewKapital') || ''; risiko = localStorage.getItem('kaufReviewRisiko') || '1.25'; } catch (e) {}
+  document.getElementById('eigen').innerHTML = `
+    <details class="wl" id="eigen-box">
+      <summary>🧭 Eigener Kauf prüfen <span class="hint">Rebound, Trendwende … außerhalb der Top-Setups</span></summary>
+      <div class="eg-body">
+        <div class="eg-grid">
+          <label>Ticker <input id="eg-ticker" autocapitalize="characters" autocomplete="off" placeholder="z.B. HOOD" oninput="aktualisiereEigen()"></label>
+          <label>Markt <select id="eg-markt" onchange="aktualisiereEigen()">${maerkte.map(m => `<option>${escHtml(m)}</option>`).join('')}</select></label>
+          <label>Setup-Typ <select id="eg-setup" onchange="aktualisiereEigen()">${setupOptionen('Rebound')}</select></label>
+          <label>Einstieg <input type="number" id="eg-entry" inputmode="decimal" step="0.01" oninput="aktualisiereEigen()"></label>
+          <label>Stop <input type="number" id="eg-stop" inputmode="decimal" step="0.01" oninput="aktualisiereEigen()"></label>
+          <label>Kapital <input type="number" id="eg-kapital" inputmode="decimal" value="${escHtml(kapital)}" oninput="aktualisiereEigen()"></label>
+          <label>Risiko % <input type="number" id="eg-risiko" inputmode="decimal" step="0.25" value="${escHtml(risiko)}" oninput="aktualisiereEigen()"></label>
+        </div>
+        <div id="eg-ergebnis"></div>
+        <button class="eg-buy" id="eg-buy" onclick="eigenKaufen()" disabled>🛒 In der Hauptapp anlegen</button>
+        <div class="eg-note">Risiko-Budget, Nachkauf unter Einstand und Positionslimit prüft die Hauptapp beim Speichern; am Mac ausführlich mit /pre-trade. Keine Kaufempfehlung.</div>
+      </div>
+    </details>`;
+  aktualisiereEigen();
+}
+
+function eigenEingaben() {
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const zahl = id => parseFloat(String(v(id)).replace(',', '.')) || 0;
+  return {
+    ticker: v('eg-ticker').toUpperCase().replace(/[^A-Z0-9.\-^=]/g, '').slice(0, 15),
+    markt: v('eg-markt'), setup: v('eg-setup'),
+    entry: zahl('eg-entry'), stop: zahl('eg-stop'), kapital: zahl('eg-kapital'), risiko: zahl('eg-risiko'),
+  };
+}
+
+function aktualisiereEigen() {
+  const box = document.getElementById('eg-ergebnis');
+  if (!box) return;
+  const e = eigenEingaben();
+  const knopf = document.getElementById('eg-buy');
+  if (!e.ticker || !(e.entry > 0)) {
+    box.innerHTML = '<div class="eg-note">Ticker, Einstieg und Stop eintragen.</div>';
+    knopf.disabled = true; knopf.textContent = '🛒 In der Hauptapp anlegen';
+    return;
+  }
+  const r = pruefeEigenKauf({ ...e, regime: eigenRegime(e.markt) });
+  const sym = { ok: '✅', warnung: '⚠️', stop: '⛔' };
+  box.innerHTML = `<div class="eg-urteil ${r.stufe}">${escHtml(r.urteil)}</div>
+    <div class="eg-punkte">${r.punkte.map(x =>
+      `<div class="eg-punkt"><span>${sym[x.status]}</span><span><b>${escHtml(x.titel)}:</b> ${escHtml(x.detail)}</span></div>`).join('')}</div>`;
+  knopf.disabled = r.stufe === 'stop';
+  knopf.textContent = r.stufe === 'stop' ? '⛔ Regelverstoß – so nicht kaufen' : '🛒 In der Hauptapp anlegen';
+  try {
+    if (e.kapital > 0) localStorage.setItem('kaufReviewKapital', e.kapital);
+    if (e.risiko > 0) localStorage.setItem('kaufReviewRisiko', e.risiko);
+  } catch (err) {}
+}
+
+function eigenKaufen() {
+  const e = eigenEingaben();
+  const r = pruefeEigenKauf({ ...e, regime: eigenRegime(e.markt) });
+  if (!e.ticker || r.stufe === 'stop') return;
+  location.href = `../Maick's Trading System.html?neuerTrade=${enc(e.ticker)}&quelle=Kauf-Review-Eigen`
+    + `&entry=${enc(e.entry)}&stop=${enc(e.stop)}&setup=${enc(e.setup)}`;
+}
+
 function neuStarten() {
   idx = 0; entscheidungen = {};
   speichereSession();
@@ -664,6 +845,7 @@ function neuStarten() {
   render();
 }
 
+renderEigen();
 init();
 </script>
 </body>
